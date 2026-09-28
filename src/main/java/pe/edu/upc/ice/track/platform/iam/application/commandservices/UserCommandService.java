@@ -36,8 +36,8 @@ public interface UserCommandService {
    * <p>Validates the submitted Google OIDC id_token, resolves the matching platform account -
    * registering it on first contact - and issues the platform's own bearer token. The matching
    * profile is provisioned through the
-   * {@link pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.profiles.ExternalProfileService}
-   * outbound port within the same transaction; the call is idempotent, so a repeated exchange
+   * {@link pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.acl.ExternalProfileService}
+   * outbound service within the same transaction; the call is idempotent, so a repeated exchange
    * retrieves the existing profile instead of duplicating it.</p>
    *
    * @param command the token exchange command carrying the Google id_token

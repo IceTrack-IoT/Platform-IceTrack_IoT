@@ -5,10 +5,10 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.iam.application.commandservices.UserCommandService;
+import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.acl.ExternalProfileService;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.google.GoogleTokenService;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.google.GoogleUserInfo;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.hashing.HashingService;
-import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.profiles.ExternalProfileService;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.tokens.TokenService;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.ExchangeGoogleTokenCommand;
@@ -39,10 +39,10 @@ import java.util.Optional;
  * </ul>
  *
  * <p>Both flows provision the matching profile through the {@link ExternalProfileService}
- * outbound port, which reaches the {@code profiles} context across its ACL facade. The call
+ * outbound service, which reaches the {@code profiles} context across its ACL facade. The call
  * happens inside this service's transaction, so an account and its profile are committed
  * together or not at all. It is also made on <em>every</em> successful authentication rather
- * than only on registration: the port is idempotent, which keeps repeated sign-ins free of
+ * than only on registration: the operation is idempotent, which keeps repeated sign-ins free of
  * duplicates while back-filling accounts that predate the profile integration.</p>
  */
 @Service
