@@ -1,27 +1,27 @@
 package pe.edu.upc.ice.track.platform.iam.domain.model.entities;
 
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.ToString;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.Roles;
-
-import java.util.List;
 
 /**
  * Role domain entity representing a user role within the IceTrackPlatform application.
+ *
+ * <p>Immutable: a role handed out by a {@code User} can never be altered through it.</p>
  */
 @Getter
-@Setter
-@NoArgsConstructor
 @AllArgsConstructor
-@With
 @EqualsAndHashCode
 @ToString
 public class Role {
-  private Long id;
-  private Roles name;
+  private final Long id;
+  private final Roles name;
 
   public Role(Roles name) {
-    this.name = name;
+    this(null, name);
   }
 
   /**
@@ -33,37 +33,15 @@ public class Role {
     return name.name();
   }
 
-  /**
-   * Get the default role for a new user.
-   *
-   * @return the default role
-   */
-  public static Role getDefaultRole() {
-    return new Role(Roles.USER_ROLE);
-  }
-
   /***
    * Get the role from its name.
    *
-   * @param name the name of the role
+   * @param name the name of the role, canonical ({@code OWNER_ROLE}) or bare ({@code OWNER})
    * @return the role corresponding to the given name
+   * @throws IllegalArgumentException when the name matches no role
    */
   public static Role toRoleFromName(String name) {
-    return new Role(Roles.valueOf(name));
-  }
-
-  /**
-   * Validate the role set.
-   *
-   * @param roles the list of roles to validate
-   * @return the validated list of roles
-   */
-  public static List<Role> validateRoleSet(List<Role> roles) {
-    if (roles == null || roles.isEmpty()) {
-      return List.of(getDefaultRole());
-    } else {
-      return roles;
-    }
+    return new Role(Roles.fromName(name));
   }
 
 }

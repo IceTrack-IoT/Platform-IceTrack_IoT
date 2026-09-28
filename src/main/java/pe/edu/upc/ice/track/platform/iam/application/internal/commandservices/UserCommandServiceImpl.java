@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import pe.edu.upc.ice.track.platform.iam.application.commandservices.UserCommandService;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.acl.ExternalProfileService;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.google.GoogleTokenService;
@@ -11,46 +12,54 @@ import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.g
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.hashing.HashingService;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.tokens.TokenService;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
-import pe.edu.upc.ice.track.platform.iam.domain.model.commands.ExchangeGoogleTokenCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleOwnerRegistrationCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleTechnicianRegistrationCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByGoogleCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByLocalCommand;
-import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpByLocalCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpOwnerCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpTechnicianCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.entities.Role;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.AuthProvider;
+import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetails;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.Roles;
 import pe.edu.upc.ice.track.platform.iam.domain.repositories.RoleRepository;
 import pe.edu.upc.ice.track.platform.iam.domain.repositories.UserRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
-import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * User command service implementation.
  *
- * <p>Owns the two authentication flows of the IAM bounded context:</p>
+ * <p>Owns the authentication and registration flows of the IAM bounded context:</p>
  * <ul>
- *   <li><strong>Local</strong> - username and password verified against the hashing service.</li>
- *   <li><strong>Google Token Exchange</strong> - the frontend performs the Google login and
- *       submits the resulting OIDC id_token; the token is validated through the
- *       {@link GoogleTokenService} port (backed by Spring Security's {@code NimbusJwtDecoder})
- *       and exchanged for the platform's own bearer token.</li>
+ *   <li><strong>Local</strong> - role explicit sign-up ({@link SignUpOwnerCommand},
+ *       {@link SignUpTechnicianCommand}); sign-in verified against the hashing service.</li>
+ *   <li><strong>Google, deferred registration</strong> - the frontend performs the Google login
+ *       and submits the OIDC id_token. {@link SignInByGoogleCommand} signs a known account in, or
+ *       reports that the onboarding is required without writing anything. The role explicit
+ *       {@link CompleteGoogleOwnerRegistrationCommand} or
+ *       {@link CompleteGoogleTechnicianRegistrationCommand} then creates the account. Tokens are
+ *       validated statelessly through the {@link GoogleTokenService} port, backed by Spring
+ *       Security's {@code NimbusJwtDecoder}.</li>
  * </ul>
  *
- * <p>Both flows provision the matching profile through the {@link ExternalProfileService}
- * outbound service, which reaches the {@code profiles} context across its ACL facade. The call
- * happens inside this service's transaction, so an account and its profile are committed
- * together or not at all. It is also made on <em>every</em> successful authentication rather
- * than only on registration: the operation is idempotent, which keeps repeated sign-ins free of
- * duplicates while back-filling accounts that predate the profile integration.</p>
+ * <p>The role of a new account is fixed by the command it is created from - owner commands
+ * assign {@link Roles#OWNER_ROLE} and provision an owner profile, technician commands assign
+ * {@link Roles#TECHNICIAN_ROLE} and provision a technician profile. Every registration creates the
+ * account and its profile through the {@link ExternalProfileService} outbound service inside one
+ * transaction. When the profiles context rejects the profile, the transaction is marked
+ * rollback-only before the failure is returned, so no account can ever exist without its profile,
+ * and no profile without its account.</p>
  */
 @Service
 @Slf4j
 public class UserCommandServiceImpl implements UserCommandService {
 
   private static final String USER_RESOURCE = "User";
-  private static final String ROLE_NAME_SUFFIX = "_ROLE";
+  private static final String PROFILE_RESOURCE = "Profile";
 
   private final UserRepository userRepository;
   private final HashingService hashingService;
@@ -97,75 +106,136 @@ public class UserCommandServiceImpl implements UserCommandService {
     if (encodedPassword.isBlank() || !hashingService.matches(rawPassword, encodedPassword)) {
       return Result.failure(ApplicationError.validationError("credentials", "Invalid username or password"));
     }
-    return Result.success(ImmutablePair.of(foundUser, tokenService.generateToken(foundUser.getUsername())));
+    return Result.success(authenticate(foundUser));
   }
 
   // inherited javadoc
   @Override
   @Transactional
-  public Result<User, ApplicationError> handle(SignUpByLocalCommand command) {
-    if (command == null || command.username() == null || command.username().isBlank()) {
-      return Result.failure(ApplicationError.validationError("username", "Username must not be null or blank"));
-    }
-    if (command.password() == null || command.password().isBlank()) {
-      return Result.failure(ApplicationError.validationError("password", "Password must not be null or blank"));
-    }
-    // The email is the profile's identity in the profiles context, so an account cannot be
-    // registered without one: rejecting it here keeps the failure a clean 400 instead of an
-    // account that no profile can be attached to.
-    if (command.email() == null || command.email().isBlank()) {
-      return Result.failure(ApplicationError.validationError("email", "Email must not be null or blank"));
-    }
-    if (userRepository.existsByUsername(command.username())) {
-      return Result.failure(ApplicationError.conflict(
-          USER_RESOURCE,
-          "A user with username %s already exists".formatted(command.username())));
-    }
-    if (userRepository.existsByEmail(command.email())) {
-      return Result.failure(ApplicationError.conflict(
-          USER_RESOURCE,
-          "A user with email %s already exists".formatted(command.email())));
-    }
-
-    var roles = toPersistedRoles(command.role());
-    var user = new User(
-        command.username(),
-        hashingService.encode(command.password()),
-        command.email(),
-        roles);
-    var savedUser = userRepository.save(user);
-    requireProfileFor(savedUser, savedUser.getUsername(), null);
-    return Result.success(savedUser);
-  }
-
-  // inherited javadoc
-  @Override
-  @Transactional
-  public Result<ImmutablePair<User, String>, ApplicationError> handle(ExchangeGoogleTokenCommand command) {
+  public Result<User, ApplicationError> handle(SignUpOwnerCommand command) {
     if (command == null) {
-      return Result.failure(ApplicationError.validationError("command", "Token exchange command must not be null"));
+      return Result.failure(ApplicationError.validationError("command", "Owner sign-up command must not be null"));
     }
+    return signUpLocally(
+        command.username(),
+        command.password(),
+        command.email(),
+        Roles.OWNER_ROLE,
+        user -> createOwnerProfile(user, command.fullName(), command.contactDetails(), command.ruc()));
+  }
 
-    GoogleUserInfo googleUserInfo;
-    try {
-      googleUserInfo = googleTokenService.verify(command.idToken());
-    } catch (IllegalArgumentException exception) {
-      return Result.failure(ApplicationError.validationError("idToken", exception.getMessage()));
+  // inherited javadoc
+  @Override
+  @Transactional
+  public Result<User, ApplicationError> handle(SignUpTechnicianCommand command) {
+    if (command == null) {
+      return Result.failure(ApplicationError.validationError("command", "Technician sign-up command must not be null"));
     }
+    return signUpLocally(
+        command.username(),
+        command.password(),
+        command.email(),
+        Roles.TECHNICIAN_ROLE,
+        user -> createTechnicianProfile(
+            user, command.fullName(), command.contactDetails(), command.speciality(), command.certificationNumber()));
+  }
 
+  // inherited javadoc
+  @Override
+  @Transactional
+  public Result<ImmutablePair<User, String>, ApplicationError> handle(SignInByGoogleCommand command) {
+    if (command == null) {
+      return Result.failure(ApplicationError.validationError("command", "Google sign-in command must not be null"));
+    }
+    return verifyGoogleIdToken(command.idToken()).flatMap(googleUserInfo -> {
+      var existingUser = resolveExistingUser(googleUserInfo);
+      if (existingUser.isEmpty()) {
+        // Deferred registration: nothing is persisted until the onboarding form is completed.
+        return Result.failure(onboardingRequired());
+      }
+      var user = linkGoogleAccountIfNeeded(existingUser.get(), googleUserInfo);
+      return Result.success(authenticate(user));
+    });
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public Result<ImmutablePair<User, String>, ApplicationError> handle(CompleteGoogleOwnerRegistrationCommand command) {
+    if (command == null) {
+      return Result.failure(ApplicationError.validationError("command", "Google owner registration command must not be null"));
+    }
+    return verifyGoogleIdToken(command.idToken()).flatMap(googleUserInfo -> completeGoogleRegistration(
+        googleUserInfo,
+        Roles.OWNER_ROLE,
+        user -> createOwnerProfile(user, googleUserInfo.displayName(), command.contactDetails(), command.ruc())));
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public Result<ImmutablePair<User, String>, ApplicationError> handle(CompleteGoogleTechnicianRegistrationCommand command) {
+    if (command == null) {
+      return Result.failure(ApplicationError.validationError("command", "Google technician registration command must not be null"));
+    }
+    return verifyGoogleIdToken(command.idToken()).flatMap(googleUserInfo -> completeGoogleRegistration(
+        googleUserInfo,
+        Roles.TECHNICIAN_ROLE,
+        user -> createTechnicianProfile(
+            user,
+            googleUserInfo.displayName(),
+            command.contactDetails(),
+            command.speciality(),
+            command.certificationNumber())));
+  }
+
+  /**
+   * Registers an account with local credentials and the role implied by the calling command.
+   *
+   * @param username           the unique username
+   * @param password           the raw password, hashed before it reaches the aggregate
+   * @param email              the email address
+   * @param role               the definitive role implied by the command
+   * @param profileProvisioner creates the profile matching {@code role} for the persisted account
+   * @return the persisted account, or the reason the registration was rejected
+   */
+  private Result<User, ApplicationError> signUpLocally(
+      String username, String password, String email, Roles role, Function<User, Long> profileProvisioner) {
+    if (userRepository.existsByUsername(username)) {
+      return Result.failure(ApplicationError.conflict(
+          USER_RESOURCE,
+          "A user with username %s already exists".formatted(username)));
+    }
+    if (userRepository.existsByEmail(email)) {
+      return Result.failure(ApplicationError.conflict(
+          USER_RESOURCE,
+          "A user with email %s already exists".formatted(email)));
+    }
+    var user = User.registeredLocally(username, hashingService.encode(password), email, toPersistedRole(role));
+    return registerWithProfile(user, profileProvisioner);
+  }
+
+  /**
+   * Registers the Google account described by verified claims with the role implied by the
+   * calling command, or signs it in when it already exists.
+   *
+   * @param googleUserInfo     the verified Google claims
+   * @param role               the definitive role implied by the command
+   * @param profileProvisioner creates the profile matching {@code role} for the persisted account
+   * @return the authenticated user with its bearer token, or the reason the registration failed
+   */
+  private Result<ImmutablePair<User, String>, ApplicationError> completeGoogleRegistration(
+      GoogleUserInfo googleUserInfo, Roles role, Function<User, Long> profileProvisioner) {
     var existingUser = resolveExistingUser(googleUserInfo);
     if (existingUser.isPresent()) {
-      var user = existingUser.get();
-      // An account created locally and now signing in with the same Google email keeps its
-      // identifier, credentials and roles; it simply starts accepting the federated provider.
-      if (!googleUserInfo.subject().equals(user.getExternalId())) {
-        user.linkGoogleAccount(googleUserInfo.subject());
-        user = userRepository.save(user);
+      // A repeated submission, or an account registered meanwhile: the role is immutable, so the
+      // account signs in with the role it already has and the submitted form is ignored.
+      var user = linkGoogleAccountIfNeeded(existingUser.get(), googleUserInfo);
+      if (!user.hasRole(role)) {
+        log.warn("User {} completed a Google registration as {} but already holds {}; keeping the existing role",
+            user.getId(), role, user.getRoleName());
       }
-      // Idempotent by contract: this retrieves the existing profile rather than creating one,
-      // and back-fills accounts registered before the profiles integration existed.
-      ensureProfileFor(user, googleUserInfo.displayName(), googleUserInfo.pictureUrl());
-      return Result.success(ImmutablePair.of(user, tokenService.generateToken(user.getUsername())));
+      return Result.success(authenticate(user));
     }
 
     if (userRepository.existsByUsername(googleUserInfo.email())) {
@@ -174,73 +244,110 @@ public class UserCommandServiceImpl implements UserCommandService {
           "A user with username %s already exists".formatted(googleUserInfo.email())));
     }
 
-    var roles = toPersistedRoles(toRequestedRoles(command));
-    var registeredUser = userRepository.save(
-        User.registeredWithGoogle(googleUserInfo.email(), googleUserInfo.subject(), roles));
-    requireProfileFor(registeredUser, googleUserInfo.displayName(), googleUserInfo.pictureUrl());
-    log.info("Registered user {} through the Google token exchange", registeredUser.getId());
-
-    return Result.success(
-        ImmutablePair.of(registeredUser, tokenService.generateToken(registeredUser.getUsername())));
+    var user = User.registeredWithGoogle(googleUserInfo.email(), googleUserInfo.subject(), toPersistedRole(role));
+    return registerWithProfile(user, profileProvisioner).map(this::authenticate);
   }
 
   /**
-   * Provisions the profile of an account that has just been registered.
+   * Persists a new account and provisions its concrete profile in the current transaction.
    *
-   * <p>The call runs inside the current transaction, so an account and its profile commit
-   * together: when the profiles context cannot provision one, the exception propagates out of
-   * this {@code @Transactional} method and rolls the registration back rather than leaving an
-   * account nobody can build a profile for.</p>
+   * <p>The account must be saved first, because the profile is keyed by its identifier. When the
+   * profiles context then rejects the profile, the transaction is marked rollback-only so that
+   * the account insert is discarded as well, and the rejection is returned as a failure instead
+   * of an exception, keeping the error a clean 4xx for the caller.</p>
    *
-   * @param user          the persisted account, carrying its assigned identifier
-   * @param fullName      display name to hand over to the profiles context
-   * @param auxiliaryData optional annotation released by the identity provider, may be {@code null}
-   * @throws IllegalStateException when no profile could be provisioned
+   * @param user               the new account, not yet persisted
+   * @param profileProvisioner creates the profile of the persisted account and returns its identifier
+   * @return the persisted account, or the reason the registration was rejected
    */
-  private void requireProfileFor(User user, String fullName, String auxiliaryData) {
-    if (fetchOrCreateProfileFor(user, fullName, auxiliaryData).isEmpty()) {
-      throw new IllegalStateException(
-          "The profile of user %s could not be provisioned".formatted(user.getId()));
+  private Result<User, ApplicationError> registerWithProfile(User user, Function<User, Long> profileProvisioner) {
+    var savedUser = userRepository.save(user);
+    try {
+      var profileId = profileProvisioner.apply(savedUser);
+      log.info("Registered user {} as {} through {} with profile {}",
+          savedUser.getId(), savedUser.getRoleName(), savedUser.getProvider(), profileId);
+      return Result.success(savedUser);
+    } catch (IllegalArgumentException exception) {
+      markRegistrationForRollback();
+      return Result.failure(ApplicationError.validationError(PROFILE_RESOURCE, exception.getMessage()));
+    } catch (IllegalStateException exception) {
+      markRegistrationForRollback();
+      return Result.failure(ApplicationError.conflict(PROFILE_RESOURCE, exception.getMessage()));
     }
   }
 
   /**
-   * Back-fills the profile of an account that already exists.
+   * Creates the owner profile of a persisted account through the outbound ACL service.
    *
-   * <p>Unlike {@link #requireProfileFor}, a failure here is logged and tolerated: the account was
-   * registered long ago and is authenticating right now, so a profile anomaly must not turn a
-   * valid sign-in into an error. The profile can still be repaired through the profiles API.</p>
-   *
-   * @param user          the authenticated account
-   * @param fullName      display name to hand over to the profiles context
-   * @param auxiliaryData optional annotation released by the identity provider, may be {@code null}
+   * @param user           the persisted account, carrying its assigned identifier
+   * @param fullName       display name of the account holder
+   * @param contactDetails the phone number and address captured by the onboarding form
+   * @param ruc            the owner's taxpayer registration number
+   * @return the identifier of the created profile
    */
-  private void ensureProfileFor(User user, String fullName, String auxiliaryData) {
-    if (fetchOrCreateProfileFor(user, fullName, auxiliaryData).isEmpty()) {
-      log.warn("User {} signed in without a provisioned profile", user.getId());
-    }
-  }
-
-  /**
-   * Reaches the {@code profiles} bounded context through the outbound ACL port.
-   *
-   * <p>Only agnostic values cross this call: identifiers, names and role names. The port is
-   * idempotent, so invoking it on every authentication retrieves the existing profile instead of
-   * duplicating it.</p>
-   *
-   * @param user          the account whose profile is required
-   * @param fullName      display name to hand over to the profiles context
-   * @param auxiliaryData optional annotation released by the identity provider, may be {@code null}
-   * @return the profile identifier, or empty when none could be found or created
-   */
-  private Optional<Long> fetchOrCreateProfileFor(User user, String fullName, String auxiliaryData) {
-    return externalProfileService.fetchOrCreateProfile(
+  private Long createOwnerProfile(User user, String fullName, ContactDetails contactDetails, Long ruc) {
+    return externalProfileService.createOwnerProfile(
         user.getId(),
         fullName,
         user.getEmail(),
-        null,
-        user.getPrimaryRoleName(),
-        auxiliaryData);
+        contactDetails.phone(),
+        contactDetails.street(),
+        contactDetails.number(),
+        contactDetails.city(),
+        contactDetails.postalCode(),
+        contactDetails.country(),
+        ruc);
+  }
+
+  /**
+   * Creates the technician profile of a persisted account through the outbound ACL service.
+   *
+   * @param user                the persisted account, carrying its assigned identifier
+   * @param fullName            display name of the account holder
+   * @param contactDetails      the phone number and address captured by the onboarding form
+   * @param speciality          the technician's speciality
+   * @param certificationNumber the number of the technician's certification
+   * @return the identifier of the created profile
+   */
+  private Long createTechnicianProfile(
+      User user, String fullName, ContactDetails contactDetails, String speciality, String certificationNumber) {
+    return externalProfileService.createTechnicianProfile(
+        user.getId(),
+        fullName,
+        user.getEmail(),
+        contactDetails.phone(),
+        contactDetails.street(),
+        contactDetails.number(),
+        contactDetails.city(),
+        contactDetails.postalCode(),
+        contactDetails.country(),
+        speciality,
+        certificationNumber);
+  }
+
+  /**
+   * Discards everything written by the current registration once the method returns.
+   *
+   * <p>Marking the transaction locally rollback-only makes the transaction manager roll back
+   * silently, instead of raising an {@code UnexpectedRollbackException} for a rejection that has
+   * already been turned into a {@link Result}.</p>
+   */
+  private static void markRegistrationForRollback() {
+    TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+  }
+
+  /**
+   * Validates a Google id_token.
+   *
+   * @param idToken the token submitted by the frontend
+   * @return the verified claims, or a validation failure when the token is rejected
+   */
+  private Result<GoogleUserInfo, ApplicationError> verifyGoogleIdToken(String idToken) {
+    try {
+      return Result.success(googleTokenService.verify(idToken));
+    } catch (IllegalArgumentException exception) {
+      return Result.failure(ApplicationError.validationError("idToken", exception.getMessage()));
+    }
   }
 
   /**
@@ -262,43 +369,57 @@ public class UserCommandServiceImpl implements UserCommandService {
   }
 
   /**
-   * Translates the role requested at exchange time into IAM domain roles.
+   * Links an account found by email to the Google identity that is signing in.
    *
-   * <p>Both the canonical name ({@code OWNER_ROLE}) and its bare form ({@code OWNER}) are
-   * accepted, in any case. An unknown name is ignored rather than rejected, so that a stale
-   * frontend never blocks a sign-in: the account is registered with the default role instead.</p>
+   * <p>An account created locally and now signing in with the same Google email keeps its
+   * identifier, credentials and role; it simply starts accepting the federated provider.</p>
    *
-   * @param command the token exchange command
-   * @return the requested roles, or an empty list when none was requested or the name is unknown
+   * @param user           the matching account
+   * @param googleUserInfo the verified Google claims
+   * @return the account, persisted again when it had to be linked
    */
-  private List<Role> toRequestedRoles(ExchangeGoogleTokenCommand command) {
-    if (!command.hasRequestedRole()) {
-      return List.of();
+  private User linkGoogleAccountIfNeeded(User user, GoogleUserInfo googleUserInfo) {
+    if (googleUserInfo.subject().equals(user.getExternalId())) {
+      return user;
     }
-    var roleName = command.requestedRole().trim().toUpperCase(Locale.ROOT);
-    if (!roleName.endsWith(ROLE_NAME_SUFFIX)) {
-      roleName = roleName + ROLE_NAME_SUFFIX;
-    }
-    try {
-      return List.of(new Role(Roles.valueOf(roleName)));
-    } catch (IllegalArgumentException exception) {
-      log.warn("Ignoring unknown requested role {} during the Google token exchange", command.requestedRole());
-      return List.of();
-    }
+    user.linkGoogleAccount(googleUserInfo.subject());
+    return userRepository.save(user);
   }
 
   /**
-   * Replaces the supplied roles with their persisted counterparts, so that the user is linked to
-   * the seeded role rows instead of creating detached duplicates.
+   * Issues the platform bearer token of an account, carrying its definitive role as a claim.
    *
-   * @param roles the roles to resolve; a {@code null} or empty list resolves to the default role
-   * @return the persisted roles, never empty
+   * @param user the authenticated account
+   * @return the account paired with its bearer token
    */
-  private List<Role> toPersistedRoles(List<Role> roles) {
-    var requestedRoles = Role.validateRoleSet(roles);
-    return requestedRoles.stream()
-        .filter(role -> role != null && role.getName() != null)
-        .map(role -> roleRepository.findByName(role.getName()).orElseGet(() -> roleRepository.save(role)))
-        .toList();
+  private ImmutablePair<User, String> authenticate(User user) {
+    return ImmutablePair.of(user, tokenService.generateToken(user.getUsername(), user.getRoleName()));
+  }
+
+  /**
+   * Builds the failure telling the caller that the Google account must complete the onboarding.
+   *
+   * <p>The code ends with {@code _NOT_FOUND} so it is rendered as a 404, while remaining distinct
+   * from a generic missing user for the frontend.</p>
+   *
+   * @return the onboarding required failure
+   */
+  private static ApplicationError onboardingRequired() {
+    return new ApplicationError(
+        "GOOGLE_ACCOUNT_NOT_FOUND",
+        "Google account not registered",
+        "Complete the onboarding through POST /api/v1/authentication/google/complete-registration/owner "
+            + "or /api/v1/authentication/google/complete-registration/technician");
+  }
+
+  /**
+   * Resolves the persisted role row of a role name, so that the user is linked to the seeded
+   * role instead of creating a detached duplicate.
+   *
+   * @param roleName the definitive role
+   * @return the persisted role
+   */
+  private Role toPersistedRole(Roles roleName) {
+    return roleRepository.findByName(roleName).orElseGet(() -> roleRepository.save(new Role(roleName)));
   }
 }

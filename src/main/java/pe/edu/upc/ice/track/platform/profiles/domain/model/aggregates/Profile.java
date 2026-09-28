@@ -1,8 +1,6 @@
 package pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates;
 
 import lombok.Getter;
-import lombok.Setter;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateProfileCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.events.ProfileCreatedEvent;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.EmailAddress;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.PersonName;
@@ -18,86 +16,59 @@ import java.util.Objects;
 /**
  * Profile aggregate root.
  *
- * <p>Extends {@link AbstractDomainAggregateRoot} to gain domain event registration
- * support. No JPA or persistence annotation is present here - those concerns live
- * exclusively in {@code ProfilePersistenceEntity}.</p>
+ * <p>Holds the attributes shared by every profile. The class is {@code abstract} and
+ * {@code sealed}: the only profiles that can ever exist - and therefore be persisted - are an
+ * {@link OwnerProfile} or a {@link TechnicianProfile}. There is no generic or provisional profile,
+ * and the role is a property of the concrete type, so it can never drift away from the
+ * role specific data.</p>
  *
- * <p>Name, email and role are mandatory; the phone number and the street address are optional,
- * because a profile created as the consequence of a federated registration only knows the
- * identity claims the provider released. The owner completes them afterward.</p>
+ * <p>Extends {@link AbstractDomainAggregateRoot} to gain domain event registration support. No JPA
+ * or persistence annotation is present here - those concerns live exclusively in
+ * {@code ProfilePersistenceEntity}.</p>
  */
 @Getter
-@Setter
-public class Profile extends AbstractDomainAggregateRoot<Profile> {
+public abstract sealed class Profile extends AbstractDomainAggregateRoot<Profile>
+    permits OwnerProfile, TechnicianProfile {
 
-  private Long id;
-  private UserId userId;
-  private PersonName fullName;
-  private EmailAddress email;
-  private ProfileRole role;
+  private final Long id;
+  private final UserId userId;
+  private final PersonName fullName;
+  private final EmailAddress email;
   private Phone phone;
   private StreetAddress address;
-  private String auxiliaryData;
+  private final String auxiliaryData;
 
-  public Profile(Long id, UserId userId, PersonName fullName, EmailAddress email, ProfileRole role, Phone phone, StreetAddress address) {
-    this(id, userId, fullName, email, role, phone, address, null);
-  }
-
-  public Profile(Long id, UserId userId, PersonName fullName, EmailAddress email, ProfileRole role, Phone phone, StreetAddress address, String auxiliaryData) {
+  /**
+   * Builds the shared state of a profile.
+   *
+   * @param id   the persistence identity, or {@code null} for a profile not yet persisted
+   * @param data the validated creation data; required
+   */
+  protected Profile(Long id, ProfileCreationData data) {
+    Objects.requireNonNull(data, "profile creation data must not be null");
     this.id = id;
-    this.userId = userId;
-    this.fullName = Objects.requireNonNull(fullName, "fullName must not be null");
-    this.email = Objects.requireNonNull(email, "email must not be null");
-    this.role = role == null ? ProfileRole.USER : role;
-    this.phone = phone;
-    this.address = address;
-    this.auxiliaryData = auxiliaryData;
-  }
-
-  public Profile(PersonName fullName, EmailAddress email, Phone phone, StreetAddress address) {
-    this(null, null, fullName, email, ProfileRole.USER, phone, address);
-  }
-
-  public Profile(Long userId, String firstName, String lastName, String email, String countryCode, String phoneNumber, String street, String number, String city, String postalCode, String country) {
-    this(null,
-        userId == null ? null : new UserId(userId),
-        new PersonName(firstName, lastName),
-        new EmailAddress(email),
-        ProfileRole.USER,
-        toPhoneOrNull(countryCode, phoneNumber),
-        toStreetAddressOrNull(street, number, city, postalCode, country));
-  }
-
-  public Profile(CreateProfileCommand command) {
-    this(
-        command.userId(),
-        command.firstName(),
-        command.lastName(),
-        command.email(),
-        command.countryCode(),
-        command.phoneNumber(),
-        command.street(),
-        command.number(),
-        command.city(),
-        command.postalCode(),
-        command.country());
+    this.userId = data.userId();
+    this.fullName = data.fullName();
+    this.email = data.email();
+    this.phone = data.phone();
+    this.address = data.address();
+    this.auxiliaryData = data.auxiliaryData();
   }
 
   /**
-   * Creates a profile out of the data supplied by a {@code UserProfileFactory}.
+   * Returns the role this profile plays, as determined by its concrete type.
    *
-   * @param data the validated creation data
-   * @param role the role stamped by the factory
+   * @return the role, never {@code null}
    */
-  public Profile(ProfileCreationData data, ProfileRole role) {
-    this(null,
-        Objects.requireNonNull(data, "profile creation data must not be null").userId(),
-        data.fullName(),
-        data.email(),
-        role,
-        data.phone(),
-        data.address(),
-        data.auxiliaryData());
+  public abstract ProfileRole getRole();
+
+  /**
+   * Returns the name of the role this profile plays.
+   *
+   * @return the role name, never {@code null}
+   */
+  public String getRoleName() {
+    return getRole().name();
   }
 
   /**
@@ -112,74 +83,13 @@ public class Profile extends AbstractDomainAggregateRoot<Profile> {
   }
 
   /**
-   * Binds this profile to a platform account.
-   *
-   * <p>Only a profile that is not yet linked may be bound, so an established ownership can never
-   * be silently transferred to another account.</p>
-   *
-   * @param userId identifier of the account to bind this profile to; required
-   * @throws IllegalStateException when the profile already belongs to a different account
-   */
-  public void linkToUser(UserId userId) {
-    Objects.requireNonNull(userId, "userId must not be null");
-    if (this.userId != null && !this.userId.equals(userId)) {
-      throw new IllegalStateException("Profile %s already belongs to another user".formatted(id));
-    }
-    this.userId = userId;
-  }
-
-  /**
    * Replaces the contact details of this profile.
    *
-   * @param phone   the new phone number, may be {@code null} to clear it
-   * @param address the new street address, may be {@code null} to clear it
+   * @param phone   the new phone number; required
+   * @param address the new street address; required
    */
   public void updateContactDetails(Phone phone, StreetAddress address) {
-    this.phone = phone;
-    this.address = address;
+    this.phone = Objects.requireNonNull(phone, "phone must not be null");
+    this.address = Objects.requireNonNull(address, "address must not be null");
   }
-
-  /**
-   * Returns the name of the role this profile plays.
-   *
-   * @return the role name, never {@code null}
-   */
-  public String getRoleName() {
-    return role == null ? ProfileRole.USER.name() : role.name();
-  }
-
-  /**
-   * Builds a phone number, tolerating the absence of contact details.
-   *
-   * @param countryCode the country code
-   * @param phoneNumber the phone number
-   * @return the phone number, or {@code null} when either component is missing
-   */
-  private static Phone toPhoneOrNull(String countryCode, String phoneNumber) {
-    if (countryCode == null || countryCode.isBlank() || phoneNumber == null || phoneNumber.isBlank()) {
-      return null;
-    }
-    return new Phone(countryCode, phoneNumber);
-  }
-
-  /**
-   * Builds a street address, tolerating the absence of contact details.
-   *
-   * @param street the street name
-   * @param number the street number
-   * @param city the city
-   * @param postalCode the postal code
-   * @param country the country
-   * @return the street address, or {@code null} when any required component is missing
-   */
-  private static StreetAddress toStreetAddressOrNull(String street, String number, String city, String postalCode, String country) {
-    if (street == null || street.isBlank()
-        || city == null || city.isBlank()
-        || postalCode == null || postalCode.isBlank()
-        || country == null || country.isBlank()) {
-      return null;
-    }
-    return new StreetAddress(street, number, city, postalCode, country);
-  }
-
 }

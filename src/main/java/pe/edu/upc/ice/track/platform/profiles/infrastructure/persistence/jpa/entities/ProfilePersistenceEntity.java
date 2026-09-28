@@ -13,6 +13,11 @@ import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entit
 
 /**
  * JPA persistence entity for profiles.
+ *
+ * <p>Both concrete profiles share this single table. The {@code role} column is the discriminator
+ * the assembler uses to reconstitute an {@code OwnerProfile} or a {@code TechnicianProfile}; the
+ * role specific columns are only populated for their own role, and the domain model refuses to
+ * build a profile whose role specific data is missing.</p>
  */
 @Getter
 @Setter
@@ -24,7 +29,7 @@ public class ProfilePersistenceEntity extends AuditableAbstractPersistenceEntity
    * Identifier of the IAM account this profile belongs to. Stored as a plain column, never as a
    * foreign key association: the {@code profiles} context must not reference an IAM entity.
    */
-  @Column(name = "user_id", unique = true)
+  @Column(name = "user_id", nullable = false, unique = true)
   private Long userId;
 
   @Embedded
@@ -38,13 +43,31 @@ public class ProfilePersistenceEntity extends AuditableAbstractPersistenceEntity
   private EmailAddress emailAddress;
 
   @Enumerated(EnumType.STRING)
-  @Column(name = "role", length = 20)
-  private ProfileRole role = ProfileRole.USER;
+  @Column(name = "role", nullable = false, length = 20)
+  private ProfileRole role;
 
   /**
-   * Optional opaque annotation supplied by the bounded context that requested the profile, such
-   * as the avatar URL released by an identity provider. Stored verbatim and never interpreted
-   * by the persistence layer.
+   * Taxpayer registration number. Populated for {@link ProfileRole#OWNER} profiles only.
+   */
+  @Column(name = "ruc")
+  private Long ruc;
+
+  /**
+   * Speciality of the technician. Populated for {@link ProfileRole#TECHNICIAN} profiles only.
+   */
+  @Column(name = "speciality", length = 100)
+  private String speciality;
+
+  /**
+   * Certification number of the technician. Populated for {@link ProfileRole#TECHNICIAN}
+   * profiles only.
+   */
+  @Column(name = "certification_number", length = 50)
+  private String certificationNumber;
+
+  /**
+   * Optional opaque annotation supplied by the bounded context that requested the profile.
+   * Stored verbatim and never interpreted by the persistence layer.
    */
   @Column(name = "auxiliary_data", length = 512)
   private String auxiliaryData;

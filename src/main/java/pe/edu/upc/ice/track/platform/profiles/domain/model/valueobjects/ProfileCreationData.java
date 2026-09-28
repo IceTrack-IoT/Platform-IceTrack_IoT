@@ -7,33 +7,30 @@ import java.util.Objects;
 /**
  * ProfileCreationData Value Object.
  *
- * <p>Carries everything a {@link pe.edu.upc.ice.track.platform.profiles.domain.model.factories.UserProfileFactory}
- * needs to instantiate a {@link pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Profile}.
- * It is the translation target of the Anti-Corruption Layer: the
+ * <p>Carries the attributes shared by every concrete profile, and is what a
+ * {@link pe.edu.upc.ice.track.platform.profiles.domain.model.factories.UserProfileFactory} receives
+ * alongside the role specific data. It is the translation target of the Anti-Corruption Layer: the
  * {@link pe.edu.upc.ice.track.platform.profiles.interfaces.acl.ProfilesContextFacade}
  * implementation maps the agnostic values it receives from other bounded contexts onto
  * {@link UserId}, {@link PersonName}, {@link EmailAddress}, {@link Phone} and
- * {@link ProfileRole} before building this record, so no foreign type ever reaches the profiles
+ * {@link StreetAddress} before building this record, so no foreign type ever reaches the profiles
  * domain.</p>
  *
- * <p>Contact details are optional. A profile born out of a federated registration only knows the
- * identity claims the provider released; the owner completes the phone number and the address
- * later through the profiles API.</p>
+ * <p>Every profile is born out of a completed onboarding form, so the contact details are
+ * mandatory.</p>
  *
  * @param userId        identifier of the account the profile belongs to; required
  * @param fullName      the profile owner's name; required
  * @param email         the profile owner's email address; required
- * @param role          the role the profile plays; required
- * @param phone         the profile owner's phone number; may be {@code null}
- * @param address       the profile owner's street address; may be {@code null}
- * @param auxiliaryData an optional opaque annotation supplied by the calling context, such as the
- *                      avatar URL released by an identity provider; may be {@code null}
+ * @param phone         the profile owner's phone number; required
+ * @param address       the profile owner's street address; required
+ * @param auxiliaryData an optional opaque annotation supplied by the calling context; may be
+ *                      {@code null}
  */
 public record ProfileCreationData(
     UserId userId,
     PersonName fullName,
     EmailAddress email,
-    ProfileRole role,
     Phone phone,
     StreetAddress address,
     String auxiliaryData) {
@@ -43,21 +40,24 @@ public record ProfileCreationData(
    */
   public ProfileCreationData {
     Objects.requireNonNull(userId, "userId must not be null");
+    Objects.requireNonNull(userId.userId(), "userId must carry an identifier");
     Objects.requireNonNull(fullName, "fullName must not be null");
     Objects.requireNonNull(email, "email must not be null");
-    Objects.requireNonNull(role, "role must not be null");
+    Objects.requireNonNull(phone, "phone must not be null");
+    Objects.requireNonNull(address, "address must not be null");
     auxiliaryData = auxiliaryData == null || auxiliaryData.isBlank() ? null : auxiliaryData.trim();
   }
 
   /**
-   * Creates the minimal creation data released by a federated identity provider.
+   * Creates the creation data without an auxiliary annotation.
    *
    * @param userId   identifier of the account the profile belongs to
    * @param fullName the profile owner's name
    * @param email    the profile owner's email address
-   * @param role     the role the profile plays
+   * @param phone    the profile owner's phone number
+   * @param address  the profile owner's street address
    */
-  public ProfileCreationData(UserId userId, PersonName fullName, EmailAddress email, ProfileRole role) {
-    this(userId, fullName, email, role, null, null, null);
+  public ProfileCreationData(UserId userId, PersonName fullName, EmailAddress email, Phone phone, StreetAddress address) {
+    this(userId, fullName, email, phone, address, null);
   }
 }

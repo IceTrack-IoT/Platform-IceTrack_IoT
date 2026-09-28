@@ -1,6 +1,8 @@
 package pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform;
 
+import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.OwnerProfile;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Profile;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.TechnicianProfile;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.ProfileResource;
 
 /**
@@ -10,25 +12,35 @@ public class ProfileResourceFromEntityAssembler {
   /**
    * Converts a Profile entity to a ProfileResource.
    *
-   * <p>Contact details are optional on a profile, so the phone number and the street address are
-   * rendered as {@code null} when the owner has not supplied them yet.</p>
+   * <p>Only the role specific fields of the concrete profile are populated; the others are
+   * rendered as {@code null}.</p>
    *
    * @param entity The {@link Profile} entity to convert.
    * @return The {@link ProfileResource} resource.
    */
   public static ProfileResource toResourceFromEntity(Profile entity) {
-    var userId = entity.getUserId();
-    var phone = entity.getPhone();
-    var address = entity.getAddress();
+    Long ruc = null;
+    String speciality = null;
+    String certificationNumber = null;
+    switch (entity) {
+      case OwnerProfile ownerProfile -> ruc = ownerProfile.getRuc().value();
+      case TechnicianProfile technicianProfile -> {
+        speciality = technicianProfile.getQualification().speciality();
+        certificationNumber = technicianProfile.getQualification().certificationNumber();
+      }
+    }
     return new ProfileResource(
         entity.getId(),
-        userId == null ? null : userId.userId(),
+        entity.getUserId().userId(),
         entity.getFullName().getFullName(),
         entity.getEmail().getAddress(),
         entity.getRoleName(),
-        phone == null ? null : phone.getFullNumber(),
-        address == null ? null : address.getStreetAddress(),
-        entity.getAuxiliaryData()
+        entity.getPhone().getFullNumber(),
+        entity.getAddress().getStreetAddress(),
+        entity.getAuxiliaryData(),
+        ruc,
+        speciality,
+        certificationNumber
     );
   }
 }

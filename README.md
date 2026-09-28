@@ -28,7 +28,8 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 
 ## Features
 
-- **Auth built-in** — local sign-up/sign-in + Google OIDC `id_token` exchange, JWT bearer auth (JJWT 0.13.0)
+- **Auth built-in** — local sign-up/sign-in + Google OIDC deferred registration (`/google/verify` → `/google/complete-registration/{owner|technician}`), role explicit local sign-up (`/sign-up/{owner|technician}`), JWT bearer auth with a `role` claim (JJWT 0.13.0)
+- **Immutable roles** — every account is `OWNER_ROLE` or `TECHNICIAN_ROLE`, chosen once at registration, and gets its `OwnerProfile` / `TechnicianProfile` in the same transaction
 - **IAM + Profiles** bounded contexts (`/api/v1/authentication`, `/api/v1/users`, `/api/v1/roles`, `/api/v1/profiles`)
 - **OpenAPI first** — springdoc-openapi 3.1.1 with Swagger UI
 - **Postgres persistence** — Spring Data JPA/Hibernate with custom snake-case + pluralized naming strategy

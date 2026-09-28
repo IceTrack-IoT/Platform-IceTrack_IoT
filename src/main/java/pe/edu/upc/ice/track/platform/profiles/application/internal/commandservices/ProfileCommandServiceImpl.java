@@ -5,14 +5,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.ProfileCommandService;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Profile;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateProfileCommand;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateUserProfileCommand;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.LinkProfileToUserCommand;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.factories.UserProfileFactory;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.EmailAddress;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateOwnerProfileCommand;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateTechnicianProfileCommand;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.factories.OwnerProfileFactory;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.factories.TechnicianProfileFactory;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.ProfileCreationData;
 import pe.edu.upc.ice.track.platform.profiles.domain.repositories.ProfileRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
+
+import java.util.function.Supplier;
 
 /**
  * Profile Command Service Implementation
@@ -24,6 +26,8 @@ public class ProfileCommandServiceImpl implements ProfileCommandService {
   private static final String PROFILE_RESOURCE = "Profile";
 
   private final ProfileRepository profileRepository;
+  private final OwnerProfileFactory ownerProfileFactory = new OwnerProfileFactory();
+  private final TechnicianProfileFactory technicianProfileFactory = new TechnicianProfileFactory();
 
   /**
    * Constructor
@@ -37,34 +41,31 @@ public class ProfileCommandServiceImpl implements ProfileCommandService {
   // inherited javadoc
   @Override
   @Transactional
-  public Result<Profile, ApplicationError> handle(CreateProfileCommand command) {
-    try {
-      var emailAddress = new EmailAddress(command.email());
-      if (profileRepository.existsByEmailAddress(emailAddress)) {
-        return Result.failure(ApplicationError.conflict(
-            PROFILE_RESOURCE,
-            "A profile with email address '%s' already exists".formatted(command.email())));
-      }
-
-      var profile = new Profile(command);
-      var savedProfile = profileRepository.save(profile);
-      return Result.success(savedProfile);
-    } catch (IllegalArgumentException e) {
-      return Result.failure(ApplicationError.validationError(PROFILE_RESOURCE, e.getMessage()));
-    } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected(
-          "Profile creation",
-          e.getMessage()));
-    }
+  public Result<Profile, ApplicationError> handle(CreateOwnerProfileCommand command) {
+    return createProfile(
+        command.profileCreationData(),
+        () -> ownerProfileFactory.create(command.profileCreationData(), command.ruc()));
   }
 
   // inherited javadoc
   @Override
   @Transactional
-  public Result<Profile, ApplicationError> handle(CreateUserProfileCommand command) {
-    try {
-      var creationData = command.profileCreationData();
+  public Result<Profile, ApplicationError> handle(CreateTechnicianProfileCommand command) {
+    return createProfile(
+        command.profileCreationData(),
+        () -> technicianProfileFactory.create(command.profileCreationData(), command.qualification()));
+  }
 
+  /**
+   * Persists the profile built by a factory, once the account and the email are known to be free.
+   *
+   * @param creationData the shared creation data, used for the uniqueness checks
+   * @param profileBuilder builds the concrete profile through the matching factory
+   * @return the persisted profile, or the reason it could not be created
+   */
+  private Result<Profile, ApplicationError> createProfile(
+      ProfileCreationData creationData, Supplier<? extends Profile> profileBuilder) {
+    try {
       if (profileRepository.existsByUserId(creationData.userId())) {
         return Result.failure(ApplicationError.conflict(
             PROFILE_RESOURCE,
@@ -76,41 +77,14 @@ public class ProfileCommandServiceImpl implements ProfileCommandService {
             "A profile with email address '%s' already exists".formatted(creationData.email().address())));
       }
 
-      // The role decides which profile is built; the caller never branches on it itself.
-      var profileFactory = UserProfileFactory.forRole(creationData.role());
-      var savedProfile = profileRepository.save(profileFactory.createFrom(creationData));
+      var savedProfile = profileRepository.save(profileBuilder.get());
       log.info("Created {} profile {} for user {}",
-          profileFactory.supportedRole(), savedProfile.getId(), creationData.userId().userId());
+          savedProfile.getRole(), savedProfile.getId(), creationData.userId().userId());
       return Result.success(savedProfile);
     } catch (IllegalArgumentException e) {
       return Result.failure(ApplicationError.validationError(PROFILE_RESOURCE, e.getMessage()));
     } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected(
-          "User profile creation",
-          e.getMessage()));
-    }
-  }
-
-  // inherited javadoc
-  @Override
-  @Transactional
-  public Result<Profile, ApplicationError> handle(LinkProfileToUserCommand command) {
-    var profile = profileRepository.findById(command.profileId());
-    if (profile.isEmpty()) {
-      return Result.failure(ApplicationError.notFound(PROFILE_RESOURCE, command.profileId().toString()));
-    }
-    try {
-      var linkedProfile = profile.get();
-      linkedProfile.linkToUser(command.userId());
-      var savedProfile = profileRepository.save(linkedProfile);
-      log.info("Linked profile {} to user {}", savedProfile.getId(), command.userId().userId());
-      return Result.success(savedProfile);
-    } catch (IllegalStateException e) {
-      return Result.failure(ApplicationError.conflict(PROFILE_RESOURCE, e.getMessage()));
-    } catch (IllegalArgumentException e) {
-      return Result.failure(ApplicationError.validationError(PROFILE_RESOURCE, e.getMessage()));
-    } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Profile linking", e.getMessage()));
+      return Result.failure(ApplicationError.unexpected("Profile creation", e.getMessage()));
     }
   }
 }

@@ -5,18 +5,21 @@ import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.ProfileC
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.ProfileRole;
 
 /**
- * Domain contract for building a {@link Profile} that matches a given {@link ProfileRole}.
+ * Domain contract for building a concrete {@link Profile}.
  *
- * <p>Profile instantiation is role driven: an owner and a technician are both profiles, but they
- * are born with different responsibilities inside the {@code profiles} bounded context. Keeping
- * the decision behind this contract means callers - in particular the listener reacting to an
- * IAM registration - never branch on a role themselves; they resolve the factory through
- * {@link #forRole(ProfileRole)} and delegate.</p>
+ * <p>Every profile shares the attributes carried by {@link ProfileCreationData}, but each role
+ * requires its own data - a taxpayer number for an owner, a qualification for a technician. The
+ * factory is therefore typed by both the profile it builds and the role specific data it needs,
+ * so a technician can never be built out of an owner's data, and no generic profile can be built
+ * at all.</p>
  *
  * <p>Implementations are deliberately free of any framework annotation: they are pure domain
  * objects, instantiable and testable without a Spring context.</p>
+ *
+ * @param <P> the concrete profile type the factory builds
+ * @param <A> the role specific data the factory requires
  */
-public interface UserProfileFactory {
+public interface UserProfileFactory<P extends Profile, A> {
 
   /**
    * The role this factory produces profiles for.
@@ -26,25 +29,11 @@ public interface UserProfileFactory {
   ProfileRole supportedRole();
 
   /**
-   * Builds a profile from the supplied creation data.
+   * Builds a profile from the supplied shared and role specific data.
    *
-   * @param data the validated creation data
+   * @param data             the validated shared creation data; required
+   * @param roleSpecificData the validated data this role carries; required
    * @return the newly built, not yet persisted profile
    */
-  Profile createFrom(ProfileCreationData data);
-
-  /**
-   * Resolves the factory responsible for a role.
-   *
-   * @param role the role to build a profile for; {@code null} resolves to {@link ProfileRole#USER}
-   * @return the matching factory, never {@code null}
-   */
-  static UserProfileFactory forRole(ProfileRole role) {
-    var resolvedRole = role == null ? ProfileRole.USER : role;
-    return switch (resolvedRole) {
-      case OWNER -> new OwnerProfileFactory();
-      case TECHNICIAN -> new TechnicianProfileFactory();
-      case USER -> new StandardProfileFactory();
-    };
-  }
+  P create(ProfileCreationData data, A roleSpecificData);
 }

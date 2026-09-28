@@ -6,15 +6,19 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.ProfileCommandService;
 import pe.edu.upc.ice.track.platform.profiles.application.queryservices.ProfileQueryService;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Profile;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateUserProfileCommand;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.LinkProfileToUserCommand;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateOwnerProfileCommand;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateTechnicianProfileCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetProfileByEmailQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetProfileByUserIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.EmailAddress;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.PersonName;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Phone;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.ProfileCreationData;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.ProfileRole;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Ruc;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.StreetAddress;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.TechnicianQualification;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 
 import java.util.Optional;
@@ -23,35 +27,47 @@ import java.util.Optional;
  * ACL facade that exposes Profiles bounded context capabilities to other contexts.
  *
  * <p>This class <em>is</em> the Anti-Corruption Layer of the {@code profiles} context. Every
- * parameter it accepts and every value it returns is a primitive or a {@link String}: no profiles
- * aggregate, value object, command, repository or JPA entity appears in its public signature, and
- * no foreign type is accepted either. Callers depend on this class alone and must never reach
- * into {@code profiles.domain.*}, {@code profiles.application.*} or
+ * parameter it accepts and every value it returns is a primitive, a boxed primitive or a
+ * {@link String}: no profiles aggregate, value object, command, repository or JPA entity appears
+ * in its public signature, and no foreign type is accepted either. Callers depend on this class
+ * alone and must never reach into {@code profiles.domain.*}, {@code profiles.application.*} or
  * {@code profiles.infrastructure.*}.</p>
  *
  * <p>Inside, it is the single place where values arriving from another bounded context are
  * translated into the profiles domain model:</p>
  * <ol>
  *   <li>raw parameters are wrapped into value objects - {@link UserId}, {@link PersonName},
- *       {@link EmailAddress}, {@link Phone}, {@link ProfileRole} - each of which enforces its own
- *       invariants at construction time;</li>
- *   <li>the result is bundled into a {@link ProfileCreationData};</li>
- *   <li>instantiation is delegated to the {@code UserProfileFactory} that matches the role, which
- *       the command service resolves, and the aggregate is persisted through the
- *       {@code ProfileRepository}.</li>
+ *       {@link EmailAddress}, {@link Phone}, {@link StreetAddress}, {@link Ruc},
+ *       {@link TechnicianQualification} - each of which enforces its own invariants at
+ *       construction time;</li>
+ *   <li>the shared attributes are bundled into a {@link ProfileCreationData};</li>
+ *   <li>a role specific command is dispatched to the {@link ProfileCommandService}, which builds
+ *       the concrete profile through the {@code OwnerProfileFactory} or the
+ *       {@code TechnicianProfileFactory} and persists it through the {@code ProfileRepository}.</li>
  * </ol>
  *
- * <p>Translation failures never escape: a malformed email or an unusable name is reported as
- * {@code 0L}, because the calling context has no vocabulary for a profiles domain exception.</p>
+ * <p>Failures are reported with JDK exceptions only, so the calling context never needs a
+ * profiles type to understand them:</p>
+ * <ul>
+ *   <li>{@link IllegalArgumentException} - a supplied value violates a profiles invariant
+ *       (malformed email, 10 digit RUC, blank speciality, incomplete address...);</li>
+ *   <li>{@link IllegalStateException} - the profile conflicts with an existing one (the account
+ *       or the email already has a profile);</li>
+ *   <li>any other {@link RuntimeException} - an unexpected failure.</li>
+ * </ul>
+ * <p>Each create method is {@code @Transactional} with the default propagation, so it joins the
+ * caller's transaction: a registration and its profile commit or roll back together.</p>
  */
 @Service
 @Slf4j
 public class ProfilesContextFacade {
 
   /**
-   * Returned whenever a profile could neither be found nor created.
+   * Returned by the lookups whenever no profile matches.
    */
   private static final Long NO_PROFILE = 0L;
+
+  private static final String CONFLICT_SUFFIX = "_CONFLICT";
 
   private final ProfileCommandService profileCommandService;
   private final ProfileQueryService profileQueryService;
@@ -62,53 +78,60 @@ public class ProfilesContextFacade {
   }
 
   /**
-   * Creates the profile of a platform account, or returns the existing one.
+   * Creates the {@code OwnerProfile} of a platform account.
    *
-   * <p>The operation is idempotent: when a profile is already linked to {@code userId} - or
-   * already registered under {@code email} - its identifier is returned and nothing is created.
-   * This is what lets an identity context call it on every sign-in without duplicating data.</p>
-   *
-   * @param userId        identifier of the account the profile belongs to; required
-   * @param fullName      display name of the account holder; required. It is split into a given
-   *                      and a family name by the profiles context
-   * @param email         email address of the account holder; required, and must be well formed
-   * @param phone         phone number of the account holder; may be {@code null}
-   * @param role          role the profile plays, accepted either as a bare profile role
-   *                      ({@code OWNER}) or with the calling context's suffix
-   *                      ({@code OWNER_ROLE}); an unknown value falls back to the default role
-   * @param auxiliaryData optional opaque annotation stored verbatim on the profile, such as the
-   *                      avatar URL released by an identity provider; may be {@code null}
-   * @return the profile identifier, or {@code 0L} when the profile could neither be found nor
-   *         created because the supplied values violate a profiles domain constraint
+   * @param userId     identifier of the account the profile belongs to; required
+   * @param fullName   display name of the account holder; required. It is split into a given and
+   *                   a family name by the profiles context
+   * @param email      email address of the account holder; required and well formed
+   * @param phone      phone number of the account holder; required. A leading {@code +NN }
+   *                   prefix separated by a space is read as the country code
+   * @param street     street of the account holder's address; required
+   * @param number     street number or apartment; may be {@code null}
+   * @param city       city of the address; required
+   * @param postalCode postal code of the address; required
+   * @param country    country of the address; required
+   * @param ruc        the owner's 11 digit taxpayer registration number; required
+   * @return the identifier of the created profile, never {@code null}
+   * @throws IllegalArgumentException when a value violates a profiles invariant
+   * @throws IllegalStateException    when the account or the email already has a profile
    */
   @Transactional
-  public Long createProfile(Long userId, String fullName, String email, String phone, String role, String auxiliaryData) {
-    if (userId == null) {
-      log.warn("Refusing to create a profile without a user identifier");
-      return NO_PROFILE;
-    }
+  public Long createOwnerProfile(Long userId, String fullName, String email, String phone,
+                                 String street, String number, String city, String postalCode, String country,
+                                 Long ruc) {
+    var creationData = toProfileCreationData(userId, fullName, email, phone, street, number, city, postalCode, country);
+    var command = new CreateOwnerProfileCommand(creationData, new Ruc(ruc));
+    return toProfileIdOrThrow(profileCommandService.handle(command));
+  }
 
-    // Idempotency: an identity context calls this on every sign-in, not only on registration.
-    var existingProfileId = fetchExistingProfileId(userId, email);
-    if (existingProfileId.isPresent()) {
-      return existingProfileId.get();
-    }
-
-    ProfileCreationData creationData;
-    try {
-      creationData = toProfileCreationData(userId, fullName, email, phone, role, auxiliaryData);
-    } catch (IllegalArgumentException | NullPointerException exception) {
-      log.warn("Refusing to create the profile of user {}: {}", userId, exception.getMessage());
-      return NO_PROFILE;
-    }
-
-    var result = profileCommandService.handle(new CreateUserProfileCommand(creationData));
-    return result.toOptional()
-        .map(Profile::getId)
-        .orElseGet(() -> {
-          log.warn("Could not create the profile of user {}", userId);
-          return NO_PROFILE;
-        });
+  /**
+   * Creates the {@code TechnicianProfile} of a platform account.
+   *
+   * @param userId              identifier of the account the profile belongs to; required
+   * @param fullName            display name of the account holder; required
+   * @param email               email address of the account holder; required and well formed
+   * @param phone               phone number of the account holder; required
+   * @param street              street of the account holder's address; required
+   * @param number              street number or apartment; may be {@code null}
+   * @param city                city of the address; required
+   * @param postalCode          postal code of the address; required
+   * @param country             country of the address; required
+   * @param speciality          the technician's speciality; required
+   * @param certificationNumber the number of the technician's certification; required
+   * @return the identifier of the created profile, never {@code null}
+   * @throws IllegalArgumentException when a value violates a profiles invariant
+   * @throws IllegalStateException    when the account or the email already has a profile
+   */
+  @Transactional
+  public Long createTechnicianProfile(Long userId, String fullName, String email, String phone,
+                                      String street, String number, String city, String postalCode, String country,
+                                      String speciality, String certificationNumber) {
+    var creationData = toProfileCreationData(userId, fullName, email, phone, street, number, city, postalCode, country);
+    var command = new CreateTechnicianProfileCommand(
+        creationData,
+        new TechnicianQualification(speciality, certificationNumber));
+    return toProfileIdOrThrow(profileCommandService.handle(command));
   }
 
   /**
@@ -140,63 +163,55 @@ public class ProfilesContextFacade {
   }
 
   /**
-   * Looks for a profile that already covers this registration, by account first and by email
-   * second.
+   * Translates the agnostic parameters shared by every profile into the profiles domain model.
    *
-   * <p>A match on the account is returned as is. A match on the email means the profile was
-   * created before its owner registered, so it is bound to the account before being returned -
-   * without that link the email lookup would have to be repeated on every sign-in, and the
-   * profile would stay ownerless. A profile already owned by a different account is never
-   * handed over; it is reported as absent so the caller fails instead of adopting it.</p>
-   *
-   * @param userId identifier of the account
-   * @param email  email address of the account holder, may be {@code null}
-   * @return the existing profile identifier, or empty when the account has no profile yet
-   */
-  private Optional<Long> fetchExistingProfileId(Long userId, String email) {
-    var accountUserId = new UserId(userId);
-    var profileByUserId = profileQueryService.handle(new GetProfileByUserIdQuery(accountUserId));
-    if (profileByUserId.isPresent()) {
-      return profileByUserId.map(Profile::getId);
-    }
-
-    var profileByEmail = toEmailAddressOrEmpty(email)
-        .flatMap(emailAddress -> profileQueryService.handle(new GetProfileByEmailQuery(emailAddress)));
-    if (profileByEmail.isEmpty()) {
-      return Optional.empty();
-    }
-
-    var linkResult = profileCommandService.handle(
-        new LinkProfileToUserCommand(profileByEmail.get().getId(), accountUserId));
-    if (linkResult.isFailure()) {
-      log.warn("A profile already registered under the email of user {} could not be linked to it", userId);
-      return Optional.empty();
-    }
-    return linkResult.toOptional().map(Profile::getId);
-  }
-
-  /**
-   * Translates the agnostic parameters of the facade into the profiles domain model.
-   *
-   * @param userId        identifier of the account the profile belongs to
-   * @param fullName      display name of the account holder
-   * @param email         email address of the account holder
-   * @param phone         phone number of the account holder, may be {@code null}
-   * @param role          role name supplied by the calling context
-   * @param auxiliaryData optional opaque annotation
    * @return the validated creation data
    * @throws IllegalArgumentException when a value object constraint is violated
    */
-  private ProfileCreationData toProfileCreationData(
-      Long userId, String fullName, String email, String phone, String role, String auxiliaryData) {
+  private static ProfileCreationData toProfileCreationData(
+      Long userId, String fullName, String email, String phone,
+      String street, String number, String city, String postalCode, String country) {
+    if (userId == null) {
+      throw new IllegalArgumentException("A profile cannot be created without a user identifier");
+    }
+    if (email == null) {
+      throw new IllegalArgumentException("Email address must not be null or blank");
+    }
     return new ProfileCreationData(
         new UserId(userId),
         PersonName.fromDisplayName(fullName),
-        new EmailAddress(email),
-        ProfileRole.fromRoleName(role),
-        toPhoneOrNull(phone),
-        null,
-        auxiliaryData);
+        new EmailAddress(email.trim()),
+        toPhone(phone),
+        new StreetAddress(trimOrNull(street), trimOrNull(number), trimOrNull(city), trimOrNull(postalCode), trimOrNull(country)));
+  }
+
+  /**
+   * Unwraps the identifier of a created profile, or reports the failure with a JDK exception the
+   * calling context can understand without any profiles type.
+   *
+   * @param result the outcome of the create command
+   * @return the identifier of the created profile
+   * @throws IllegalStateException    when the profile conflicts with an existing one
+   * @throws IllegalArgumentException when the profile violates a profiles invariant
+   * @throws RuntimeException         when the profile could not be created for any other reason
+   */
+  private static Long toProfileIdOrThrow(Result<Profile, ApplicationError> result) {
+    return switch (result) {
+      case Result.Success<Profile, ApplicationError> success -> success.value().getId();
+      case Result.Failure<Profile, ApplicationError> failure -> throw toException(failure.error());
+    };
+  }
+
+  private static RuntimeException toException(ApplicationError error) {
+    var reason = error.details() == null ? error.message() : error.details();
+    log.warn("The profiles context rejected a profile creation: {}", reason);
+    if (error.code().endsWith(CONFLICT_SUFFIX)) {
+      return new IllegalStateException(reason);
+    }
+    if ("VALIDATION_ERROR".equals(error.code())) {
+      return new IllegalArgumentException(reason);
+    }
+    return new RuntimeException(reason);
   }
 
   /**
@@ -206,7 +221,7 @@ public class ProfilesContextFacade {
    * @param email the raw email address
    * @return the email address, or empty when it is missing or malformed
    */
-  private Optional<EmailAddress> toEmailAddressOrEmpty(String email) {
+  private static Optional<EmailAddress> toEmailAddressOrEmpty(String email) {
     if (email == null || email.isBlank()) return Optional.empty();
     try {
       return Optional.of(new EmailAddress(email.trim()));
@@ -223,16 +238,23 @@ public class ProfilesContextFacade {
    * country code. A leading {@code +NN} prefix is split off when present, otherwise the whole
    * value is kept as the national number with an unknown country code.</p>
    *
-   * @param phone the raw phone number, may be {@code null}
-   * @return the phone number, or {@code null} when none was supplied
+   * @param phone the raw phone number; required
+   * @return the phone number
+   * @throws IllegalArgumentException when the phone number is missing
    */
-  private static Phone toPhoneOrNull(String phone) {
-    if (phone == null || phone.isBlank()) return null;
+  private static Phone toPhone(String phone) {
+    if (phone == null || phone.isBlank()) {
+      throw new IllegalArgumentException("Phone number must not be null or blank");
+    }
     var trimmed = phone.trim();
     var separatorIndex = trimmed.indexOf(' ');
     if (trimmed.startsWith("+") && separatorIndex > 1 && separatorIndex < trimmed.length() - 1) {
       return new Phone(trimmed.substring(0, separatorIndex), trimmed.substring(separatorIndex + 1).trim());
     }
     return Phone.withoutCountryCode(trimmed);
+  }
+
+  private static String trimOrNull(String value) {
+    return value == null || value.isBlank() ? null : value.trim();
   }
 }

@@ -6,12 +6,13 @@ package pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.
 public interface TokenService {
 
   /**
-   * Generates a token for a username.
+   * Generates a token for an account.
    *
-   * @param username principal username
+   * @param username principal username, stored as the token subject
+   * @param role     the account's definitive role name, stored as the {@code role} claim
    * @return signed token value
    */
-  String generateToken(String username);
+  String generateToken(String username, String role);
 
   /**
    * Extracts the username from a token.

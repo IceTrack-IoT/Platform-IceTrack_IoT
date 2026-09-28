@@ -7,74 +7,42 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import pe.edu.upc.ice.track.platform.profiles.application.commandservices.ProfileCommandService;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.profiles.application.queryservices.ProfileQueryService;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetAllProfilesQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetProfileByIdQuery;
-import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.CreateProfileResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.ProfileResource;
-import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.CreateProfileCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.ProfileResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
-import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 import java.util.Collections;
 import java.util.List;
 
 /**
- * REST controller that exposes profile resources and profile retrieval endpoints.
+ * REST controller that exposes profile retrieval endpoints.
+ *
+ * <p>There is deliberately no creation endpoint: a profile is only ever created together with
+ * its platform account, through the IAM registration flows and the profiles ACL facade, so that
+ * no profile can exist without an account or without a definitive role.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/profiles", produces = MediaType.APPLICATION_JSON_VALUE)
 @Tag(name = "Profiles", description = "Profile management endpoints")
 public class ProfilesController {
-  private final ProfileCommandService profileCommandService;
   private final ProfileQueryService profileQueryService;
 
   /**
    * Constructor
-   * @param profileCommandService The {@link ProfileCommandService} instance
    * @param profileQueryService The {@link ProfileQueryService} instance
    */
-  public ProfilesController(ProfileCommandService profileCommandService, ProfileQueryService profileQueryService) {
-    this.profileCommandService = profileCommandService;
+  public ProfilesController(ProfileQueryService profileQueryService) {
     this.profileQueryService = profileQueryService;
-  }
-
-  /**
-   * Create a new profile
-   * @param resource The {@link CreateProfileResource} instance
-   * @return A {@link ProfileResource} resource for the created profile
-   */
-  @PostMapping
-  @Operation(
-      summary = "Create a new profile",
-      description = "Creates a new user profile with contact and address information."
-  )
-  @ApiResponses(value = {
-      @ApiResponse(
-          responseCode = "201",
-          description = "Profile created successfully",
-          content = @Content(schema = @Schema(implementation = ProfileResource.class))
-      ),
-      @ApiResponse(responseCode = "400", description = "Invalid input data"),
-      @ApiResponse(responseCode = "409", description = "Conflict - profile already exists")
-  })
-  public ResponseEntity<?> createProfile(@Valid @RequestBody CreateProfileResource resource) {
-    var createProfileCommand = CreateProfileCommandFromResourceAssembler.toCommandFromResource(resource);
-    var result = profileCommandService.handle(createProfileCommand);
-
-    return ResponseEntityAssembler.toResponseEntityFromResult(
-        result,
-        ProfileResourceFromEntityAssembler::toResourceFromEntity,
-        HttpStatus.CREATED
-    );
   }
 
   /**

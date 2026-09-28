@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.DateUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.tokens.jwt.BearerTokenService;
@@ -27,6 +28,7 @@ import java.util.function.Function;
 public class TokenServiceImpl implements BearerTokenService {
   private static final String AUTHORIZATION_PARAMETER_NAME = "Authorization";
   private static final String BEARER_TOKEN_PREFIX = "Bearer ";
+  private static final String ROLE_CLAIM_NAME = "role";
 
   private static final int TOKEN_BEGIN_INDEX = 7;
 
@@ -45,34 +47,43 @@ public class TokenServiceImpl implements BearerTokenService {
    */
   @Override
   public String generateToken(Authentication authentication) {
-    return buildTokenWithDefaultParameters(authentication.getName());
+    var role = authentication.getAuthorities().stream()
+        .map(GrantedAuthority::getAuthority)
+        .findFirst()
+        .orElse(null);
+    return buildTokenWithDefaultParameters(authentication.getName(), role);
   }
 
   /**
-   * This method generates a JWT token from a username
+   * This method generates a JWT token from a username and the account's definitive role
    * @param username the username
+   * @param role the role name, stored as the {@code role} claim
    * @return String the JWT token
    */
-  public String generateToken(String username) {
-    return buildTokenWithDefaultParameters(username);
+  @Override
+  public String generateToken(String username, String role) {
+    return buildTokenWithDefaultParameters(username, role);
   }
 
   /**
-   * This method generates a JWT token from a username and a secret.
+   * This method generates a JWT token from a username, a role and a secret.
    * It uses the default expiration days from the application.properties file.
    * @param username the username
+   * @param role the role name; the claim is omitted when {@code null}
    * @return String the JWT token
    */
-  private String buildTokenWithDefaultParameters(String username) {
+  private String buildTokenWithDefaultParameters(String username, String role) {
     var issuedAt = new Date();
     var expiration = DateUtils.addDays(issuedAt, expirationDays);
     var key = getSigningKey();
-    return Jwts.builder()
+    var builder = Jwts.builder()
         .subject(username)
         .issuedAt(issuedAt)
-        .expiration(expiration)
-        .signWith(key)
-        .compact();
+        .expiration(expiration);
+    if (role != null) {
+      builder.claim(ROLE_CLAIM_NAME, role);
+    }
+    return builder.signWith(key).compact();
   }
 
   /**

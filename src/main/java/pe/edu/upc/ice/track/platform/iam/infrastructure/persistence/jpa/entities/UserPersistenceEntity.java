@@ -7,9 +7,6 @@ import lombok.Setter;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.AuthProvider;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
 
-import java.util.HashSet;
-import java.util.Set;
-
 /**
  * JPA persistence entity for IAM users.
  */
@@ -26,7 +23,7 @@ public class UserPersistenceEntity extends AuditableAbstractPersistenceEntity {
   @Column(name = "password", nullable = false, length = 120)
   private String password;
 
-  @Column(name = "email", unique = true, length = 120)
+  @Column(name = "email", nullable = false, unique = true, length = 120)
   private String email;
 
   /**
@@ -44,9 +41,11 @@ public class UserPersistenceEntity extends AuditableAbstractPersistenceEntity {
   @Column(name = "external_id", unique = true, length = 128)
   private String externalId;
 
-  @ManyToMany(fetch = FetchType.EAGER)
-  @JoinTable(name = "user_roles",
-      joinColumns = @JoinColumn(name = "user_id"),
-      inverseJoinColumns = @JoinColumn(name = "role_id"))
-  private Set<RolePersistenceEntity> roles = new HashSet<>();
+  /**
+   * The role of the account. Mapped as a mandatory many-to-one rather than a
+   * collection so that the schema itself forbids an account with no role or with several roles.
+   */
+  @ManyToOne(fetch = FetchType.EAGER, optional = false)
+  @JoinColumn(name = "role_id", nullable = false)
+  private RolePersistenceEntity role;
 }

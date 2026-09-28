@@ -2,14 +2,23 @@ package pe.edu.upc.ice.track.platform.iam.application.commandservices;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
-import pe.edu.upc.ice.track.platform.iam.domain.model.commands.ExchangeGoogleTokenCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleOwnerRegistrationCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleTechnicianRegistrationCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByGoogleCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByLocalCommand;
-import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpByLocalCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpOwnerCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpTechnicianCommand;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
 /**
  * Application service contract for IAM user commands.
+ *
+ * <p>Every registration command is role explicit: the role is implied by the command type, never
+ * supplied as data. Each one creates the account and, in the same transaction, its concrete
+ * profile through the
+ * {@link pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.acl.ExternalProfileService}
+ * outbound service; when the profile is rejected, the account is rolled back.</p>
  */
 public interface UserCommandService {
 
@@ -21,28 +30,58 @@ public interface UserCommandService {
    */
   Result<ImmutablePair<User, String>, ApplicationError> handle(SignInByLocalCommand command);
 
-
   /**
-   * Handles the sign-up command by local authentication.
+   * Registers an ice track owner with local credentials and its {@code OwnerProfile}.
    *
-   * @param command the sign-up command containing the user's registration details
+   * @param command the owner sign-up command
    * @return a Result containing the newly created User if successful, or an ApplicationError if failed
    */
-  Result<User, ApplicationError> handle(SignUpByLocalCommand command);
+  Result<User, ApplicationError> handle(SignUpOwnerCommand command);
 
   /**
-   * Handles the OAuth2 Token Exchange command for Google federated authentication.
+   * Registers a maintenance technician with local credentials and its {@code TechnicianProfile}.
    *
-   * <p>Validates the submitted Google OIDC id_token, resolves the matching platform account -
-   * registering it on first contact - and issues the platform's own bearer token. The matching
-   * profile is provisioned through the
-   * {@link pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.acl.ExternalProfileService}
-   * outbound service within the same transaction; the call is idempotent, so a repeated exchange
-   * retrieves the existing profile instead of duplicating it.</p>
-   *
-   * @param command the token exchange command carrying the Google id_token
-   * @return a Result containing an ImmutablePair of the authenticated User and the platform JWT
-   *         if successful, or an ApplicationError if the token or the account is rejected
+   * @param command the technician sign-up command
+   * @return a Result containing the newly created User if successful, or an ApplicationError if failed
    */
-  Result<ImmutablePair<User, String>, ApplicationError> handle(ExchangeGoogleTokenCommand command);
+  Result<User, ApplicationError> handle(SignUpTechnicianCommand command);
+
+  /**
+   * Handles the Google sign-in command - the first step of the deferred registration flow.
+   *
+   * <p>Validates the Google OIDC id_token and, when a platform account matches it, issues the
+   * platform bearer token. When no account matches, nothing is written and the result is a
+   * {@code GOOGLE_ACCOUNT_NOT_FOUND} failure, telling the caller to complete the onboarding.</p>
+   *
+   * @param command the command carrying the Google id_token
+   * @return a Result containing an ImmutablePair of the authenticated User and the platform JWT,
+   *         or an ApplicationError when the token is rejected or the account is not registered
+   */
+  Result<ImmutablePair<User, String>, ApplicationError> handle(SignInByGoogleCommand command);
+
+  /**
+   * Completes the deferred registration of a Google account as an ice track owner.
+   *
+   * <p>Validates the Google OIDC id_token again, then creates the account with
+   * {@code OWNER_ROLE} and its {@code OwnerProfile} in the same transaction. When the Google
+   * account is already registered, it is simply signed in with its existing role.</p>
+   *
+   * @param command the command carrying the Google id_token and the owner onboarding form
+   * @return a Result containing an ImmutablePair of the authenticated User and the platform JWT,
+   *         or an ApplicationError when the token, the form or the profile is rejected
+   */
+  Result<ImmutablePair<User, String>, ApplicationError> handle(CompleteGoogleOwnerRegistrationCommand command);
+
+  /**
+   * Completes the deferred registration of a Google account as a maintenance technician.
+   *
+   * <p>Validates the Google OIDC id_token again, then creates the account with
+   * {@code TECHNICIAN_ROLE} and its {@code TechnicianProfile} in the same transaction. When the
+   * Google account is already registered, it is simply signed in with its existing role.</p>
+   *
+   * @param command the command carrying the Google id_token and the technician onboarding form
+   * @return a Result containing an ImmutablePair of the authenticated User and the platform JWT,
+   *         or an ApplicationError when the token, the form or the profile is rejected
+   */
+  Result<ImmutablePair<User, String>, ApplicationError> handle(CompleteGoogleTechnicianRegistrationCommand command);
 }

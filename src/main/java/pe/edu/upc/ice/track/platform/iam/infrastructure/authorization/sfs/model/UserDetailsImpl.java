@@ -9,7 +9,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 
 import java.util.Collection;
-import java.util.stream.Collectors;
+import java.util.List;
 
 /**
  * This class is responsible for providing the user details to the Spring Security framework.
@@ -50,10 +50,7 @@ public class UserDetailsImpl implements UserDetails {
    * @return The UserDetailsImpl object.
    */
   public static UserDetailsImpl build(User user) {
-    var authorities = user.getRoles().stream()
-        .map(role -> role.getName().name())
-        .map(SimpleGrantedAuthority::new)
-        .collect(Collectors.toList());
+    var authorities = List.of(new SimpleGrantedAuthority(user.getRoleName()));
     return new UserDetailsImpl(
         user.getUsername(),
         user.getPassword(),
