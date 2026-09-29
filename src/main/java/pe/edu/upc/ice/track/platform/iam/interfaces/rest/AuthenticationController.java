@@ -380,7 +380,7 @@ public class AuthenticationController {
   public ResponseEntity<?> getCurrentUser(@AuthenticationPrincipal UserDetails principal) {
     // The security filter chain already rejects anonymous calls; this guard keeps the endpoint
     // safe should the principal ever be missing or of an unexpected type.
-    if (principal == null || principal.getUsername() == null || principal.getUsername().isBlank()) {
+    if (principal == null || principal.getUsername().isBlank()) {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.unauthorized("No authenticated user"));
     }

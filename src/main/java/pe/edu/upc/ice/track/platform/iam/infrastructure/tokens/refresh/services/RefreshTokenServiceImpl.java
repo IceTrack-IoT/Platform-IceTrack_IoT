@@ -28,17 +28,27 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
   private final SecureRandom secureRandom = new SecureRandom();
   private final Base64.Encoder tokenEncoder = Base64.getUrlEncoder().withoutPadding();
   private final Duration timeToLive;
+  private final Duration reuseGracePeriod;
 
   /**
    * Creates the service.
    *
-   * @param expirationDays the lifetime of a refresh token, in days; must be positive
+   * @param expirationDays          the lifetime of a refresh token, in days; must be positive
+   * @param reuseGracePeriodSeconds how long after its rotation a token presented again is treated
+   *                                as a concurrent refresh rather than a replay, in seconds; 0
+   *                                disables the grace window
    */
-  public RefreshTokenServiceImpl(@Value("${authorization.refresh-token.expiration.days}") long expirationDays) {
+  public RefreshTokenServiceImpl(
+      @Value("${authorization.refresh-token.expiration.days}") long expirationDays,
+      @Value("${authorization.refresh-token.reuse-grace-period.seconds}") long reuseGracePeriodSeconds) {
     if (expirationDays <= 0) {
       throw new IllegalArgumentException("authorization.refresh-token.expiration.days must be positive");
     }
+    if (reuseGracePeriodSeconds < 0) {
+      throw new IllegalArgumentException("authorization.refresh-token.reuse-grace-period.seconds must not be negative");
+    }
     this.timeToLive = Duration.ofDays(expirationDays);
+    this.reuseGracePeriod = Duration.ofSeconds(reuseGracePeriodSeconds);
   }
 
   // inherited javadoc
@@ -62,6 +72,12 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
   @Override
   public Instant calculateExpiryDate(Instant issuedAt) {
     return issuedAt.plus(timeToLive);
+  }
+
+  // inherited javadoc
+  @Override
+  public Instant calculateReuseGraceThreshold(Instant now) {
+    return now.minus(reuseGracePeriod);
   }
 
   /**

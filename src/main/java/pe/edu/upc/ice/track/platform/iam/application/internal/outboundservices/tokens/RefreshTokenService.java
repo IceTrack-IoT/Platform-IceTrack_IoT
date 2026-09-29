@@ -32,4 +32,15 @@ public interface RefreshTokenService {
    * @return the instant after which the token is no longer accepted
    */
   Instant calculateExpiryDate(Instant issuedAt);
+
+  /**
+   * Computes the start of the reuse grace window.
+   *
+   * <p>A revoked token presented again that was revoked after this instant is treated as a
+   * concurrent refresh by the legitimate client, not as a replay.</p>
+   *
+   * @param now the instant the token is presented
+   * @return the earliest revocation instant still inside the grace window
+   */
+  Instant calculateReuseGraceThreshold(Instant now);
 }

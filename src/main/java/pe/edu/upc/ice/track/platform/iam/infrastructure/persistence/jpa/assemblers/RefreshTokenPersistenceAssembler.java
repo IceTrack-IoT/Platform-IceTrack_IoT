@@ -1,6 +1,6 @@
 package pe.edu.upc.ice.track.platform.iam.infrastructure.persistence.jpa.assemblers;
 
-import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.RefreshToken;
+import pe.edu.upc.ice.track.platform.iam.domain.model.entities.RefreshToken;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.persistence.jpa.entities.RefreshTokenPersistenceEntity;
 
 /**
@@ -18,7 +18,8 @@ public final class RefreshTokenPersistenceAssembler {
         entity.getUserId(),
         entity.getToken(),
         entity.getExpiryDate(),
-        entity.isRevoked());
+        entity.isRevoked(),
+        entity.getRevokedAt());
   }
 
   public static RefreshTokenPersistenceEntity toPersistenceFromDomain(RefreshToken refreshToken) {
@@ -26,13 +27,14 @@ public final class RefreshTokenPersistenceAssembler {
     var entity = new RefreshTokenPersistenceEntity();
     // Only set ID if the token is being updated (has a non-null ID)
     // For new tokens, leave ID null to allow JPA to generate it
-    if (refreshToken.id() != null) {
-      entity.setId(refreshToken.id());
+    if (refreshToken.getId() != null) {
+      entity.setId(refreshToken.getId());
     }
-    entity.setUserId(refreshToken.userId());
-    entity.setToken(refreshToken.token());
-    entity.setExpiryDate(refreshToken.expiryDate());
-    entity.setRevoked(refreshToken.revoked());
+    entity.setUserId(refreshToken.getUserId());
+    entity.setToken(refreshToken.getToken());
+    entity.setExpiryDate(refreshToken.getExpiryDate());
+    entity.setRevoked(refreshToken.isRevoked());
+    entity.setRevokedAt(refreshToken.getRevokedAt());
     return entity;
   }
 }

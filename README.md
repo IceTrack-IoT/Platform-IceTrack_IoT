@@ -79,6 +79,8 @@ Defaults come from `src/main/resources/application.properties`:
 | `JWT_SECRET` | dev-only default | Internal bearer-token signing key |
 | `JWT_EXPIRATION_MINUTES` | `30` | Access token TTL |
 | `REFRESH_TOKEN_EXPIRATION_DAYS` | `7` | Refresh token TTL (each refresh rotates the token) |
+| `REFRESH_TOKEN_REUSE_GRACE_SECONDS` | `10` | Window in which re-presenting a just-rotated refresh token is a concurrent refresh (401 only) instead of a replay (revokes all sessions); `0` disables it |
+| `REFRESH_TOKEN_PURGE_CRON` | `0 0 3 * * *` | Schedule of the purge of expired refresh tokens (Spring cron) |
 | `GOOGLE_CLIENT_ID` | `google-client-id` | Google OIDC client ID for `id_token` validation |
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.

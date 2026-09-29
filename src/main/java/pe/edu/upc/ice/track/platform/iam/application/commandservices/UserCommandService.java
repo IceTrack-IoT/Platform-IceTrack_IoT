@@ -4,6 +4,7 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleOwnerRegistrationCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleTechnicianRegistrationCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.PurgeExpiredRefreshTokensCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.RefreshTokenCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByGoogleCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByLocalCommand;
@@ -97,7 +98,8 @@ public interface UserCommandService {
    * <p>The presented token is revoked and replaced: the result carries a new access token and a
    * new refresh token. A token that is unknown, expired or already revoked is rejected with an
    * {@code UNAUTHORIZED} failure. A revoked token being presented again is a replay: every
-   * session of its account is revoked as well.</p>
+   * session of its account is revoked as well, unless it was rotated within the reuse grace
+   * window, which marks a concurrent refresh by the legitimate client.</p>
    *
    * @param command the command carrying the refresh token
    * @return a Result containing an ImmutablePair of the authenticated User and its new session
@@ -114,4 +116,14 @@ public interface UserCommandService {
    * @param command the command carrying the refresh token of the session to end
    */
   void handle(SignOutCommand command);
+
+  /**
+   * Deletes every refresh token past its expiry date.
+   *
+   * <p>Revoked tokens that have not expired yet are kept, so that a replay can still be detected.</p>
+   *
+   * @param command the purge command
+   * @return the number of deleted tokens
+   */
+  int handle(PurgeExpiredRefreshTokensCommand command);
 }

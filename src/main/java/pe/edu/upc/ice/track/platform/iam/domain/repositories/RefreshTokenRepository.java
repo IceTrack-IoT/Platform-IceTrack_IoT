@@ -1,7 +1,8 @@
 package pe.edu.upc.ice.track.platform.iam.domain.repositories;
 
-import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.RefreshToken;
+import pe.edu.upc.ice.track.platform.iam.domain.model.entities.RefreshToken;
 
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -52,4 +53,15 @@ public interface RefreshTokenRepository {
    * @param token the digest of the raw token
    */
   void deleteByToken(String token);
+
+  /**
+   * Delete every refresh token that expired before an instant
+   *
+   * <p>Revoked tokens that have not expired yet are kept on purpose: they are what allows a
+   * replay to be detected until the token would have expired anyway.</p>
+   *
+   * @param instant the reference instant
+   * @return the number of deleted tokens
+   */
+  int deleteAllExpiredBefore(Instant instant);
 }

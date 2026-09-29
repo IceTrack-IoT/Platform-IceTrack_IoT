@@ -14,7 +14,11 @@ import java.time.Instant;
 @Entity
 @Table(
     name = "refresh_tokens",
-    indexes = @Index(name = "idx_refresh_tokens_user_id", columnList = "user_id"))
+    indexes = {
+        @Index(name = "idx_refresh_tokens_user_id", columnList = "user_id"),
+        // Serves the scheduled purge of expired tokens.
+        @Index(name = "idx_refresh_tokens_expiry_date", columnList = "expiry_date")
+    })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -38,4 +42,11 @@ public class RefreshTokenPersistenceEntity extends AuditableAbstractPersistenceE
 
   @Column(name = "revoked", nullable = false)
   private boolean revoked;
+
+  /**
+   * Instant the token was revoked. Nullable: it is empty while the token is active, and for rows
+   * revoked before the column was introduced.
+   */
+  @Column(name = "revoked_at")
+  private Instant revokedAt;
 }

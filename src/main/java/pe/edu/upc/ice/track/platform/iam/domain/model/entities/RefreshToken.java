@@ -1,4 +1,6 @@
-package pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects;
+package pe.edu.upc.ice.track.platform.iam.domain.model.entities;
+
+import lombok.Getter;
 
 import java.time.Instant;
 
@@ -11,9 +13,19 @@ import java.time.Instant;
  * {@code User} aggregate does not own its sessions.</p>
  *
  * <p>Tokens are single use. A token that has been exchanged is marked revoked instead of being
- * removed, so that presenting it again can be recognized as a replay.</p>
+ * removed, so that presenting it again can be recognized as a replay. The revocation instant is
+ * recorded so that a token presented again only moments after its rotation can be told apart
+ * from a replay: that is a concurrent refresh by the legitimate client, such as two browser tabs.</p>
  */
-public record RefreshToken(Long id, Long userId, String token, Instant expiryDate, boolean revoked) {
+@Getter
+public class RefreshToken {
+
+  private final Long id;
+  private final Long userId;
+  private final String token;
+  private final Instant expiryDate;
+  private final boolean revoked;
+  private final Instant revokedAt;
 
   /**
    * Reconstitutes a refresh token, typically from persistence.
@@ -25,9 +37,11 @@ public record RefreshToken(Long id, Long userId, String token, Instant expiryDat
    * @param token      the digest of the raw token; required
    * @param expiryDate the instant after which the token is no longer accepted; required
    * @param revoked    whether the token was already exchanged or revoked
+   * @param revokedAt  the instant the token was revoked, or {@code null} while it is active or
+   *                   when it was revoked before the instant was recorded
    * @throws IllegalArgumentException when a required value is missing
    */
-  public RefreshToken {
+  public RefreshToken(Long id, Long userId, String token, Instant expiryDate, boolean revoked, Instant revokedAt) {
     if (userId == null) {
       throw new IllegalArgumentException("userId must not be null");
     }
@@ -37,6 +51,12 @@ public record RefreshToken(Long id, Long userId, String token, Instant expiryDat
     if (expiryDate == null) {
       throw new IllegalArgumentException("expiryDate must not be null");
     }
+    this.id = id;
+    this.userId = userId;
+    this.token = token;
+    this.expiryDate = expiryDate;
+    this.revoked = revoked;
+    this.revokedAt = revokedAt;
   }
 
   /**
@@ -49,7 +69,17 @@ public record RefreshToken(Long id, Long userId, String token, Instant expiryDat
    * @throws IllegalArgumentException when a required value is missing
    */
   public static RefreshToken issue(Long userId, String tokenDigest, Instant expiryDate) {
-    return new RefreshToken(null, userId, tokenDigest, expiryDate, false);
+    return new RefreshToken(null, userId, tokenDigest, expiryDate, false, null);
+  }
+
+  /**
+   * Indicates whether the token was revoked after a given instant.
+   *
+   * @param instant the reference instant
+   * @return {@code true} when the token is revoked and its revocation happened after {@code instant}
+   */
+  public boolean isRevokedAfter(Instant instant) {
+    return revoked && revokedAt != null && revokedAt.isAfter(instant);
   }
 
   /**

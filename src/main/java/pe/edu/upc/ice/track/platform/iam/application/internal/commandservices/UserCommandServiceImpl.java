@@ -15,13 +15,14 @@ import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.t
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleOwnerRegistrationCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleTechnicianRegistrationCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.PurgeExpiredRefreshTokensCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.RefreshTokenCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByGoogleCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByLocalCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignOutCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpOwnerCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpTechnicianCommand;
-import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.RefreshToken;
+import pe.edu.upc.ice.track.platform.iam.domain.model.entities.RefreshToken;
 import pe.edu.upc.ice.track.platform.iam.domain.model.entities.Role;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.AuthProvider;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetails;
@@ -65,7 +66,9 @@ import java.util.function.Function;
  * access JWT and an opaque refresh token persisted as its digest ({@link RefreshTokenCommand}
  * rotates it, {@link SignOutCommand} discards it). An exchanged refresh token is kept as revoked
  * rather than deleted, so that replaying it is detected and revokes every session of the
- * account.</p>
+ * account; one presented again within a short grace window after its rotation is only rejected,
+ * since that is a concurrent refresh by the legitimate client. Expired tokens are removed by
+ * {@link PurgeExpiredRefreshTokensCommand}.</p>
  */
 @Service
 @Slf4j
@@ -74,6 +77,8 @@ public class UserCommandServiceImpl implements UserCommandService {
   private static final String USER_RESOURCE = "User";
   private static final String PROFILE_RESOURCE = "Profile";
   private static final String INVALID_REFRESH_TOKEN_REASON = "The refresh token is invalid, expired or revoked";
+  private static final String CONCURRENT_REFRESH_REASON =
+      "The refresh token was just rotated by a concurrent request; retry with the latest refresh token";
 
   private final UserRepository userRepository;
   private final HashingService hashingService;
@@ -222,20 +227,27 @@ public class UserCommandServiceImpl implements UserCommandService {
       return Result.failure(ApplicationError.unauthorized(INVALID_REFRESH_TOKEN_REASON));
     }
     var refreshToken = storedToken.get();
-    if (refreshToken.revoked()) {
-      return Result.failure(revokeAllSessionsOnReplay(refreshToken.userId()));
+    var now = Instant.now();
+    if (refreshToken.isRevoked()) {
+      if (refreshToken.isRevokedAfter(refreshTokenService.calculateReuseGraceThreshold(now))) {
+        // Rotated moments ago: most likely a concurrent refresh by the legitimate client (e.g. a
+        // second browser tab). Reject it without ending the session the first request just rotated.
+        return Result.failure(ApplicationError.unauthorized(CONCURRENT_REFRESH_REASON));
+      }
+      return Result.failure(revokeAllSessionsOnReplay(refreshToken.getUserId()));
     }
-    if (refreshToken.isExpiredAt(Instant.now())) {
+    if (refreshToken.isExpiredAt(now)) {
       // Nothing to protect anymore: drop the row so that it does not linger in the table.
       refreshTokenRepository.deleteByToken(tokenDigest);
       return Result.failure(ApplicationError.unauthorized(INVALID_REFRESH_TOKEN_REASON));
     }
     // Atomic compare-and-set: when the same token is presented concurrently, only one request
-    // rotates it; the other one sees it already revoked and is handled as a replay.
+    // rotates it. Losing the race means another request revoked it a few milliseconds ago, which
+    // is the concurrent refresh case, not a replay.
     if (!refreshTokenRepository.revoke(tokenDigest)) {
-      return Result.failure(revokeAllSessionsOnReplay(refreshToken.userId()));
+      return Result.failure(ApplicationError.unauthorized(CONCURRENT_REFRESH_REASON));
     }
-    var user = userRepository.findById(refreshToken.userId());
+    var user = userRepository.findById(refreshToken.getUserId());
     return user.<Result<ImmutablePair<User, SessionTokens>, ApplicationError>>map(value -> Result.success(authenticate(value))).orElseGet(() -> Result.failure(ApplicationError.unauthorized(INVALID_REFRESH_TOKEN_REASON)));
     // The access token is minted from the reloaded account, so it always carries its current role.
   }
@@ -250,6 +262,15 @@ public class UserCommandServiceImpl implements UserCommandService {
     // Deleted rather than revoked: a signed out token presented later is merely unknown, and
     // must not be mistaken for a replay that would end the account's other sessions.
     refreshTokenRepository.deleteByToken(refreshTokenService.hashToken(command.refreshToken()));
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public int handle(PurgeExpiredRefreshTokensCommand command) {
+    var purged = refreshTokenRepository.deleteAllExpiredBefore(Instant.now());
+    log.info("Purged {} expired refresh tokens", purged);
+    return purged;
   }
 
   /**
