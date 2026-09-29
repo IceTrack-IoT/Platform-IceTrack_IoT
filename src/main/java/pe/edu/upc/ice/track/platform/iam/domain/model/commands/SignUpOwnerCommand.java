@@ -6,7 +6,7 @@ import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetail
  * Sign up command registering an ice track owner with local credentials.
  *
  * <p>The role is implied by the command itself: the account is always created with
- * {@code OWNER_ROLE}, together with its {@code OwnerProfile}, in a single transaction.</p>
+ * {@code OWNER_ROLE}, together with its {@code Owner} profile, in a single transaction.</p>
  *
  * @param username       the username of the account; required
  * @param password       the raw password of the account; required

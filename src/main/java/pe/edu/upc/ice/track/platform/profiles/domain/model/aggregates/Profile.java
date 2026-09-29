@@ -1,12 +1,9 @@
 package pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates;
 
 import lombok.Getter;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.events.ProfileCreatedEvent;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.EmailAddress;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.PersonName;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Phone;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.ProfileCreationData;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.ProfileRole;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.StreetAddress;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
@@ -16,80 +13,67 @@ import java.util.Objects;
 /**
  * Profile aggregate root.
  *
- * <p>Holds the attributes shared by every profile. The class is {@code abstract} and
- * {@code sealed}: the only profiles that can ever exist - and therefore be persisted - are an
- * {@link OwnerProfile} or a {@link TechnicianProfile}. There is no generic or provisional profile,
- * and the role is a property of the concrete type, so it can never drift away from the
- * role specific data.</p>
+ * <p>Abstract base of every user profile of the platform. It holds the data shared by all the
+ * roles - the account binding, the name and the contact details - while each concrete role
+ * ({@link OwnerProfile}, {@link TechnicianProfile}) adds only the attributes that make sense for
+ * it, so no profile ever carries a value that belongs to another role.</p>
  *
- * <p>Extends {@link AbstractDomainAggregateRoot} to gain domain event registration support. No JPA
- * or persistence annotation is present here - those concerns live exclusively in
- * {@code ProfilePersistenceEntity}.</p>
+ * <p>No JPA or persistence annotation is present here - the joined-table inheritance mapping
+ * lives exclusively in {@code ProfilePersistenceEntity} and its subclasses.</p>
  */
 @Getter
-public abstract sealed class Profile extends AbstractDomainAggregateRoot<Profile>
-    permits OwnerProfile, TechnicianProfile {
+public abstract class Profile extends AbstractDomainAggregateRoot<Profile> {
 
-  private final Long id;
+  private final Long userProfileId;
   private final UserId userId;
-  private final PersonName fullName;
+  private PersonName fullName;
   private final EmailAddress email;
   private Phone phone;
   private StreetAddress address;
-  private final String auxiliaryData;
 
   /**
-   * Builds the shared state of a profile.
+   * Initializes the attributes shared by every profile.
    *
-   * @param id   the persistence identity, or {@code null} for a profile not yet persisted
-   * @param data the validated creation data; required
+   * @param userProfileId the persistence identity, or {@code null} for a profile not yet persisted
+   * @param userId        identifier of the account the profile belongs to; required
+   * @param fullName      the profile holder's name; required
+   * @param email         the profile holder's email address; required
+   * @param phone         the profile holder's phone number; required
+   * @param address       the profile holder's street address; required
    */
-  protected Profile(Long id, ProfileCreationData data) {
-    Objects.requireNonNull(data, "profile creation data must not be null");
-    this.id = id;
-    this.userId = data.userId();
-    this.fullName = data.fullName();
-    this.email = data.email();
-    this.phone = data.phone();
-    this.address = data.address();
-    this.auxiliaryData = data.auxiliaryData();
+  protected Profile(Long userProfileId, UserId userId, PersonName fullName, EmailAddress email, Phone phone,
+                    StreetAddress address) {
+    Objects.requireNonNull(userId, "userId must not be null");
+    Objects.requireNonNull(userId.userId(), "userId must carry an identifier");
+    this.userProfileId = userProfileId;
+    this.userId = userId;
+    this.fullName = Objects.requireNonNull(fullName, "fullName must not be null");
+    this.email = Objects.requireNonNull(email, "email must not be null");
+    this.phone = Objects.requireNonNull(phone, "phone must not be null");
+    this.address = Objects.requireNonNull(address, "address must not be null");
   }
 
   /**
-   * Returns the role this profile plays, as determined by its concrete type.
+   * Replaces the name and contact details of this profile.
    *
-   * @return the role, never {@code null}
-   */
-  public abstract ProfileRole getRole();
-
-  /**
-   * Returns the name of the role this profile plays.
+   * <p>The email address is not part of the update: it is owned by the platform account in the
+   * IAM context and is only ever set when the profile is created.</p>
    *
-   * @return the role name, never {@code null}
+   * @param fullName the new name; required
+   * @param phone    the new phone number; required
+   * @param address  the new street address; required
    */
-  public String getRoleName() {
-    return getRole().name();
+  public void updateInfo(PersonName fullName, Phone phone, StreetAddress address) {
+    this.fullName = Objects.requireNonNull(fullName, "fullName must not be null");
+    this.phone = Objects.requireNonNull(phone, "phone must not be null");
+    this.address = Objects.requireNonNull(address, "address must not be null");
   }
 
   /**
    * Signals that this profile has just been created and persisted.
    *
-   * <p>Called by the repository adapter after the JPA identity has been assigned.
-   * Registers a {@link ProfileCreatedEvent} so the infrastructure can publish it
-   * to interested subscribers in other bounded contexts.</p>
+   * <p>Called by the repository adapter after the persistence identity has been assigned. Each
+   * role registers its own creation event.</p>
    */
-  public void onCreated() {
-    registerDomainEvent(ProfileCreatedEvent.from(this));
-  }
-
-  /**
-   * Replaces the contact details of this profile.
-   *
-   * @param phone   the new phone number; required
-   * @param address the new street address; required
-   */
-  public void updateContactDetails(Phone phone, StreetAddress address) {
-    this.phone = Objects.requireNonNull(phone, "phone must not be null");
-    this.address = Objects.requireNonNull(address, "address must not be null");
-  }
+  public abstract void onCreated();
 }

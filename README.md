@@ -8,7 +8,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![Swagger](https://img.shields.io/badge/Swagger-OpenAPI-85EA2D?style=for-the-badge&logo=swagger&logoColor=black)](https://swagger.io/)
 
-Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/api/v1/users`, `/api/v1/profiles`) with OpenAPI/Swagger docs out of the box.
+Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/api/v1/users`, `/api/v1/profiles/owners`, `/api/v1/profiles/technicians`) with OpenAPI/Swagger docs out of the box.
 
 ---
 
@@ -30,7 +30,7 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 
 - **Auth built-in** — local sign-up/sign-in + Google OIDC deferred registration (`/google/verify` → `/google/complete-registration/{owner|technician}`), role explicit local sign-up (`/sign-up/{owner|technician}`), JWT bearer auth with a `role` claim (JJWT 0.13.0)
 - **Immutable roles** — every account is `OWNER_ROLE` or `TECHNICIAN_ROLE`, chosen once at registration, and gets its `OwnerProfile` / `TechnicianProfile` in the same transaction
-- **IAM + Profiles** bounded contexts (`/api/v1/authentication`, `/api/v1/users`, `/api/v1/roles`, `/api/v1/profiles`)
+- **IAM + Profiles** bounded contexts (`/api/v1/authentication`, `/api/v1/users`, `/api/v1/roles`, `/api/v1/profiles/owners`, `/api/v1/profiles/technicians`)
 - **OpenAPI first** — springdoc-openapi 3.1.1 with Swagger UI
 - **Postgres persistence** — Spring Data JPA/Hibernate with custom snake-case + pluralized naming strategy
 - **Docker-first dev loop** — multi-stage build, Compose healthchecks, dev/prod overlays

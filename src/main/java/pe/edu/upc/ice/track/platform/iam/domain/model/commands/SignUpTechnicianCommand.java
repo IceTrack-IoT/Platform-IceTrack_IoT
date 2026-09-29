@@ -6,7 +6,7 @@ import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetail
  * Sign up command registering an ice track maintenance technician with local credentials.
  *
  * <p>The role is implied by the command itself: the account is always created with
- * {@code TECHNICIAN_ROLE}, together with its {@code TechnicianProfile}, in a single
+ * {@code TECHNICIAN_ROLE}, together with its {@code Technician} profile, in a single
  * transaction.</p>
  *
  * @param username            the username of the account; required

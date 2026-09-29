@@ -30,6 +30,29 @@ public record Phone(String countryCode, String phoneNumber) {
     return new Phone(null, phoneNumber);
   }
 
+  /**
+   * Builds a phone number out of a single raw value, as supplied by a form or another bounded
+   * context that does not model the country code separately.
+   *
+   * <p>A leading {@code +NN} prefix followed by a space is split off as the country code;
+   * otherwise the whole value is kept as the national number with an unknown country code.</p>
+   *
+   * @param rawPhone the raw phone number, such as {@code "+51 987654321"}; required
+   * @return the phone number
+   * @throws IllegalArgumentException when the phone number is missing
+   */
+  public static Phone fromString(String rawPhone) {
+    if (rawPhone == null || rawPhone.isBlank()) {
+      throw new IllegalArgumentException("Phone number must not be null or blank");
+    }
+    var trimmed = rawPhone.trim();
+    var separatorIndex = trimmed.indexOf(' ');
+    if (trimmed.startsWith("+") && separatorIndex > 1 && separatorIndex < trimmed.length() - 1) {
+      return new Phone(trimmed.substring(0, separatorIndex), trimmed.substring(separatorIndex + 1).trim());
+    }
+    return withoutCountryCode(trimmed);
+  }
+
   public String getFullNumber() {
     return "%s %s".formatted(countryCode, phoneNumber).trim();
   }

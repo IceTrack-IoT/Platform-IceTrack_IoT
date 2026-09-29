@@ -1,24 +1,25 @@
 package pe.edu.upc.ice.track.platform.profiles.domain.model.factories;
 
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.OwnerProfile;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.ProfileCreationData;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.ProfileRole;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Ruc;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
+
+import java.util.Objects;
 
 /**
- * Builds the profile of an ice track owner.
+ * Creates {@link OwnerProfile} instances.
  */
-public class OwnerProfileFactory implements UserProfileFactory<OwnerProfile, Ruc> {
+public class OwnerProfileFactory implements UserProfileFactory {
 
   // inherited javadoc
   @Override
-  public ProfileRole supportedRole() {
-    return ProfileRole.OWNER;
-  }
-
-  // inherited javadoc
-  @Override
-  public OwnerProfile create(ProfileCreationData data, Ruc ruc) {
-    return new OwnerProfile(data, ruc);
+  public OwnerProfile createProfile(Long userId, ProfileCreationData data) {
+    Objects.requireNonNull(data, "data must not be null");
+    return new OwnerProfile(
+        new UserId(userId),
+        data.fullName(),
+        data.email(),
+        data.phone(),
+        data.address(),
+        Objects.requireNonNull(data.ruc(), "An owner profile requires a RUC"));
   }
 }

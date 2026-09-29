@@ -27,7 +27,8 @@ public record StreetAddress(
    * @return Street address as a string
    */
   public String getStreetAddress() {
-    return "%s %s, %s, %s, %s".formatted(street, number, city, postalCode, country);
+    var streetLine = number == null || number.isBlank() ? street : "%s %s".formatted(street, number);
+    return "%s, %s, %s, %s".formatted(streetLine, city, postalCode, country);
   }
 
   /**
@@ -51,5 +52,10 @@ public record StreetAddress(
     if (country == null || country.isBlank()) {
       throw new IllegalArgumentException("Country must not be null or blank");
     }
+    street = street.trim();
+    number = number == null || number.isBlank() ? null : number.trim();
+    city = city.trim();
+    postalCode = postalCode.trim();
+    country = country.trim();
   }
 }

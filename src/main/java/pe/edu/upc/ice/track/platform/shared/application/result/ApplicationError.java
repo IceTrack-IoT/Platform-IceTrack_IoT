@@ -64,6 +64,16 @@ public record ApplicationError(
   }
 
   /**
+   * Access denied error: the caller is authenticated but not allowed to perform the operation
+   */
+  public static ApplicationError accessDenied(String reason) {
+    return new ApplicationError(
+        "ACCESS_DENIED",
+        "Access denied",
+        reason);
+  }
+
+  /**
    * Unexpected error: something went wrong that shouldn't have
    */
   public static ApplicationError unexpected(String context, String reason) {

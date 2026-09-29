@@ -57,10 +57,10 @@ public class ExternalProfileService {
   public Long createOwnerProfile(Long userId, String fullName, String email, String phone,
                                  String street, String number, String city, String postalCode, String country,
                                  Long ruc) {
-    var profileId = profilesContextFacade.createOwnerProfile(
+    var ownerProfileId = profilesContextFacade.createOwnerProfile(
         userId, fullName, email, phone, street, number, city, postalCode, country, ruc);
-    log.info("Provisioned owner profile {} for user {}", profileId, userId);
-    return profileId;
+    log.info("Provisioned owner profile {} for user {}", ownerProfileId, userId);
+    return ownerProfileId;
   }
 
   /**
@@ -82,9 +82,9 @@ public class ExternalProfileService {
   public Long createTechnicianProfile(Long userId, String fullName, String email, String phone,
                                       String street, String number, String city, String postalCode, String country,
                                       String speciality, String certificationNumber) {
-    var profileId = profilesContextFacade.createTechnicianProfile(
+    var technicianProfileId = profilesContextFacade.createTechnicianProfile(
         userId, fullName, email, phone, street, number, city, postalCode, country, speciality, certificationNumber);
-    log.info("Provisioned technician profile {} for user {}", profileId, userId);
-    return profileId;
+    log.info("Provisioned technician profile {} for user {}", technicianProfileId, userId);
+    return technicianProfileId;
   }
 }

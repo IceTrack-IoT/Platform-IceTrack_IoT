@@ -31,7 +31,7 @@ public interface UserCommandService {
   Result<ImmutablePair<User, String>, ApplicationError> handle(SignInByLocalCommand command);
 
   /**
-   * Registers an ice track owner with local credentials and its {@code OwnerProfile}.
+   * Registers an ice track owner with local credentials and its {@code Owner} profile.
    *
    * @param command the owner sign-up command
    * @return a Result containing the newly created User if successful, or an ApplicationError if failed
@@ -39,7 +39,7 @@ public interface UserCommandService {
   Result<User, ApplicationError> handle(SignUpOwnerCommand command);
 
   /**
-   * Registers a maintenance technician with local credentials and its {@code TechnicianProfile}.
+   * Registers a maintenance technician with local credentials and its {@code Technician} profile.
    *
    * @param command the technician sign-up command
    * @return a Result containing the newly created User if successful, or an ApplicationError if failed
@@ -63,7 +63,7 @@ public interface UserCommandService {
    * Completes the deferred registration of a Google account as an ice track owner.
    *
    * <p>Validates the Google OIDC id_token again, then creates the account with
-   * {@code OWNER_ROLE} and its {@code OwnerProfile} in the same transaction. When the Google
+   * {@code OWNER_ROLE} and its {@code Owner} profile in the same transaction. When the Google
    * account is already registered, it is simply signed in with its existing role.</p>
    *
    * @param command the command carrying the Google id_token and the owner onboarding form
@@ -76,7 +76,7 @@ public interface UserCommandService {
    * Completes the deferred registration of a Google account as a maintenance technician.
    *
    * <p>Validates the Google OIDC id_token again, then creates the account with
-   * {@code TECHNICIAN_ROLE} and its {@code TechnicianProfile} in the same transaction. When the
+   * {@code TECHNICIAN_ROLE} and its {@code Technician} profile in the same transaction. When the
    * Google account is already registered, it is simply signed in with its existing role.</p>
    *
    * @param command the command carrying the Google id_token and the technician onboarding form

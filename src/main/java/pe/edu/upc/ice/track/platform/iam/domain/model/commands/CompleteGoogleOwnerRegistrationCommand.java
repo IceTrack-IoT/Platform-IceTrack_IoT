@@ -8,7 +8,7 @@ import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetail
  * <p>Second step of the Google flow, once a {@link SignInByGoogleCommand} has reported that the
  * Google account is unknown. The id_token is verified again - it is the only trusted source of the
  * email, subject and name - and the account is created with {@code OWNER_ROLE} together with its
- * {@code OwnerProfile} in a single transaction.</p>
+ * {@code Owner} profile in a single transaction.</p>
  *
  * @param idToken        the Google OIDC id_token issued to the frontend; required
  * @param contactDetails the phone number and address captured by the onboarding form; required

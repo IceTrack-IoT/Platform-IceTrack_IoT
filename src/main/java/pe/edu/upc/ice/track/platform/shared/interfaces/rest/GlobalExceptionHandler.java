@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.shared.interfaces.rest;
 import org.jspecify.annotations.NullMarked;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -62,6 +63,23 @@ public class GlobalExceptionHandler {
         resolveMessageOrDefault("validation.request.argument", "request-argument"),
         ex.getMessage() != null ? ex.getMessage() : resolveMessageOrDefault("validation.request.failed", "Request validation failed")
     );
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+  }
+
+  /**
+   * Handles authorization denials raised by method security ({@code @PreAuthorize}).
+   *
+   * <p>Such denials are thrown while the controller method is invoked, so they reach this advice
+   * before Spring Security's exception translation; without this handler they would fall into the
+   * generic {@link RuntimeException} handler and be rendered as a 500.</p>
+   *
+   * @param ex the access denied exception
+   * @return error response with FORBIDDEN status
+   */
+  @ExceptionHandler(AccessDeniedException.class)
+  public ResponseEntity<?> handleAccessDeniedException(AccessDeniedException ex) {
+    var applicationError = ApplicationError.accessDenied(
+        resolveMessageOrDefault("error.access-denied.reason", "You are not allowed to perform this operation"));
     return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
   }
 
