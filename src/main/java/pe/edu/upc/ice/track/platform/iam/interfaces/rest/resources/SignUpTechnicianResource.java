@@ -12,7 +12,7 @@ import jakarta.validation.constraints.NotBlank;
 @Schema(
     name = "SignUpTechnicianRequest",
     description = "Technician sign-up request with credentials and onboarding form",
-    example = "{\"username\": \"jane.doe\", \"password\": \"SecurePass123!\", \"email\": \"jane.doe@example.com\", \"fullName\": \"Jane Doe\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postalCode\": \"15023\", \"country\": \"Peru\", \"speciality\": \"Refrigeration\", \"certificationNumber\": \"CERT-2024-001\"}"
+    example = "{\"username\": \"jane.doe\", \"password\": \"SecurePass123!\", \"email\": \"jane.doe@example.com\", \"full_name\": \"Jane Doe\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postal_code\": \"15023\", \"country\": \"Peru\", \"speciality\": \"Refrigeration\", \"certification_number\": \"CERT-2024-001\"}"
 )
 public record SignUpTechnicianResource(
     @NotBlank(message = "{validation.not-blank}")

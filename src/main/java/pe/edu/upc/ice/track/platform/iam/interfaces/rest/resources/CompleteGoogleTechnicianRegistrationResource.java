@@ -14,7 +14,7 @@ import jakarta.validation.constraints.NotBlank;
 @Schema(
     name = "CompleteGoogleTechnicianRegistrationRequest",
     description = "Technician onboarding form completing the registration of a Google account",
-    example = "{\"idToken\": \"eyJhbGciOiJSUzI1NiIs...\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postalCode\": \"15023\", \"country\": \"Peru\", \"speciality\": \"Refrigeration\", \"certificationNumber\": \"CERT-2024-001\"}"
+    example = "{\"id_token\": \"eyJhbGciOiJSUzI1NiIs...\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postal_code\": \"15023\", \"country\": \"Peru\", \"speciality\": \"Refrigeration\", \"certification_number\": \"CERT-2024-001\"}"
 )
 public record CompleteGoogleTechnicianRegistrationResource(
     @NotBlank(message = "{validation.not-blank}")

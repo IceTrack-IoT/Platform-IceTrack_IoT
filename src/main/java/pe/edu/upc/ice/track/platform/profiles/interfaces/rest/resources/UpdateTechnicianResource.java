@@ -18,7 +18,7 @@ import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Speciali
 @Schema(
     name = "UpdateTechnicianRequest",
     description = "Technician update request",
-    example = "{\"fullName\": \"Jane Doe\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postalCode\": \"15023\", \"country\": \"Peru\", \"speciality\": \"Refrigeration\", \"certificationNumber\": \"CERT-2024-001\"}"
+    example = "{\"full_name\": \"Jane Doe\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postal_code\": \"15023\", \"country\": \"Peru\", \"speciality\": \"Refrigeration\", \"certification_number\": \"CERT-2024-001\"}"
 )
 public record UpdateTechnicianResource(
     @NotBlank(message = "{validation.not-blank}")

@@ -13,7 +13,7 @@ import jakarta.validation.constraints.NotNull;
 @Schema(
     name = "SignUpOwnerRequest",
     description = "Owner sign-up request with credentials and onboarding form",
-    example = "{\"username\": \"john.doe\", \"password\": \"SecurePass123!\", \"email\": \"john.doe@example.com\", \"fullName\": \"John Doe\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postalCode\": \"15023\", \"country\": \"Peru\", \"ruc\": 20123456789}"
+    example = "{\"username\": \"john.doe\", \"password\": \"SecurePass123!\", \"email\": \"john.doe@example.com\", \"full_name\": \"John Doe\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postal_code\": \"15023\", \"country\": \"Peru\", \"ruc\": 20123456789}"
 )
 public record SignUpOwnerResource(
     @NotBlank(message = "{validation.not-blank}")

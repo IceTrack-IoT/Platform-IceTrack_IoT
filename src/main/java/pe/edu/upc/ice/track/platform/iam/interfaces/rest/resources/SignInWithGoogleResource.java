@@ -14,7 +14,7 @@ import jakarta.validation.constraints.NotBlank;
 @Schema(
     name = "SignInWithGoogleRequest",
     description = "Request carrying the Google OIDC id_token obtained by the frontend",
-    example = "{\"idToken\": \"eyJhbGciOiJSUzI1NiIsImtpZCI6IjE2YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5Y\"}"
+    example = "{\"id_token\": \"eyJhbGciOiJSUzI1NiIsImtpZCI6IjE2YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5Y\"}"
 )
 public record SignInWithGoogleResource(
     @NotBlank(message = "{validation.not-blank}")

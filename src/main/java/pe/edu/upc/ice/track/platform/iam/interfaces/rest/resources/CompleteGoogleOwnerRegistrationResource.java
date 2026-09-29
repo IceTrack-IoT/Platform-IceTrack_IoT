@@ -15,7 +15,7 @@ import jakarta.validation.constraints.NotNull;
 @Schema(
     name = "CompleteGoogleOwnerRegistrationRequest",
     description = "Owner onboarding form completing the registration of a Google account",
-    example = "{\"idToken\": \"eyJhbGciOiJSUzI1NiIs...\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postalCode\": \"15023\", \"country\": \"Peru\", \"ruc\": 20123456789}"
+    example = "{\"id_token\": \"eyJhbGciOiJSUzI1NiIs...\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postal_code\": \"15023\", \"country\": \"Peru\", \"ruc\": 20123456789}"
 )
 public record CompleteGoogleOwnerRegistrationResource(
     @NotBlank(message = "{validation.not-blank}")

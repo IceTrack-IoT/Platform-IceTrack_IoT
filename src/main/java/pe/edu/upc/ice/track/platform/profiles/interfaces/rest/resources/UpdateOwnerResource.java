@@ -14,7 +14,7 @@ import jakarta.validation.constraints.NotNull;
 @Schema(
     name = "UpdateOwnerRequest",
     description = "Owner update request",
-    example = "{\"fullName\": \"John Doe\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postalCode\": \"15023\", \"country\": \"Peru\", \"ruc\": 20123456789}"
+    example = "{\"full_name\": \"John Doe\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postal_code\": \"15023\", \"country\": \"Peru\", \"ruc\": 20123456789}"
 )
 public record UpdateOwnerResource(
     @NotBlank(message = "{validation.not-blank}")

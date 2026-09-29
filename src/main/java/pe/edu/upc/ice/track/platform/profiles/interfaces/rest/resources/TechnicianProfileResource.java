@@ -11,7 +11,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(
     name = "TechnicianProfileResponse",
     description = "Technician profile information response",
-    example = "{\"id\": 1, \"userId\": 43, \"fullName\": \"Jane Doe\", \"email\": \"jane.doe@example.com\", \"phone\": \"+51 987654321\", \"address\": \"Av. Primavera 123, Lima, 15023, Peru\", \"speciality\": \"Refrigeration\", \"certificationNumber\": \"CERT-2024-001\"}"
+    example = "{\"id\": 1, \"user_id\": 43, \"full_name\": \"Jane Doe\", \"email\": \"jane.doe@example.com\", \"phone\": \"+51 987654321\", \"address\": \"Av. Primavera 123, Lima, 15023, Peru\", \"speciality\": \"Refrigeration\", \"certification_number\": \"CERT-2024-001\"}"
 )
 public record TechnicianProfileResource(
     @Schema(description = "Technician profile unique identifier", example = "1")
