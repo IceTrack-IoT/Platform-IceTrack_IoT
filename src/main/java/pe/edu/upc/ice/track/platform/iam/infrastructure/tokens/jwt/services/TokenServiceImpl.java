@@ -21,7 +21,9 @@ import java.util.function.Function;
 /**
  * Token service implementation for JWT tokens.
  * This class is responsible for generating and validating JWT tokens.
- * It uses the secret and expiration days from the application.properties file.
+ * It uses the secret and expiration minutes from the application.properties file.
+ * Access tokens are kept short-lived because they are validated statelessly and therefore cannot
+ * be revoked; sessions are extended through refresh tokens instead.
  */
 @Service
 @Slf4j
@@ -36,8 +38,8 @@ public class TokenServiceImpl implements BearerTokenService {
   @Value("${authorization.jwt.secret}")
   private String secret;
 
-  @Value("${authorization.jwt.expiration.days}")
-  private int expirationDays;
+  @Value("${authorization.jwt.expiration.minutes}")
+  private int expirationMinutes;
 
   /**
    * This method generates a JWT token from an authentication object
@@ -67,14 +69,14 @@ public class TokenServiceImpl implements BearerTokenService {
 
   /**
    * This method generates a JWT token from a username, a role and a secret.
-   * It uses the default expiration days from the application.properties file.
+   * It uses the default expiration minutes from the application.properties file.
    * @param username the username
    * @param role the role name; the claim is omitted when {@code null}
    * @return String the JWT token
    */
   private String buildTokenWithDefaultParameters(String username, String role) {
     var issuedAt = new Date();
-    var expiration = DateUtils.addDays(issuedAt, expirationDays);
+    var expiration = DateUtils.addMinutes(issuedAt, expirationMinutes);
     var key = getSigningKey();
     var builder = Jwts.builder()
         .subject(username)

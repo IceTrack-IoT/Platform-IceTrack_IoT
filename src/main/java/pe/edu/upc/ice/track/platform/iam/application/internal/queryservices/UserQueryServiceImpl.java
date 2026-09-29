@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.iam.application.queryservices.UserQueryService;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetAllUsersQuery;
+import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetCurrentUserQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByIdQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByUsernameQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.repositories.UserRepository;
@@ -34,6 +35,12 @@ public class UserQueryServiceImpl implements UserQueryService {
 
   @Override
   public Optional<User> handle(GetUserByUsernameQuery query) {
+    return userRepository.findByUsername(query.username());
+  }
+
+  @Override
+  public Optional<User> handle(GetCurrentUserQuery query) {
+    if (query == null) return Optional.empty();
     return userRepository.findByUsername(query.username());
   }
 }

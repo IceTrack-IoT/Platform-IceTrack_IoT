@@ -28,7 +28,7 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 
 ## Features
 
-- **Auth built-in** — local sign-up/sign-in + Google OIDC deferred registration (`/google/verify` → `/google/complete-registration/{owner|technician}`), role explicit local sign-up (`/sign-up/{owner|technician}`), JWT bearer auth with a `role` claim (JJWT 0.13.0)
+- **Auth built-in** — local sign-up/sign-in + Google OIDC deferred registration (`/google/verify` → `/google/complete-registration/{owner|technician}`), role explicit local sign-up (`/sign-up/{owner|technician}`), JWT bearer auth with a `role` claim (JJWT 0.13.0), rotating refresh tokens (`/refresh-token`), `/logout` and `/me`
 - **Immutable roles** — every account is `OWNER_ROLE` or `TECHNICIAN_ROLE`, chosen once at registration, and gets its `OwnerProfile` / `TechnicianProfile` in the same transaction
 - **IAM + Profiles** bounded contexts (`/api/v1/authentication`, `/api/v1/users`, `/api/v1/roles`, `/api/v1/profiles/owners`, `/api/v1/profiles/technicians`)
 - **OpenAPI first** — springdoc-openapi 3.1.1 with Swagger UI
@@ -77,7 +77,8 @@ Defaults come from `src/main/resources/application.properties`:
 | `SPRING_DATASOURCE_PASSWORD` | `postgres` | DB password |
 | `SPRING_PROFILES_ACTIVE` | `dev` | Set to `dev` by `docker-compose.dev.yml` |
 | `JWT_SECRET` | dev-only default | Internal bearer-token signing key |
-| `JWT_EXPIRATION_DAYS` | `7` | Token TTL |
+| `JWT_EXPIRATION_MINUTES` | `30` | Access token TTL |
+| `REFRESH_TOKEN_EXPIRATION_DAYS` | `7` | Refresh token TTL (each refresh rotates the token) |
 | `GOOGLE_CLIENT_ID` | `google-client-id` | Google OIDC client ID for `id_token` validation |
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.

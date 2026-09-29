@@ -64,6 +64,16 @@ public record ApplicationError(
   }
 
   /**
+   * Unauthorized error: the caller's credentials are missing, invalid, expired or revoked
+   */
+  public static ApplicationError unauthorized(String reason) {
+    return new ApplicationError(
+        "UNAUTHORIZED",
+        "Unauthorized",
+        reason);
+  }
+
+  /**
    * Access denied error: the caller is authenticated but not allowed to perform the operation
    */
   public static ApplicationError accessDenied(String reason) {
