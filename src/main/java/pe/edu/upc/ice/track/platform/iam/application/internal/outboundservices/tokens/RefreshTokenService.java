@@ -1,5 +1,6 @@
 package pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.tokens;
 
+import java.time.Duration;
 import java.time.Instant;
 
 /**
@@ -34,13 +35,12 @@ public interface RefreshTokenService {
   Instant calculateExpiryDate(Instant issuedAt);
 
   /**
-   * Computes the start of the reuse grace window.
+   * Returns the reuse grace period.
    *
-   * <p>A revoked token presented again that was revoked after this instant is treated as a
+   * <p>A rotated token presented again no later than this after its rotation is treated as a
    * concurrent refresh by the legitimate client, not as a replay.</p>
    *
-   * @param now the instant the token is presented
-   * @return the earliest revocation instant still inside the grace window
+   * @return the grace period; {@link Duration#ZERO} disables it
    */
-  Instant calculateReuseGraceThreshold(Instant now);
+  Duration getReuseGracePeriod();
 }

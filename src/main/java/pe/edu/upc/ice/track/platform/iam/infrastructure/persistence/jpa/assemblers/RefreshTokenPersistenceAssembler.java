@@ -19,7 +19,8 @@ public final class RefreshTokenPersistenceAssembler {
         entity.getToken(),
         entity.getExpiryDate(),
         entity.isRevoked(),
-        entity.getRevokedAt());
+        entity.getRevokedAt(),
+        entity.getReplacedByToken());
   }
 
   public static RefreshTokenPersistenceEntity toPersistenceFromDomain(RefreshToken refreshToken) {
@@ -35,6 +36,7 @@ public final class RefreshTokenPersistenceAssembler {
     entity.setExpiryDate(refreshToken.getExpiryDate());
     entity.setRevoked(refreshToken.isRevoked());
     entity.setRevokedAt(refreshToken.getRevokedAt());
+    entity.setReplacedByToken(refreshToken.getReplacedByToken());
     return entity;
   }
 }

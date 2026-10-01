@@ -29,6 +29,25 @@ public interface RefreshTokenPersistenceRepository extends JpaRepository<Refresh
   Optional<RefreshTokenPersistenceEntity> findByToken(String token);
 
   /**
+   * This method is responsible for rotating the refresh token matching a digest, if it is still active.
+   * @param token The token digest.
+   * @param replacedByToken The digest of the replacing token.
+   * @param revokedAt The rotation instant to record.
+   * @param updatedAt The modification timestamp to record.
+   * @return The number of rotated tokens, 0 when the token was already revoked or does not exist.
+   */
+  @Transactional
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query("update RefreshTokenPersistenceEntity t set t.revoked = true, t.revokedAt = :revokedAt, "
+      + "t.replacedByToken = :replacedByToken, t.updatedAt = :updatedAt "
+      + "where t.token = :token and t.revoked = false")
+  int rotateActiveByToken(
+      @Param("token") String token,
+      @Param("replacedByToken") String replacedByToken,
+      @Param("revokedAt") Instant revokedAt,
+      @Param("updatedAt") Date updatedAt);
+
+  /**
    * This method is responsible for revoking the refresh token matching a digest, if it is still active.
    * @param token The token digest.
    * @param revokedAt The revocation instant to record.
@@ -55,16 +74,6 @@ public interface RefreshTokenPersistenceRepository extends JpaRepository<Refresh
       + "t.updatedAt = :updatedAt where t.userId = :userId and t.revoked = false")
   void revokeAllActiveByUserId(
       @Param("userId") Long userId, @Param("revokedAt") Instant revokedAt, @Param("updatedAt") Date updatedAt);
-
-  /**
-   * This method is responsible for deleting the refresh token matching a digest.
-   *
-   * @param token The token digest.
-   */
-  @Transactional
-  @Modifying(flushAutomatically = true, clearAutomatically = true)
-  @Query("delete from RefreshTokenPersistenceEntity t where t.token = :token")
-  void deleteByToken(@Param("token") String token);
 
   /**
    * This method is responsible for deleting every refresh token that expired before an instant.

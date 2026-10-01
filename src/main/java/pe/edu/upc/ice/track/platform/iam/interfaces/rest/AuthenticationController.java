@@ -24,6 +24,7 @@ import pe.edu.upc.ice.track.platform.iam.application.queryservices.UserQueryServ
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetCurrentUserQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.SessionTokens;
+import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.AuthErrorResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.AuthenticatedUserResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.CompleteGoogleOwnerRegistrationResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.CompleteGoogleTechnicianRegistrationResource;
@@ -298,9 +299,9 @@ public class AuthenticationController {
   /**
    * Exchanges a refresh token for a new access token and a new refresh token.
    *
-   * <p>The presented refresh token is single use: it is revoked by this call, and the returned
-   * refresh token must be used next. Presenting a refresh token a second time is treated as a
-   * replay and revokes every session of the account.</p>
+   * <p>The presented refresh token is single use: it is rotated by this call, and the returned
+   * refresh token must be used next. Every rejection is a 401 {@link AuthErrorResource} carrying a
+   * machine-readable {@code code}, rendered by {@link AuthenticationExceptionHandler}.</p>
    *
    * @param resource the payload carrying the refresh token
    * @return the authenticated user together with the new session tokens
@@ -310,7 +311,11 @@ public class AuthenticationController {
   @Operation(
       summary = "Refresh the session tokens",
       description = "Rotates the refresh token: revokes the presented one and returns a new access token and a new "
-          + "refresh token. Replaying an already used refresh token revokes every session of the account."
+          + "refresh token. Rejections are 401 responses whose `code` tells the client what to do: "
+          + "REFRESH_TOKEN_RECENTLY_ROTATED - a concurrent request already rotated it; retry once with the latest "
+          + "refresh token. REFRESH_TOKEN_REPLAY_DETECTED - reused after the grace period; every session of the "
+          + "account has been revoked. REFRESH_TOKEN_EXPIRED, REFRESH_TOKEN_REVOKED, REFRESH_TOKEN_INVALID - sign "
+          + "in again."
   )
   @ApiResponses(value = {
       @ApiResponse(
@@ -319,7 +324,11 @@ public class AuthenticationController {
           content = @Content(schema = @Schema(implementation = AuthenticatedUserResource.class))
       ),
       @ApiResponse(responseCode = "400", description = "The refresh token is missing"),
-      @ApiResponse(responseCode = "401", description = "The refresh token is invalid, expired or revoked")
+      @ApiResponse(
+          responseCode = "401",
+          description = "The refresh token was rejected; see `code`",
+          content = @Content(schema = @Schema(implementation = AuthErrorResource.class))
+      )
   })
   public ResponseEntity<?> refreshToken(@Valid @RequestBody RefreshTokenResource resource) {
     var refreshTokenCommand = RefreshTokenCommandFromResourceAssembler.toCommandFromResource(resource);
@@ -333,7 +342,7 @@ public class AuthenticationController {
   /**
    * Ends the session bound to a refresh token.
    *
-   * <p>Idempotent: an unknown or already discarded refresh token is also answered with 204. The
+   * <p>Idempotent: an unknown or already revoked refresh token is also answered with 204. The
    * access token stays valid until it expires, so the client must discard it as well.</p>
    *
    * @param resource the payload carrying the refresh token of the session to end
@@ -342,8 +351,9 @@ public class AuthenticationController {
   @PostMapping(value = "/logout")
   @Operation(
       summary = "Sign out",
-      description = "Discards the refresh token so that it can no longer be exchanged. The short-lived access "
-          + "token is stateless and remains valid until it expires; clients must discard it."
+      description = "Revokes the refresh token so that it can no longer be exchanged; presenting it later is "
+          + "answered with REFRESH_TOKEN_REVOKED. The short-lived access token is stateless and remains valid until "
+          + "it expires; clients must discard it."
   )
   @ApiResponses(value = {
       @ApiResponse(responseCode = "204", description = "Signed out"),

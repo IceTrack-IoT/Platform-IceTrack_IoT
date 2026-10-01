@@ -76,8 +76,8 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
 
   // inherited javadoc
   @Override
-  public Instant calculateReuseGraceThreshold(Instant now) {
-    return now.minus(reuseGracePeriod);
+  public Duration getReuseGracePeriod() {
+    return reuseGracePeriod;
   }
 
   /**

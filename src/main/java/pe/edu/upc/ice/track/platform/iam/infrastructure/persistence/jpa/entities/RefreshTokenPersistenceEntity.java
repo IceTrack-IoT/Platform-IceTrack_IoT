@@ -49,4 +49,12 @@ public class RefreshTokenPersistenceEntity extends AuditableAbstractPersistenceE
    */
   @Column(name = "revoked_at")
   private Instant revokedAt;
+
+  /**
+   * SHA-256 digest of the token that replaced this one when it was rotated - never the raw value,
+   * which would let a leaked row be exchanged for a live session. Null when the token was not
+   * rotated, which tells an explicit revocation apart from a rotation.
+   */
+  @Column(name = "replaced_by_token", length = 64)
+  private String replacedByToken;
 }

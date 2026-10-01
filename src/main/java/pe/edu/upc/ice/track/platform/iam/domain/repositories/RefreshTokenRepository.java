@@ -30,10 +30,19 @@ public interface RefreshTokenRepository {
   RefreshToken save(RefreshToken refreshToken);
 
   /**
-   * Revoke an active refresh token atomically.
+   * Persist the rotation of a refresh token atomically.
    *
-   * <p>The check and the update happen in a single statement, so when two requests present the
-   * same token concurrently exactly one of them succeeds.</p>
+   * <p>The rotation is only written while the stored token is still active: the check and the
+   * update happen in a single statement, so when two requests rotate the same token concurrently
+   * exactly one of them succeeds.</p>
+   *
+   * @param rotatedToken the token after {@link RefreshToken#rotate}
+   * @return true if this call rotated the token, false if it was already revoked or does not exist
+   */
+  boolean saveRotation(RefreshToken rotatedToken);
+
+  /**
+   * Revoke an active refresh token atomically, without a replacement.
    *
    * @param token the digest of the raw token
    * @return true if this call revoked the token, false if it was already revoked or does not exist
@@ -46,13 +55,6 @@ public interface RefreshTokenRepository {
    * @param userId the identifier of the account
    */
   void revokeAllByUserId(Long userId);
-
-  /**
-   * Delete refresh token by digest
-   *
-   * @param token the digest of the raw token
-   */
-  void deleteByToken(String token);
 
   /**
    * Delete every refresh token that expired before an instant

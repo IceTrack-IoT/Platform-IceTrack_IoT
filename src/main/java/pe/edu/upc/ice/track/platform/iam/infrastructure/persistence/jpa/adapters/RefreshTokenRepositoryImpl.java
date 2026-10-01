@@ -37,6 +37,16 @@ public class RefreshTokenRepositoryImpl implements RefreshTokenRepository {
   }
 
   @Override
+  public boolean saveRotation(RefreshToken rotatedToken) {
+    if (rotatedToken == null || !rotatedToken.isRotated()) return false;
+    return refreshTokenPersistenceRepository.rotateActiveByToken(
+        rotatedToken.getToken(),
+        rotatedToken.getReplacedByToken(),
+        rotatedToken.getRevokedAt(),
+        Date.from(rotatedToken.getRevokedAt())) > 0;
+  }
+
+  @Override
   public boolean revoke(String token) {
     if (token == null || token.isBlank()) return false;
     var now = Instant.now();
@@ -54,11 +64,5 @@ public class RefreshTokenRepositoryImpl implements RefreshTokenRepository {
   public int deleteAllExpiredBefore(Instant instant) {
     if (instant == null) return 0;
     return refreshTokenPersistenceRepository.deleteAllExpiredBefore(instant);
-  }
-
-  @Override
-  public void deleteByToken(String token) {
-    if (token == null || token.isBlank()) return;
-    refreshTokenPersistenceRepository.deleteByToken(token);
   }
 }

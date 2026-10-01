@@ -16,6 +16,6 @@ public class CurrentUserResourceFromEntityAssembler {
    * @return the current user resource
    */
   public static CurrentUserResource toResourceFromEntity(User user) {
-    return new CurrentUserResource(user.getId(), user.getUsername(), user.getEmail(), List.of(user.getRoleName()));
+    return new CurrentUserResource(user.getId(), user.getUsername(), user.getEmail(), user.getRoleName());
   }
 }

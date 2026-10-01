@@ -95,23 +95,26 @@ public interface UserCommandService {
   /**
    * Exchanges a refresh token for a new session, rotating the refresh token.
    *
-   * <p>The presented token is revoked and replaced: the result carries a new access token and a
-   * new refresh token. A token that is unknown, expired or already revoked is rejected with an
-   * {@code UNAUTHORIZED} failure. A revoked token being presented again is a replay: every
-   * session of its account is revoked as well, unless it was rotated within the reuse grace
-   * window, which marks a concurrent refresh by the legitimate client.</p>
+   * <p>The presented token is rotated: the result carries a new access token and a new refresh
+   * token. A rotated token presented again is a replay: every session of its account is revoked,
+   * unless it was rotated within the reuse grace window, which marks a concurrent refresh by the
+   * legitimate client.</p>
    *
    * @param command the command carrying the refresh token
    * @return a Result containing an ImmutablePair of the authenticated User and its new session
-   *         tokens, or an ApplicationError when the refresh token is not accepted
+   *         tokens, or a validation ApplicationError when the command is missing
+   * @throws pe.edu.upc.ice.track.platform.iam.domain.exceptions.RefreshTokenException when the
+   *         refresh token is not accepted, carrying the
+   *         {@link pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.AuthErrorCode} explaining why
    */
   Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(RefreshTokenCommand command);
 
   /**
    * Ends the session bound to a refresh token.
    *
-   * <p>Idempotent: an unknown or already discarded token is silently ignored, so the outcome
-   * never reveals whether a token exists.</p>
+   * <p>The token is revoked without a replacement, so presenting it later is rejected as
+   * {@code REFRESH_TOKEN_REVOKED}. Idempotent: an unknown or already revoked token is silently
+   * ignored, so the outcome never reveals whether a token exists.</p>
    *
    * @param command the command carrying the refresh token of the session to end
    */
