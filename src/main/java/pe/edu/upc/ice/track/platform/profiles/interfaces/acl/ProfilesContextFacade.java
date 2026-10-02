@@ -78,4 +78,18 @@ public interface ProfilesContextFacade {
    * @return {@code true} when the account has a profile
    */
   boolean existsProfileByUserId(Long userId);
+
+  /**
+   * Resolves the owner profile a platform account acts as.
+   *
+   * <p>This is the read only half of the ACL, the counterpart of the create methods: a calling
+   * context that owns resources - sites, equipment, subscriptions - needs to know which owner
+   * profile an authenticated account stands for, and it may only learn that through this
+   * facade.</p>
+   *
+   * @param userId identifier of the account; may be {@code null}
+   * @return the identifier of the owner profile bound to the account, or {@code 0L} when the
+   *         account holds no owner profile - a technician account, say
+   */
+  Long fetchOwnerIdByUserId(Long userId);
 }

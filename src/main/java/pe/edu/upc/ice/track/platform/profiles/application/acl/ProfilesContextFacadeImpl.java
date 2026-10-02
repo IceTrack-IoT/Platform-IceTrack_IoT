@@ -5,10 +5,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.OwnerCommandService;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.TechnicianCommandService;
+import pe.edu.upc.ice.track.platform.profiles.application.queryservices.OwnerQueryService;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Profile;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateOwnerCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateTechnicianCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.factories.ProfileCreationData;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetOwnerByUserIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.EmailAddress;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.PersonName;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Phone;
@@ -40,16 +42,24 @@ public class ProfilesContextFacadeImpl implements ProfilesContextFacade {
   private static final String CONFLICT_SUFFIX = "_CONFLICT";
   private static final String VALIDATION_ERROR = "VALIDATION_ERROR";
 
+  /**
+   * Sentinel this facade returns when no owner profile is bound to an account.
+   */
+  private static final long NO_OWNER = 0L;
+
   private final OwnerCommandService ownerCommandService;
   private final TechnicianCommandService technicianCommandService;
+  private final OwnerQueryService ownerQueryService;
   private final ProfileRepository profileRepository;
 
   public ProfilesContextFacadeImpl(
       OwnerCommandService ownerCommandService,
       TechnicianCommandService technicianCommandService,
+      OwnerQueryService ownerQueryService,
       ProfileRepository profileRepository) {
     this.ownerCommandService = ownerCommandService;
     this.technicianCommandService = technicianCommandService;
+    this.ownerQueryService = ownerQueryService;
     this.profileRepository = profileRepository;
   }
 
@@ -90,6 +100,15 @@ public class ProfilesContextFacadeImpl implements ProfilesContextFacade {
   public boolean existsProfileByUserId(Long userId) {
     if (userId == null) return false;
     return profileRepository.existsByUserId(new UserId(userId));
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional(readOnly = true)
+  public Long fetchOwnerIdByUserId(Long userId) {
+    if (userId == null) return NO_OWNER;
+    var result = ownerQueryService.handle(new GetOwnerByUserIdQuery(new UserId(userId)));
+    return result.map(Profile::getUserProfileId).orElse(NO_OWNER);
   }
 
   /**
