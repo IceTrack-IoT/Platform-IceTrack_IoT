@@ -37,6 +37,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
   private final LocalDateTime openedAt;
   private LocalDateTime resolvedAt;
 
+
   public Alert(Long equipmentId, AlertType type, AlertSeverity severity, Long triggeringReadingId,
                Double peakTemperature, Duration excursionDuration) {
     this.equipmentId = Objects.requireNonNull(equipmentId, "equipmentId must not be null");

@@ -1,5 +1,8 @@
 package pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects;
 
+/**
+ *  Enumeration representing the status of an alert in the monitoring system.
+ */
 public enum AlertStatus {
 
   OPEN(1),
