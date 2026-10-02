@@ -112,9 +112,14 @@ public class WebSecurityConfiguration {
         .exceptionHandling(exceptionHandling -> exceptionHandling.authenticationEntryPoint(unauthorizedRequestHandler))
         .sessionManagement( customizer -> customizer.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(authorizeRequests -> authorizeRequests
+            // Rules are evaluated in order: the current-user endpoint must be matched before the
+            // anonymous authentication wildcard below, or that wildcard would expose it.
+            .requestMatchers("/api/v1/authentication/me").authenticated()
             .requestMatchers(
                 // Sign-in, sign-up and the Google token exchange must be reachable anonymously:
-                // they are what mints the bearer token every other endpoint requires.
+                // they are what mints the bearer token every other endpoint requires. So must
+                // refresh-token and logout: the refresh token they receive is their credential,
+                // and the access token may already have expired when they are called.
                 "/api/v1/authentication/**",
                 // Authorization rules also apply to the ERROR dispatch, so the container error
                 // endpoint has to stay reachable for sendError() responses to be rendered.

@@ -18,6 +18,12 @@ public record UserResource(
     String username,
 
     @Schema(description = "Role of the account", example = "OWNER_ROLE", allowableValues = {"OWNER_ROLE", "TECHNICIAN_ROLE"})
-    String role
+    String role,
+
+    @Schema(description = "Authentication provider", example = "GOOGLE")
+    String provider,
+
+    @Schema(description = "External ID of the user", example = "123456")
+    String externalId
 ) {
 }

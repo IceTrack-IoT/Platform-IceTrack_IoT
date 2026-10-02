@@ -4,10 +4,14 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleOwnerRegistrationCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleTechnicianRegistrationCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.PurgeExpiredRefreshTokensCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.RefreshTokenCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByGoogleCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByLocalCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignOutCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpOwnerCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpTechnicianCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.SessionTokens;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
@@ -19,6 +23,9 @@ import pe.edu.upc.ice.track.platform.shared.application.result.Result;
  * profile through the
  * {@link pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.acl.ExternalProfileService}
  * outbound service; when the profile is rejected, the account is rolled back.</p>
+ *
+ * <p>Every command that signs an account in opens a session: it returns {@link SessionTokens}
+ * made of a short-lived access token and a single-use refresh token.</p>
  */
 public interface UserCommandService {
 
@@ -26,9 +33,9 @@ public interface UserCommandService {
    * Handles the sign-in command by local authentication.
    *
    * @param command the sign-in command containing the user's credentials
-   * @return a Result containing an ImmutablePair of the authenticated User and a JWT token if successful, or an ApplicationError if failed
+   * @return a Result containing an ImmutablePair of the authenticated User and its session tokens if successful, or an ApplicationError if failed
    */
-  Result<ImmutablePair<User, String>, ApplicationError> handle(SignInByLocalCommand command);
+  Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(SignInByLocalCommand command);
 
   /**
    * Registers an ice track owner with local credentials and its {@code Owner} profile.
@@ -49,15 +56,15 @@ public interface UserCommandService {
   /**
    * Handles the Google sign-in command - the first step of the deferred registration flow.
    *
-   * <p>Validates the Google OIDC id_token and, when a platform account matches it, issues the
-   * platform bearer token. When no account matches, nothing is written and the result is a
+   * <p>Validates the Google OIDC id_token and, when a platform account matches it, opens a
+   * session. When no account matches, nothing is written and the result is a
    * {@code GOOGLE_ACCOUNT_NOT_FOUND} failure, telling the caller to complete the onboarding.</p>
    *
    * @param command the command carrying the Google id_token
-   * @return a Result containing an ImmutablePair of the authenticated User and the platform JWT,
+   * @return a Result containing an ImmutablePair of the authenticated User and its session tokens,
    *         or an ApplicationError when the token is rejected or the account is not registered
    */
-  Result<ImmutablePair<User, String>, ApplicationError> handle(SignInByGoogleCommand command);
+  Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(SignInByGoogleCommand command);
 
   /**
    * Completes the deferred registration of a Google account as an ice track owner.
@@ -67,10 +74,10 @@ public interface UserCommandService {
    * account is already registered, it is simply signed in with its existing role.</p>
    *
    * @param command the command carrying the Google id_token and the owner onboarding form
-   * @return a Result containing an ImmutablePair of the authenticated User and the platform JWT,
+   * @return a Result containing an ImmutablePair of the authenticated User and its session tokens,
    *         or an ApplicationError when the token, the form or the profile is rejected
    */
-  Result<ImmutablePair<User, String>, ApplicationError> handle(CompleteGoogleOwnerRegistrationCommand command);
+  Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(CompleteGoogleOwnerRegistrationCommand command);
 
   /**
    * Completes the deferred registration of a Google account as a maintenance technician.
@@ -80,8 +87,46 @@ public interface UserCommandService {
    * Google account is already registered, it is simply signed in with its existing role.</p>
    *
    * @param command the command carrying the Google id_token and the technician onboarding form
-   * @return a Result containing an ImmutablePair of the authenticated User and the platform JWT,
+   * @return a Result containing an ImmutablePair of the authenticated User and its session tokens,
    *         or an ApplicationError when the token, the form or the profile is rejected
    */
-  Result<ImmutablePair<User, String>, ApplicationError> handle(CompleteGoogleTechnicianRegistrationCommand command);
+  Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(CompleteGoogleTechnicianRegistrationCommand command);
+
+  /**
+   * Exchanges a refresh token for a new session, rotating the refresh token.
+   *
+   * <p>The presented token is rotated: the result carries a new access token and a new refresh
+   * token. A rotated token presented again is a replay: every session of its account is revoked,
+   * unless it was rotated within the reuse grace window, which marks a concurrent refresh by the
+   * legitimate client.</p>
+   *
+   * @param command the command carrying the refresh token
+   * @return a Result containing an ImmutablePair of the authenticated User and its new session
+   *         tokens, or a validation ApplicationError when the command is missing
+   * @throws pe.edu.upc.ice.track.platform.iam.domain.exceptions.RefreshTokenException when the
+   *         refresh token is not accepted, carrying the
+   *         {@link pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.AuthErrorCode} explaining why
+   */
+  Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(RefreshTokenCommand command);
+
+  /**
+   * Ends the session bound to a refresh token.
+   *
+   * <p>The token is revoked without a replacement, so presenting it later is rejected as
+   * {@code REFRESH_TOKEN_REVOKED}. Idempotent: an unknown or already revoked token is silently
+   * ignored, so the outcome never reveals whether a token exists.</p>
+   *
+   * @param command the command carrying the refresh token of the session to end
+   */
+  void handle(SignOutCommand command);
+
+  /**
+   * Deletes every refresh token past its expiry date.
+   *
+   * <p>Revoked tokens that have not expired yet are kept, so that a replay can still be detected.</p>
+   *
+   * @param command the purge command
+   * @return the number of deleted tokens
+   */
+  int handle(PurgeExpiredRefreshTokensCommand command);
 }

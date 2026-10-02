@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform;
 
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
+import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.SessionTokens;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.AuthenticatedUserResource;
 
 /**
@@ -8,13 +9,18 @@ import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.Authenticated
  */
 public class AuthenticatedUserResourceFromEntityAssembler {
   /**
-   * Creates a resource from the authenticated {@link User} aggregate and issued bearer token.
+   * Creates a resource from the authenticated {@link User} aggregate and its issued session tokens.
    *
    * @param user authenticated user aggregate
-   * @param token generated bearer token
+   * @param sessionTokens generated access and refresh tokens
    * @return resource used by the authentication endpoint response
    */
-  public static AuthenticatedUserResource toResourceFromEntity(User user, String token) {
-    return new AuthenticatedUserResource(user.getId(), user.getUsername(), user.getRoleName(), token);
+  public static AuthenticatedUserResource toResourceFromEntity(User user, SessionTokens sessionTokens) {
+    return new AuthenticatedUserResource(
+        user.getId(),
+        user.getUsername(),
+        user.getRoleName(),
+        sessionTokens.accessToken(),
+        sessionTokens.refreshToken());
   }
 }

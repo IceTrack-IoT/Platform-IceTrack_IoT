@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.iam.application.queryservices;
 
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetAllUsersQuery;
+import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetCurrentUserQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByIdQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByUsernameQuery;
 
@@ -35,5 +36,13 @@ public interface UserQueryService {
    * @return matching user, if found
    */
   Optional<User> handle(GetUserByUsernameQuery query);
+
+  /**
+   * Handles retrieval of the account of the authenticated principal.
+   *
+   * @param query current-user query
+   * @return the principal's account, or empty when it no longer exists
+   */
+  Optional<User> handle(GetCurrentUserQuery query);
 
 }

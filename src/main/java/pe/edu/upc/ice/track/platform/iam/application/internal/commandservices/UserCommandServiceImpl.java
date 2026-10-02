@@ -10,23 +10,33 @@ import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.a
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.google.GoogleTokenService;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.google.GoogleUserInfo;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.hashing.HashingService;
+import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.tokens.RefreshTokenService;
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.tokens.TokenService;
+import pe.edu.upc.ice.track.platform.iam.domain.exceptions.RefreshTokenException;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleOwnerRegistrationCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.CompleteGoogleTechnicianRegistrationCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.PurgeExpiredRefreshTokensCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.RefreshTokenCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByGoogleCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignInByLocalCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignOutCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpOwnerCommand;
 import pe.edu.upc.ice.track.platform.iam.domain.model.commands.SignUpTechnicianCommand;
+import pe.edu.upc.ice.track.platform.iam.domain.model.entities.RefreshToken;
 import pe.edu.upc.ice.track.platform.iam.domain.model.entities.Role;
+import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.AuthErrorCode;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.AuthProvider;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetails;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.Roles;
+import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.SessionTokens;
+import pe.edu.upc.ice.track.platform.iam.domain.repositories.RefreshTokenRepository;
 import pe.edu.upc.ice.track.platform.iam.domain.repositories.RoleRepository;
 import pe.edu.upc.ice.track.platform.iam.domain.repositories.UserRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -53,6 +63,15 @@ import java.util.function.Function;
  * transaction. When the profiles context rejects the profile, the transaction is marked
  * rollback-only before the failure is returned, so no account can ever exist without its profile,
  * and no profile without its account.</p>
+ *
+ * <p>It also owns the session lifecycle. Every sign-in opens a session made of a short-lived
+ * access JWT and an opaque refresh token persisted as its digest ({@link RefreshTokenCommand}
+ * rotates it, {@link SignOutCommand} revokes it). An exchanged refresh token is kept as rotated
+ * rather than deleted, so that replaying it is detected and revokes every session of the
+ * account; one presented again within a short grace window after its rotation is only rejected,
+ * since that is a concurrent refresh by the legitimate client. Every rejection is a
+ * {@link RefreshTokenException} carrying a typed {@link AuthErrorCode}. Expired tokens are removed
+ * by {@link PurgeExpiredRefreshTokensCommand}.</p>
  */
 @Service
 @Slf4j
@@ -67,6 +86,8 @@ public class UserCommandServiceImpl implements UserCommandService {
   private final RoleRepository roleRepository;
   private final GoogleTokenService googleTokenService;
   private final ExternalProfileService externalProfileService;
+  private final RefreshTokenRepository refreshTokenRepository;
+  private final RefreshTokenService refreshTokenService;
 
   public UserCommandServiceImpl(
       UserRepository userRepository,
@@ -74,19 +95,23 @@ public class UserCommandServiceImpl implements UserCommandService {
       TokenService tokenService,
       RoleRepository roleRepository,
       GoogleTokenService googleTokenService,
-      ExternalProfileService externalProfileService) {
+      ExternalProfileService externalProfileService,
+      RefreshTokenRepository refreshTokenRepository,
+      RefreshTokenService refreshTokenService) {
     this.userRepository = userRepository;
     this.hashingService = hashingService;
     this.tokenService = tokenService;
     this.roleRepository = roleRepository;
     this.googleTokenService = googleTokenService;
     this.externalProfileService = externalProfileService;
+    this.refreshTokenRepository = refreshTokenRepository;
+    this.refreshTokenService = refreshTokenService;
   }
 
   // inherited javadoc
   @Override
-  @Transactional(readOnly = true)
-  public Result<ImmutablePair<User, String>, ApplicationError> handle(SignInByLocalCommand command) {
+  @Transactional // not read-only: a successful sign-in persists the refresh token of the new session
+  public Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(SignInByLocalCommand command) {
     if (command == null || command.username() == null || command.username().isBlank()) {
       return Result.failure(ApplicationError.validationError("username", "Username must not be null or blank"));
     }
@@ -143,7 +168,7 @@ public class UserCommandServiceImpl implements UserCommandService {
   // inherited javadoc
   @Override
   @Transactional
-  public Result<ImmutablePair<User, String>, ApplicationError> handle(SignInByGoogleCommand command) {
+  public Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(SignInByGoogleCommand command) {
     if (command == null) {
       return Result.failure(ApplicationError.validationError("command", "Google sign-in command must not be null"));
     }
@@ -161,7 +186,7 @@ public class UserCommandServiceImpl implements UserCommandService {
   // inherited javadoc
   @Override
   @Transactional
-  public Result<ImmutablePair<User, String>, ApplicationError> handle(CompleteGoogleOwnerRegistrationCommand command) {
+  public Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(CompleteGoogleOwnerRegistrationCommand command) {
     if (command == null) {
       return Result.failure(ApplicationError.validationError("command", "Google owner registration command must not be null"));
     }
@@ -174,7 +199,7 @@ public class UserCommandServiceImpl implements UserCommandService {
   // inherited javadoc
   @Override
   @Transactional
-  public Result<ImmutablePair<User, String>, ApplicationError> handle(CompleteGoogleTechnicianRegistrationCommand command) {
+  public Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(CompleteGoogleTechnicianRegistrationCommand command) {
     if (command == null) {
       return Result.failure(ApplicationError.validationError("command", "Google technician registration command must not be null"));
     }
@@ -187,6 +212,60 @@ public class UserCommandServiceImpl implements UserCommandService {
             command.contactDetails(),
             command.speciality(),
             command.certificationNumber())));
+  }
+
+  // inherited javadoc
+  // A RefreshTokenException must not roll back: the replay mitigation revokes every session of
+  // the account and then throws, and that revocation has to be committed.
+  @Override
+  @Transactional(noRollbackFor = RefreshTokenException.class)
+  public Result<ImmutablePair<User, SessionTokens>, ApplicationError> handle(RefreshTokenCommand command) {
+    if (command == null) {
+      return Result.failure(ApplicationError.validationError("command", "Refresh token command must not be null"));
+    }
+    var refreshToken = refreshTokenRepository.findByToken(refreshTokenService.hashToken(command.refreshToken()))
+        .orElseThrow(() -> new RefreshTokenException(AuthErrorCode.REFRESH_TOKEN_INVALID));
+    if (refreshToken.isExpired()) {
+      throw new RefreshTokenException(AuthErrorCode.REFRESH_TOKEN_EXPIRED);
+    }
+    if (refreshToken.isRevoked()) {
+      throw rejectRevokedToken(refreshToken);
+    }
+    // Resolved before rotating, so that a token of a deleted account is not consumed for nothing.
+    // The access token is minted from the reloaded account, so it always carries its current role.
+    var user = userRepository.findById(refreshToken.getUserId())
+        .orElseThrow(() -> new RefreshTokenException(AuthErrorCode.REFRESH_TOKEN_INVALID));
+
+    var newRawToken = refreshTokenService.generateToken();
+    refreshToken.rotate(refreshTokenService.hashToken(newRawToken));
+    // Atomic compare-and-set: when the same token is presented concurrently, only one request
+    // rotates it. Losing the race means another request rotated it a few milliseconds ago, which
+    // is the concurrent refresh case, never a replay.
+    if (!refreshTokenRepository.saveRotation(refreshToken)) {
+      throw new RefreshTokenException(AuthErrorCode.REFRESH_TOKEN_RECENTLY_ROTATED);
+    }
+    return Result.success(openSession(user, newRawToken));
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public void handle(SignOutCommand command) {
+    if (command == null) {
+      return;
+    }
+    // Revoked without a replacement: presenting the token later is answered with
+    // REFRESH_TOKEN_REVOKED, and is never mistaken for a replay of a rotated token.
+    refreshTokenRepository.revoke(refreshTokenService.hashToken(command.refreshToken()));
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public int handle(PurgeExpiredRefreshTokensCommand command) {
+    var purged = refreshTokenRepository.deleteAllExpiredBefore(Instant.now());
+    log.info("Purged {} expired refresh tokens", purged);
+    return purged;
   }
 
   /**
@@ -222,9 +301,9 @@ public class UserCommandServiceImpl implements UserCommandService {
    * @param googleUserInfo     the verified Google claims
    * @param role               the definitive role implied by the command
    * @param profileProvisioner creates the profile matching {@code role} for the persisted account
-   * @return the authenticated user with its bearer token, or the reason the registration failed
+   * @return the authenticated user with its session tokens, or the reason the registration failed
    */
-  private Result<ImmutablePair<User, String>, ApplicationError> completeGoogleRegistration(
+  private Result<ImmutablePair<User, SessionTokens>, ApplicationError> completeGoogleRegistration(
       GoogleUserInfo googleUserInfo, Roles role, Function<User, Long> profileProvisioner) {
     var existingUser = resolveExistingUser(googleUserInfo);
     if (existingUser.isPresent()) {
@@ -387,13 +466,62 @@ public class UserCommandServiceImpl implements UserCommandService {
   }
 
   /**
-   * Issues the platform bearer token of an account, carrying its definitive role as a claim.
+   * Opens a session for an account: issues the platform bearer token, carrying its definitive
+   * role as a claim, together with a new refresh token.
    *
-   * @param user the authenticated account
-   * @return the account paired with its bearer token
+   * @param user the authenticated, persisted account
+   * @return the account paired with its session tokens
    */
-  private ImmutablePair<User, String> authenticate(User user) {
-    return ImmutablePair.of(user, tokenService.generateToken(user.getUsername(), user.getRoleName()));
+  private ImmutablePair<User, SessionTokens> authenticate(User user) {
+    return openSession(user, refreshTokenService.generateToken());
+  }
+
+  /**
+   * Opens a session for an account with a given raw refresh token: persists the token and issues
+   * the matching access token.
+   *
+   * <p>Only the digest of the refresh token is persisted; the raw value is returned to be handed to
+   * the client once.</p>
+   *
+   * @param user            the authenticated, persisted account
+   * @param rawRefreshToken the raw refresh token of the new session
+   * @return the account paired with its session tokens
+   */
+  private ImmutablePair<User, SessionTokens> openSession(User user, String rawRefreshToken) {
+    refreshTokenRepository.save(RefreshToken.issue(
+        user.getId(),
+        refreshTokenService.hashToken(rawRefreshToken),
+        refreshTokenService.calculateExpiryDate(Instant.now())));
+    var accessToken = tokenService.generateToken(user.getUsername(), user.getRoleName());
+    return ImmutablePair.of(user, new SessionTokens(accessToken, rawRefreshToken));
+  }
+
+  /**
+   * Classifies a refresh token presented after it was revoked.
+   *
+   * <ul>
+   *   <li>Revoked without a replacement (sign-out, or revocation of every session):
+   *       {@code REFRESH_TOKEN_REVOKED}.</li>
+   *   <li>Rotated within the grace period: a concurrent refresh by the legitimate client,
+   *       {@code REFRESH_TOKEN_RECENTLY_ROTATED}.</li>
+   *   <li>Rotated before the grace period: either the legitimate client or an attacker holds a
+   *       stolen copy, and the two cannot be told apart, so every active session of the account is
+   *       revoked, {@code REFRESH_TOKEN_REPLAY_DETECTED}.</li>
+   * </ul>
+   *
+   * @param refreshToken the revoked refresh token
+   * @return the exception to throw
+   */
+  private RefreshTokenException rejectRevokedToken(RefreshToken refreshToken) {
+    if (!refreshToken.isRotated()) {
+      return new RefreshTokenException(AuthErrorCode.REFRESH_TOKEN_REVOKED);
+    }
+    if (refreshToken.isWithinGracePeriod(refreshTokenService.getReuseGracePeriod())) {
+      return new RefreshTokenException(AuthErrorCode.REFRESH_TOKEN_RECENTLY_ROTATED);
+    }
+    log.warn("Rotated refresh token replayed for user {}; revoking all of its sessions", refreshToken.getUserId());
+    refreshTokenRepository.revokeAllByUserId(refreshToken.getUserId());
+    return new RefreshTokenException(AuthErrorCode.REFRESH_TOKEN_REPLAY_DETECTED);
   }
 
   /**
@@ -408,8 +536,8 @@ public class UserCommandServiceImpl implements UserCommandService {
     return new ApplicationError(
         "GOOGLE_ACCOUNT_NOT_FOUND",
         "Google account not registered",
-        "Complete the onboarding through POST /api/v1/authentication/google/complete-registration/owner "
-            + "or /api/v1/authentication/google/complete-registration/technician");
+        "Complete the onboarding through POST /authentication/google/complete-registration/owner "
+            + "or /authentication/google/complete-registration/technician");
   }
 
   /**

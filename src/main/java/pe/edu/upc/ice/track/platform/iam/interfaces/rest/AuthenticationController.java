@@ -5,21 +5,31 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.iam.application.commandservices.UserCommandService;
+import pe.edu.upc.ice.track.platform.iam.application.queryservices.UserQueryService;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
+import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetCurrentUserQuery;
+import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.SessionTokens;
+import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.AuthErrorResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.AuthenticatedUserResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.CompleteGoogleOwnerRegistrationResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.CompleteGoogleTechnicianRegistrationResource;
+import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.CurrentUserResource;
+import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.RefreshTokenResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.SignInWithGoogleResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.SignInWithLocalResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.SignUpOwnerResource;
@@ -28,18 +38,23 @@ import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.UserResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.AuthenticatedUserResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.CompleteGoogleOwnerRegistrationCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.CompleteGoogleTechnicianRegistrationCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.CurrentUserResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.RefreshTokenCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.SignInByGoogleCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.SignInByLocalCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.SignOutCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.SignUpOwnerCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.SignUpTechnicianCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.UserResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 /**
  * AuthenticationController
  * <p>
  *     This controller is responsible for handling authentication requests.
- *     It exposes six endpoints:
+ *     It exposes nine endpoints:
  *     <ul>
  *         <li>POST /api/v1/authentication/sign-in/local</li>
  *         <li>POST /api/v1/authentication/sign-up/owner</li>
@@ -47,7 +62,17 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  *         <li>POST /api/v1/authentication/google/verify</li>
  *         <li>POST /api/v1/authentication/google/complete-registration/owner</li>
  *         <li>POST /api/v1/authentication/google/complete-registration/technician</li>
+ *         <li>POST /api/v1/authentication/refresh-token</li>
+ *         <li>POST /api/v1/authentication/logout</li>
+ *         <li>GET /api/v1/authentication/me</li>
  *     </ul>
+ * </p>
+ * <p>
+ *     Every sign-in returns a short-lived access token together with a single-use refresh token.
+ *     {@code /refresh-token} rotates the refresh token and issues a new pair; {@code /logout}
+ *     discards it. Both are reachable anonymously, since the refresh token is itself the
+ *     credential and the access token may already be expired. {@code /me} is the only endpoint of
+ *     this controller that requires a valid access token.
  * </p>
  * <p>
  *     Registration endpoints are role explicit: the role is implied by the path and never sent by
@@ -67,9 +92,11 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
 @Tag(name = "Authentication", description = "Authentication and user registration endpoints")
 public class AuthenticationController {
   private final UserCommandService userCommandService;
+  private final UserQueryService userQueryService;
 
-  public AuthenticationController(UserCommandService userCommandService) {
+  public AuthenticationController(UserCommandService userCommandService, UserQueryService userQueryService) {
     this.userCommandService = userCommandService;
+    this.userQueryService = userQueryService;
   }
 
   /**
@@ -270,12 +297,119 @@ public class AuthenticationController {
   }
 
   /**
+   * Exchanges a refresh token for a new access token and a new refresh token.
+   *
+   * <p>The presented refresh token is single use: it is rotated by this call, and the returned
+   * refresh token must be used next. Every rejection is a 401 {@link AuthErrorResource} carrying a
+   * machine-readable {@code code}, rendered by {@link AuthenticationExceptionHandler}.</p>
+   *
+   * @param resource the payload carrying the refresh token
+   * @return the authenticated user together with the new session tokens
+   * @see AuthenticatedUserResource
+   */
+  @PostMapping(value = "/refresh-token", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @Operation(
+      summary = "Refresh the session tokens",
+      description = "Rotates the refresh token: revokes the presented one and returns a new access token and a new "
+          + "refresh token. Rejections are 401 responses whose `code` tells the client what to do: "
+          + "REFRESH_TOKEN_RECENTLY_ROTATED - a concurrent request already rotated it; retry once with the latest "
+          + "refresh token. REFRESH_TOKEN_REPLAY_DETECTED - reused after the grace period; every session of the "
+          + "account has been revoked. REFRESH_TOKEN_EXPIRED, REFRESH_TOKEN_REVOKED, REFRESH_TOKEN_INVALID - sign "
+          + "in again."
+  )
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Session refreshed",
+          content = @Content(schema = @Schema(implementation = AuthenticatedUserResource.class))
+      ),
+      @ApiResponse(responseCode = "400", description = "The refresh token is missing"),
+      @ApiResponse(
+          responseCode = "401",
+          description = "The refresh token was rejected; see `code`",
+          content = @Content(schema = @Schema(implementation = AuthErrorResource.class))
+      )
+  })
+  public ResponseEntity<?> refreshToken(@Valid @RequestBody RefreshTokenResource resource) {
+    var refreshTokenCommand = RefreshTokenCommandFromResourceAssembler.toCommandFromResource(resource);
+    var result = userCommandService.handle(refreshTokenCommand);
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        result,
+        AuthenticationController::toAuthenticatedUserResource,
+        HttpStatus.OK);
+  }
+
+  /**
+   * Ends the session bound to a refresh token.
+   *
+   * <p>Idempotent: an unknown or already revoked refresh token is also answered with 204. The
+   * access token stays valid until it expires, so the client must discard it as well.</p>
+   *
+   * @param resource the payload carrying the refresh token of the session to end
+   * @return an empty response
+   */
+  @PostMapping(value = "/logout")
+  @Operation(
+      summary = "Sign out",
+      description = "Revokes the refresh token so that it can no longer be exchanged; presenting it later is "
+          + "answered with REFRESH_TOKEN_REVOKED. The short-lived access token is stateless and remains valid until "
+          + "it expires; clients must discard it."
+  )
+  @ApiResponses(value = {
+      @ApiResponse(responseCode = "204", description = "Signed out"),
+      @ApiResponse(responseCode = "400", description = "The refresh token is missing")
+  })
+  public ResponseEntity<Void> signOut(@Valid @RequestBody(required = false) RefreshTokenResource resource) {
+    var signOutCommand = SignOutCommandFromResourceAssembler.toCommandFromResource(resource);
+    userCommandService.handle(signOutCommand);
+    return ResponseEntity.noContent().build();
+  }
+
+  /**
+   * Returns the account of the authenticated principal.
+   *
+   * @param principal the principal resolved from the bearer token, or {@code null} when none is
+   *                  authenticated
+   * @return the current user resource
+   * @see CurrentUserResource
+   */
+  @GetMapping(value = "/me")
+  @Operation(
+      summary = "Get the current user",
+      description = "Returns the identity and roles of the account the bearer token was issued to.",
+      security = @SecurityRequirement(name = "bearerAuth")
+  )
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Current user retrieved successfully",
+          content = @Content(schema = @Schema(implementation = CurrentUserResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
+  })
+  public ResponseEntity<?> getCurrentUser(@AuthenticationPrincipal UserDetails principal) {
+    // The security filter chain already rejects anonymous calls; this guard keeps the endpoint
+    // safe should the principal ever be missing or of an unexpected type.
+    if (principal == null || principal.getUsername().isBlank()) {
+      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
+          ApplicationError.unauthorized("No authenticated user"));
+    }
+    var getCurrentUserQuery = new GetCurrentUserQuery(principal.getUsername());
+    var user = userQueryService.handle(getCurrentUserQuery);
+    if (user.isEmpty()) {
+      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
+          ApplicationError.unauthorized("The authenticated account no longer exists"));
+    }
+    return ResponseEntity.ok(CurrentUserResourceFromEntityAssembler.toResourceFromEntity(user.get()));
+  }
+
+  /**
    * Maps an authentication outcome onto its REST representation.
    *
-   * @param authenticatedUser the authenticated user paired with the issued bearer token
+   * @param authenticatedUser the authenticated user paired with its session tokens
    * @return the authenticated user resource
    */
-  private static AuthenticatedUserResource toAuthenticatedUserResource(ImmutablePair<User, String> authenticatedUser) {
+  private static AuthenticatedUserResource toAuthenticatedUserResource(ImmutablePair<User, SessionTokens> authenticatedUser) {
     return AuthenticatedUserResourceFromEntityAssembler.toResourceFromEntity(
         authenticatedUser.getLeft(),
         authenticatedUser.getRight());
