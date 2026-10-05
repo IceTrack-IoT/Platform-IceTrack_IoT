@@ -1,5 +1,8 @@
 package pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects;
 
+/**
+ *  Enumeration representing the severity levels of alerts in the monitoring system.
+ */
 public enum AlertSeverity {
 
   INFO(1),

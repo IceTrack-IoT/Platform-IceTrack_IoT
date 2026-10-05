@@ -1,5 +1,8 @@
 package pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects;
 
+/**
+ *  Enumeration representing the types of alerts in the monitoring system.
+ */
 public enum AlertType {
   TEMPERATURE_EXCURSION(1),
   DEVICE_OFFLINE(2);
