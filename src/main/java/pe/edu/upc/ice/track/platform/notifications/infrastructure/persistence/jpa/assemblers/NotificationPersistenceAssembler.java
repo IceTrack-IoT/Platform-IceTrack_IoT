@@ -30,8 +30,8 @@ public final class NotificationPersistenceAssembler {
     entity.setDeviceId(notification.getDeviceId().deviceId());
     entity.setSourceAlertId(notification.getSourceAlertId().alertId());
     entity.setMessage(notification.getMessage());
-    entity.setType(notification.getType().name());
-    entity.setSeverity(notification.getSeverity().name());
+    entity.setType(NotificationType.valueOf(notification.getType().name()));
+    entity.setSeverity(NotificationSeverity.valueOf(notification.getSeverity().name()));
     entity.setRead(notification.isRead());
     entity.setReadAt(notification.getReadAt());
     entity.setDismissedAt(notification.getDismissedAt());
@@ -51,8 +51,8 @@ public final class NotificationPersistenceAssembler {
         new DeviceId(entity.getDeviceId()),
         new AlertId(entity.getSourceAlertId()),
         entity.getMessage(),
-        NotificationType.valueOf(entity.getType()),
-        NotificationSeverity.valueOf(entity.getSeverity()),
+        NotificationType.valueOf(String.valueOf(entity.getType())),
+        NotificationSeverity.valueOf(String.valueOf(entity.getSeverity())),
         entity.isRead(),
         entity.getReadAt(),
         entity.getDismissedAt());

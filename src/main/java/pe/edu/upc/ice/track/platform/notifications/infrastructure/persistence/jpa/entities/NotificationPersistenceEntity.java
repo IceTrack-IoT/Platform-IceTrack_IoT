@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationSeverity;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationType;
 
 import java.time.LocalDateTime;
 
@@ -30,11 +32,11 @@ public class NotificationPersistenceEntity {
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 30)
-  private String type;
+  private NotificationType type;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 20)
-  private String severity;
+  private NotificationSeverity severity;
 
   @Column(nullable = false)
   private boolean isRead;

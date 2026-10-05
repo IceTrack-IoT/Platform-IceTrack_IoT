@@ -46,9 +46,9 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
     this.message = Objects.requireNonNull(command.message(), "message must not be null");
     this.type = Objects.requireNonNull(command.type(), "type must not be null");
     this.severity = Objects.requireNonNull(command.severity(), "severity must not be null");
-    this.equipmentId = new EquipmentId(command.equipmentId());
-    this.deviceId = new DeviceId(command.deviceId());
-    this.sourceAlertId = new AlertId(command.sourceAlertId());
+    this.equipmentId = new EquipmentId(command.equipmentId().equipmentId());
+    this.deviceId = new DeviceId(command.deviceId().deviceId());
+    this.sourceAlertId = new AlertId(command.sourceAlertId().alertId());
     this.isRead = false;
   }
 

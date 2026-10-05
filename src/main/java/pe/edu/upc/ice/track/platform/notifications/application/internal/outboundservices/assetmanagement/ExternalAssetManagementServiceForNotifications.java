@@ -1,5 +1,7 @@
 package pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.assetmanagement;
 
+import java.util.Optional;
+
 /**
  * Outbound port (Anti-Corruption Layer) through which the notifications application layer
  * resolves the recipient of an equipment-related notification.
@@ -14,7 +16,7 @@ public interface ExternalAssetManagementServiceForNotifications {
   /**
    * @param equipmentId identifier of the equipment to resolve; required
    * @return the identifier of the equipment's owner, or {@code 0L} when the equipment does
-   *         not exist
+   * not exist
    */
-  Long fetchEquipmentOwnerId(Long equipmentId);
+  Optional<Double> fetchEquipmentOwnerId(Long equipmentId);
 }

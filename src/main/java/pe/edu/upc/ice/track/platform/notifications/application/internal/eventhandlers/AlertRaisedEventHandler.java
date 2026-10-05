@@ -11,6 +11,8 @@ import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.Equ
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationSeverity;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationType;
 
+import java.util.Optional;
+
 /**
  * Subscribes to {@link AlertRaisedIntegrationEvent}, the published language of Monitoring and
  * Alerting Management, and translates it into a {@code Notification} for the equipment's owner.
@@ -38,16 +40,14 @@ public class AlertRaisedEventHandler {
 
   @EventListener
   public void on(AlertRaisedIntegrationEvent event) {
-    Long recipientUserId = externalAssetManagementService.fetchEquipmentOwnerId(event.equipmentId());
-    if (recipientUserId == null || recipientUserId == 0L) {
-      // No resolvable owner: the equipment may have been removed after the alert was raised.
-      // Dropping the notification here is a deliberate choice -- a notification with no
-      // recipient has no business value, and recipientUserId is non-null in the aggregate.
+    Optional<Double> recipientUserId = externalAssetManagementService.fetchEquipmentOwnerId(event.equipmentId());
+    if (recipientUserId ==  null || recipientUserId.isEmpty()) {
+      new RuntimeException("No recipient user ID found for equipment ID: " + event.equipmentId());
       return;
     }
 
     var command = new CreateNotificationCommand(
-        recipientUserId,
+        recipientUserId.get().longValue(),
         new EquipmentId(event.equipmentId()),
         null,
         new AlertId(event.alertId()),
