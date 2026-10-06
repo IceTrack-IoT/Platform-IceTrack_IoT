@@ -13,7 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
     name = "AuthenticatedUserResponse",
     description = "Authenticated user information with JWT access token and refresh token",
     example = "{\"id\": 1, \"username\": \"john.doe\", \"role\": \"OWNER_ROLE\", \"token\": \"eyJhbGciOiJIUzI1NiIs...\", "
-        + "\"refresh_token\": \"x6Kx3Jm0m3o6bRz9P4lXg0f1a2Y8sQ7cV5nT1wE9rU4\"}"
+        + "\"refresh_token\": \"x6Kx3Jm0m3o6bRz9P4lXg0f1a2Y8sQ7cV5nT1wE9rU4\", \"provider\": \"LOCAL\"}"
 )
 public record AuthenticatedUserResource(
     @Schema(description = "User unique identifier", example = "1")
@@ -30,6 +30,9 @@ public record AuthenticatedUserResource(
 
     @Schema(description = "Single-use refresh token, exchanged at /api/v1/authentication/refresh-token for a new token pair",
         example = "x6Kx3Jm0m3o6bRz9P4lXg0f1a2Y8sQ7cV5nT1wE9rU4")
-    String refreshToken
+    String refreshToken,
+
+    @Schema(description = "User identity provider", example = "LOCAL", allowableValues = {"LOCAL", "GOOGLE"})
+    String provider
 ) {
 }

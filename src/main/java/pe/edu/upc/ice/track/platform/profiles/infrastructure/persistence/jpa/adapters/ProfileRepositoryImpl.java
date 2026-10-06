@@ -35,6 +35,13 @@ public class ProfileRepositoryImpl implements ProfileRepository {
   }
 
   @Override
+  public Optional<Profile> findByEmailAddress(EmailAddress emailAddress) {
+    if (emailAddress == null) return Optional.empty();
+    return profilePersistenceRepository.findByEmailAddress(emailAddress)
+        .map(ProfilePersistenceAssembler::toDomainFromPersistence);
+  }
+
+  @Override
   public boolean existsByEmailAddress(EmailAddress emailAddress) {
     return emailAddress != null && profilePersistenceRepository.countByEmailAddress(emailAddress) > 0;
   }

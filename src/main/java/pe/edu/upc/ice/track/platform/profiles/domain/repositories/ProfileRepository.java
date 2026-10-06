@@ -34,6 +34,14 @@ public interface ProfileRepository {
   boolean existsByUserId(UserId userId);
 
   /**
+   * Find the profile that uses an email address, whatever its role.
+   *
+   * @param emailAddress the email address
+   * @return the concrete profile, or empty when no profile uses the email address
+   */
+  Optional<Profile> findByEmailAddress(EmailAddress emailAddress);
+
+  /**
    * Check whether a profile of any role uses an email address.
    *
    * @param emailAddress the email address

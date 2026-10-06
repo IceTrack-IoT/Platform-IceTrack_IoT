@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(
     name = "UserResponse",
     description = "User information response",
-    example = "{\"id\": 1, \"username\": \"john.doe\", \"role\": \"OWNER_ROLE\"}"
+    example = "{\"id\": 1, \"username\": \"john.doe\", \"role\": \"OWNER_ROLE\", \"provider\": \"LOCAL\"}"
 )
 public record UserResource(
     @Schema(description = "User unique identifier", example = "1")
@@ -20,10 +20,7 @@ public record UserResource(
     @Schema(description = "Role of the account", example = "OWNER_ROLE", allowableValues = {"OWNER_ROLE", "TECHNICIAN_ROLE"})
     String role,
 
-    @Schema(description = "Authentication provider", example = "GOOGLE")
-    String provider,
-
-    @Schema(description = "External ID of the user", example = "123456")
-    String externalId
+    @Schema(description = "User identity provider", example = "LOCAL", allowableValues = {"LOCAL", "GOOGLE"})
+    String provider
 ) {
 }

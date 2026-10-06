@@ -10,7 +10,7 @@ import java.util.List;
 @Schema(
     name = "CurrentUserResponse",
     description = "Identity of the authenticated user",
-    example = "{\"id\": 1, \"username\": \"john.doe\", \"email\": \"john.doe@example.com\", \"role\": \"OWNER_ROLE\"}"
+    example = "{\"id\": 1, \"username\": \"john.doe\", \"email\": \"john.doe@example.com\", \"role\": \"OWNER_ROLE\", \"provider\": \"LOCAL\"}"
 )
 public record CurrentUserResource(
     @Schema(description = "User unique identifier", example = "1")
@@ -23,6 +23,9 @@ public record CurrentUserResource(
     String email,
 
     @Schema(description = "User role", example = "[\"OWNER_ROLE\"]")
-    String role
+    String role,
+
+    @Schema(description = "User identity provider", example = "LOCAL", allowableValues = {"LOCAL", "GOOGLE"})
+    String provider
 ) {
 }

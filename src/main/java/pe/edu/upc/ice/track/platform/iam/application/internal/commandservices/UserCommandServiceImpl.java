@@ -146,7 +146,7 @@ public class UserCommandServiceImpl implements UserCommandService {
         command.password(),
         command.email(),
         Roles.OWNER_ROLE,
-        user -> createOwnerProfile(user, command.fullName(), command.contactDetails(), command.ruc()));
+        user -> createOwnerProfile(user, command.fullName(), command.email(), command.contactDetails(), command.ruc()));
   }
 
   // inherited javadoc
@@ -162,7 +162,12 @@ public class UserCommandServiceImpl implements UserCommandService {
         command.email(),
         Roles.TECHNICIAN_ROLE,
         user -> createTechnicianProfile(
-            user, command.fullName(), command.contactDetails(), command.speciality(), command.certificationNumber()));
+            user,
+            command.fullName(),
+            command.email(),
+            command.contactDetails(),
+            command.speciality(),
+            command.certificationNumber()));
   }
 
   // inherited javadoc
@@ -193,7 +198,8 @@ public class UserCommandServiceImpl implements UserCommandService {
     return verifyGoogleIdToken(command.idToken()).flatMap(googleUserInfo -> completeGoogleRegistration(
         googleUserInfo,
         Roles.OWNER_ROLE,
-        user -> createOwnerProfile(user, googleUserInfo.displayName(), command.contactDetails(), command.ruc())));
+        user -> createOwnerProfile(
+            user, googleUserInfo.displayName(), googleUserInfo.email(), command.contactDetails(), command.ruc())));
   }
 
   // inherited javadoc
@@ -209,6 +215,7 @@ public class UserCommandServiceImpl implements UserCommandService {
         user -> createTechnicianProfile(
             user,
             googleUserInfo.displayName(),
+            googleUserInfo.email(),
             command.contactDetails(),
             command.speciality(),
             command.certificationNumber())));
@@ -273,7 +280,8 @@ public class UserCommandServiceImpl implements UserCommandService {
    *
    * @param username           the unique username
    * @param password           the raw password, hashed before it reaches the aggregate
-   * @param email              the email address
+   * @param email              the email address; owned by the profiles context, which stores it on
+   *                            the profile, so its uniqueness is checked there
    * @param role               the definitive role implied by the command
    * @param profileProvisioner creates the profile matching {@code role} for the persisted account
    * @return the persisted account, or the reason the registration was rejected
@@ -285,12 +293,14 @@ public class UserCommandServiceImpl implements UserCommandService {
           USER_RESOURCE,
           "A user with username %s already exists".formatted(username)));
     }
-    if (userRepository.existsByEmail(email)) {
+    // Checked up front to keep the USER_CONFLICT answer; the profiles context would otherwise only
+    // reject the duplicate after the account insert, as a PROFILE_CONFLICT.
+    if (externalProfileService.fetchUserIdByEmail(email).isPresent()) {
       return Result.failure(ApplicationError.conflict(
           USER_RESOURCE,
           "A user with email %s already exists".formatted(email)));
     }
-    var user = User.registeredLocally(username, hashingService.encode(password), email, toPersistedRole(role));
+    var user = User.registeredLocally(username, hashingService.encode(password), toPersistedRole(role));
     return registerWithProfile(user, profileProvisioner);
   }
 
@@ -360,15 +370,16 @@ public class UserCommandServiceImpl implements UserCommandService {
    *
    * @param user           the persisted account, carrying its assigned identifier
    * @param fullName       display name of the account holder
+   * @param email          email address of the account holder, stored on the profile
    * @param contactDetails the phone number and address captured by the onboarding form
    * @param ruc            the owner's taxpayer registration number
    * @return the identifier of the created profile
    */
-  private Long createOwnerProfile(User user, String fullName, ContactDetails contactDetails, Long ruc) {
+  private Long createOwnerProfile(User user, String fullName, String email, ContactDetails contactDetails, Long ruc) {
     return externalProfileService.createOwnerProfile(
         user.getId(),
         fullName,
-        user.getEmail(),
+        email,
         contactDetails.phone(),
         contactDetails.street(),
         contactDetails.number(),
@@ -383,17 +394,23 @@ public class UserCommandServiceImpl implements UserCommandService {
    *
    * @param user                the persisted account, carrying its assigned identifier
    * @param fullName            display name of the account holder
+   * @param email               email address of the account holder, stored on the profile
    * @param contactDetails      the phone number and address captured by the onboarding form
    * @param speciality          the technician's speciality
    * @param certificationNumber the number of the technician's certification
    * @return the identifier of the created profile
    */
   private Long createTechnicianProfile(
-      User user, String fullName, ContactDetails contactDetails, String speciality, String certificationNumber) {
+      User user,
+      String fullName,
+      String email,
+      ContactDetails contactDetails,
+      String speciality,
+      String certificationNumber) {
     return externalProfileService.createTechnicianProfile(
         user.getId(),
         fullName,
-        user.getEmail(),
+        email,
         contactDetails.phone(),
         contactDetails.street(),
         contactDetails.number(),
@@ -434,7 +451,8 @@ public class UserCommandServiceImpl implements UserCommandService {
    *
    * <p>The Google {@code sub} claim drives the primary lookup because it is stable even when the
    * account owner changes the email. The email is used as a fallback so that an account created
-   * locally is linked instead of duplicated.</p>
+   * locally is linked instead of duplicated; since the profiles context owns email addresses, the
+   * account is resolved through the profile that uses the Google email.</p>
    *
    * @param googleUserInfo the verified Google claims
    * @return the matching user, or empty when the Google account is unknown
@@ -444,7 +462,7 @@ public class UserCommandServiceImpl implements UserCommandService {
     if (bySubject.isPresent()) {
       return bySubject;
     }
-    return userRepository.findByEmail(googleUserInfo.email());
+    return externalProfileService.fetchUserIdByEmail(googleUserInfo.email()).flatMap(userRepository::findById);
   }
 
   /**

@@ -18,7 +18,6 @@ public final class UserPersistenceAssembler {
         entity.getId(),
         entity.getUsername(),
         entity.getPassword(),
-        entity.getEmail(),
         RolePersistenceAssembler.toDomainFromPersistence(entity.getRole()),
         entity.getProvider() == null ? AuthProvider.LOCAL : entity.getProvider(),
         entity.getExternalId());
@@ -36,7 +35,6 @@ public final class UserPersistenceAssembler {
     // Federated accounts carry no local password; the column is not nullable, so the
     // aggregate's empty placeholder is persisted as-is and never matches a bcrypt hash.
     entity.setPassword(user.getPassword() == null ? "" : user.getPassword());
-    entity.setEmail(user.getEmail());
     entity.setProvider(user.getProvider() == null ? AuthProvider.LOCAL : user.getProvider());
     entity.setExternalId(user.getExternalId());
     entity.setRole(RolePersistenceAssembler.toPersistenceFromDomain(user.getRole()));

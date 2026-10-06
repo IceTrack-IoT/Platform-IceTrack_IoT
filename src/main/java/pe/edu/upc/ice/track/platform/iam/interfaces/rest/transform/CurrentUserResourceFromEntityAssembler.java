@@ -12,10 +12,11 @@ public class CurrentUserResourceFromEntityAssembler {
   /**
    * Creates a resource from the account of the authenticated principal.
    *
-   * @param user the authenticated user aggregate
+   * @param user  the authenticated user aggregate
+   * @param email the account holder's email address, read from the profile; may be {@code null}
    * @return the current user resource
    */
-  public static CurrentUserResource toResourceFromEntity(User user) {
-    return new CurrentUserResource(user.getId(), user.getUsername(), user.getEmail(), user.getRoleName());
+  public static CurrentUserResource toResourceFromEntity(User user, String email) {
+    return new CurrentUserResource(user.getId(), user.getUsername(), email, user.getRoleName(), user.getProviderName());
   }
 }

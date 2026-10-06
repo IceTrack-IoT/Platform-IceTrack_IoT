@@ -23,9 +23,6 @@ public class UserPersistenceEntity extends AuditableAbstractPersistenceEntity {
   @Column(name = "password", nullable = false, length = 120)
   private String password;
 
-  @Column(name = "email", nullable = false, unique = true, length = 120)
-  private String email;
-
   /**
    * Identity provider the account authenticates with. Defaults to {@link AuthProvider#LOCAL}
    * so that rows created before federated sign-in was introduced keep a valid value.

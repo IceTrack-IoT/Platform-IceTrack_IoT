@@ -4,9 +4,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.acl.ProfilesContextFacade;
 
+import java.util.Optional;
+
 /**
  * Outbound service through which the IAM bounded context provisions the profile of an account it
- * is registering.
+ * is registering, and reads the account holder's email address, which the profiles context owns.
  *
  * <p>This is the <em>outbound half</em> of the Anti-Corruption Layer between {@code iam} and
  * {@code profiles}, and the only class in {@code iam} that knows a {@code profiles} context
@@ -86,5 +88,27 @@ public class ExternalProfileService {
         userId, fullName, email, phone, street, number, city, postalCode, country, speciality, certificationNumber);
     log.info("Provisioned technician profile {} for user {}", technicianProfileId, userId);
     return technicianProfileId;
+  }
+
+  /**
+   * Fetches the email address of an account; the profiles context is its owner.
+   *
+   * @param userId identifier of the account
+   * @return the email address, or empty when the account has no profile
+   */
+  public Optional<String> fetchEmailByUserId(Long userId) {
+    var email = profilesContextFacade.fetchEmailByUserId(userId);
+    return email == null || email.isBlank() ? Optional.empty() : Optional.of(email);
+  }
+
+  /**
+   * Fetches the account whose profile uses an email address.
+   *
+   * @param email the email address to look up
+   * @return the identifier of the account, or empty when no profile uses the email address
+   */
+  public Optional<Long> fetchUserIdByEmail(String email) {
+    var userId = profilesContextFacade.fetchUserIdByEmail(email);
+    return userId == null || userId == 0L ? Optional.empty() : Optional.of(userId);
   }
 }
