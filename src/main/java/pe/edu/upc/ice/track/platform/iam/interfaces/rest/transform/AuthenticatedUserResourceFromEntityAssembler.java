@@ -20,8 +20,8 @@ public class AuthenticatedUserResourceFromEntityAssembler {
         user.getId(),
         user.getUsername(),
         user.getRoleName(),
+        user.getProviderName(),
         sessionTokens.accessToken(),
-        sessionTokens.refreshToken(),
-        user.getProviderName());
+        sessionTokens.refreshToken());
   }
 }
