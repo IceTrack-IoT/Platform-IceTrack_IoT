@@ -25,6 +25,6 @@ public class CompleteGoogleOwnerRegistrationCommandFromResourceAssembler {
         resource.city(),
         resource.postalCode(),
         resource.country());
-    return new CompleteGoogleOwnerRegistrationCommand(resource.idToken(), contactDetails, resource.ruc());
+    return new CompleteGoogleOwnerRegistrationCommand(resource.idToken(), resource.username(), contactDetails, resource.ruc());
   }
 }

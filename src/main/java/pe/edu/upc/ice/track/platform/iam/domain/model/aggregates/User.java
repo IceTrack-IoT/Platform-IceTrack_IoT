@@ -78,17 +78,18 @@ public class User extends AbstractDomainAggregateRoot<User> {
    * Registers a user federated through Google.
    *
    * <p>The Google {@code sub} claim is stable for the lifetime of the account and is therefore
-   * used as the external identifier; the email becomes the username so that the account is
-   * addressable through the same unique key as a local one.</p>
+   * used as the external identifier; the username comes from the onboarding form and must
+   * never be defaulted to the Google email. The email is owned by the profiles context and
+   * is stored on the profile.</p>
    *
-   * @param email     the verified email of the Google account, used as the username; required
+   * @param username  the desired username, unique on the platform; required
    * @param googleSub the Google {@code sub} claim identifying the account; required
    * @param role      the definitive role chosen during onboarding; required
    * @return the newly built user aggregate, not yet persisted
    * @throws IllegalArgumentException when a required value is missing
    */
-  public static User registeredWithGoogle(String email, String googleSub, Role role) {
-    return new User(null, email, NO_LOCAL_PASSWORD, role, AuthProvider.GOOGLE, requireText(googleSub, "googleSub"));
+  public static User registeredWithGoogle(String username, String googleSub, Role role) {
+    return new User(null, username, NO_LOCAL_PASSWORD, role, AuthProvider.GOOGLE, requireText(googleSub, "googleSub"));
   }
 
   public void changePassword(String newPassword) {

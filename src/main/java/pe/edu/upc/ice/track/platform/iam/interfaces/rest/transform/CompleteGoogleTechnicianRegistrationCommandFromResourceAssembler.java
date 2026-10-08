@@ -28,6 +28,7 @@ public class CompleteGoogleTechnicianRegistrationCommandFromResourceAssembler {
         resource.country());
     return new CompleteGoogleTechnicianRegistrationCommand(
         resource.idToken(),
+        resource.username(),
         contactDetails,
         resource.speciality(),
         resource.certificationNumber());

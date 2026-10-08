@@ -197,6 +197,7 @@ public class UserCommandServiceImpl implements UserCommandService {
     }
     return verifyGoogleIdToken(command.idToken()).flatMap(googleUserInfo -> completeGoogleRegistration(
         googleUserInfo,
+        command.username(),
         Roles.OWNER_ROLE,
         user -> createOwnerProfile(
             user, googleUserInfo.displayName(), googleUserInfo.email(), command.contactDetails(), command.ruc())));
@@ -211,6 +212,7 @@ public class UserCommandServiceImpl implements UserCommandService {
     }
     return verifyGoogleIdToken(command.idToken()).flatMap(googleUserInfo -> completeGoogleRegistration(
         googleUserInfo,
+        command.username(),
         Roles.TECHNICIAN_ROLE,
         user -> createTechnicianProfile(
             user,
@@ -308,13 +310,18 @@ public class UserCommandServiceImpl implements UserCommandService {
    * Registers the Google account described by verified claims with the role implied by the
    * calling command, or signs it in when it already exists.
    *
+   * <p>The {@code desiredUsername} comes from the onboarding form (e.g. owner flow). The
+   * Google email is never used as username; it is only stored on the profile as contact
+   * data.</p>
+   *
    * @param googleUserInfo     the verified Google claims
+   * @param desiredUsername    the username requested in the onboarding form
    * @param role               the definitive role implied by the command
    * @param profileProvisioner creates the profile matching {@code role} for the persisted account
    * @return the authenticated user with its session tokens, or the reason the registration failed
    */
   private Result<ImmutablePair<User, SessionTokens>, ApplicationError> completeGoogleRegistration(
-      GoogleUserInfo googleUserInfo, Roles role, Function<User, Long> profileProvisioner) {
+      GoogleUserInfo googleUserInfo, String desiredUsername, Roles role, Function<User, Long> profileProvisioner) {
     var existingUser = resolveExistingUser(googleUserInfo);
     if (existingUser.isPresent()) {
       // A repeated submission, or an account registered meanwhile: the role is immutable, so the
@@ -327,13 +334,17 @@ public class UserCommandServiceImpl implements UserCommandService {
       return Result.success(authenticate(user));
     }
 
-    if (userRepository.existsByUsername(googleUserInfo.email())) {
+    if (desiredUsername == null || desiredUsername.isBlank()) {
+      return Result.failure(ApplicationError.validationError("username", "Username must not be null or blank"));
+    }
+    var username = desiredUsername.trim();
+    if (userRepository.existsByUsername(username)) {
       return Result.failure(ApplicationError.conflict(
           USER_RESOURCE,
-          "A user with username %s already exists".formatted(googleUserInfo.email())));
+          "A user with username %s already exists".formatted(username)));
     }
 
-    var user = User.registeredWithGoogle(googleUserInfo.email(), googleUserInfo.subject(), toPersistedRole(role));
+    var user = User.registeredWithGoogle(username, googleUserInfo.subject(), toPersistedRole(role));
     return registerWithProfile(user, profileProvisioner).map(this::authenticate);
   }
 

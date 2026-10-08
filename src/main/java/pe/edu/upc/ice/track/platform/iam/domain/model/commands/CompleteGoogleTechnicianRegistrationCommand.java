@@ -11,12 +11,15 @@ import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetail
  * its {@code Technician} profile in a single transaction.</p>
  *
  * @param idToken             the Google OIDC id_token issued to the frontend; required
+ * @param username            the desired username, unique on the platform; required. The Google
+ *                            email is never used as username; it is stored on the technician profile
  * @param contactDetails      the phone number and address captured by the onboarding form; required
  * @param speciality          the technician's speciality; required
  * @param certificationNumber the number of the technician's certification; required
  */
 public record CompleteGoogleTechnicianRegistrationCommand(
     String idToken,
+    String username,
     ContactDetails contactDetails,
     String speciality,
     String certificationNumber) {
@@ -27,6 +30,9 @@ public record CompleteGoogleTechnicianRegistrationCommand(
   public CompleteGoogleTechnicianRegistrationCommand {
     if (idToken == null || idToken.isBlank()) {
       throw new IllegalArgumentException("Google id_token must not be null or blank");
+    }
+    if (username == null || username.isBlank()) {
+      throw new IllegalArgumentException("username must not be null or blank");
     }
     if (contactDetails == null) {
       throw new IllegalArgumentException("contactDetails must not be null");

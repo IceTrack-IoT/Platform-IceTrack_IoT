@@ -14,13 +14,18 @@ import jakarta.validation.constraints.NotBlank;
 @Schema(
     name = "CompleteGoogleTechnicianRegistrationRequest",
     description = "Technician onboarding form completing the registration of a Google account",
-    example = "{\"id_token\": \"eyJhbGciOiJSUzI1NiIs...\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postal_code\": \"15023\", \"country\": \"Peru\", \"speciality\": \"Refrigeration\", \"certification_number\": \"CERT-2024-001\"}"
+    example = "{\"id_token\": \"eyJhbGciOiJSUzI1NiIs...\", \"username\": \"jane.tech\", \"phone\": \"+51 987654321\", \"street\": \"Av. Primavera\", \"number\": \"123\", \"city\": \"Lima\", \"postal_code\": \"15023\", \"country\": \"Peru\", \"speciality\": \"Refrigeration\", \"certification_number\": \"CERT-2024-001\"}"
 )
 public record CompleteGoogleTechnicianRegistrationResource(
     @NotBlank(message = "{validation.not-blank}")
     @Schema(description = "Google OIDC id_token issued to the frontend", example = "eyJhbGciOiJSUzI1NiIs...",
         requiredMode = Schema.RequiredMode.REQUIRED)
     String idToken,
+
+    @NotBlank(message = "{validation.not-blank}")
+    @Schema(description = "Desired username, unique on the platform. The Google email is never used as username.",
+        example = "jane.tech", minLength = 3, maxLength = 50)
+    String username,
 
     @NotBlank(message = "{validation.not-blank}")
     @Schema(description = "Phone number, optionally prefixed by the country code and a space", example = "+51 987654321")

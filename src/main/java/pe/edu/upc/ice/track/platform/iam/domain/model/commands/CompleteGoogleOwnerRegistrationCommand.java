@@ -11,11 +11,14 @@ import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetail
  * {@code Owner} profile in a single transaction.</p>
  *
  * @param idToken        the Google OIDC id_token issued to the frontend; required
+ * @param username       the desired username, unique on the platform; required. The Google
+ *                       email is never used as username; it is stored on the owner profile
  * @param contactDetails the phone number and address captured by the onboarding form; required
  * @param ruc            the owner's taxpayer registration number; required
  */
 public record CompleteGoogleOwnerRegistrationCommand(
     String idToken,
+    String username,
     ContactDetails contactDetails,
     Long ruc) {
 
@@ -25,6 +28,9 @@ public record CompleteGoogleOwnerRegistrationCommand(
   public CompleteGoogleOwnerRegistrationCommand {
     if (idToken == null || idToken.isBlank()) {
       throw new IllegalArgumentException("Google id_token must not be null or blank");
+    }
+    if (username == null || username.isBlank()) {
+      throw new IllegalArgumentException("username must not be null or blank");
     }
     if (contactDetails == null) {
       throw new IllegalArgumentException("contactDetails must not be null");
