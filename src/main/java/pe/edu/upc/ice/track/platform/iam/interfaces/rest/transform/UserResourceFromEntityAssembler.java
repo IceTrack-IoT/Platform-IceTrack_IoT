@@ -14,6 +14,6 @@ public class UserResourceFromEntityAssembler {
    * @return user resource
    */
   public static UserResource toResourceFromEntity(User user) {
-    return new UserResource(user.getId(), user.getUsername(), user.getRoleName(), user.getProvider().name(), user.getExternalId());
+    return new UserResource(user.getId(), user.getUsername(), user.getRoleName(), user.getProviderName());
   }
 }

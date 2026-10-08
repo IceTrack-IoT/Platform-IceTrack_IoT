@@ -5,6 +5,7 @@ import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetAllUsersQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetCurrentUserQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByIdQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByUsernameQuery;
+import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserEmailByUserIdQuery;
 
 import java.util.List;
 import java.util.Optional;
@@ -44,5 +45,13 @@ public interface UserQueryService {
    * @return the principal's account, or empty when it no longer exists
    */
   Optional<User> handle(GetCurrentUserQuery query);
+
+  /**
+   * Handles retrieval of the email address of an account, which is owned by its profile.
+   *
+   * @param query user-email query
+   * @return the email address, or empty when the account has no profile
+   */
+  Optional<String> handle(GetUserEmailByUserIdQuery query);
 
 }

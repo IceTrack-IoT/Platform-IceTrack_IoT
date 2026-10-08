@@ -56,8 +56,9 @@ public abstract class Profile extends AbstractDomainAggregateRoot<Profile> {
   /**
    * Replaces the name and contact details of this profile.
    *
-   * <p>The email address is not part of the update: it is owned by the platform account in the
-   * IAM context and is only ever set when the profile is created.</p>
+   * <p>The email address is not part of the update: it identifies the account holder across
+   * bounded contexts - IAM resolves accounts by it - and is only ever set when the profile is
+   * created.</p>
    *
    * @param fullName the new name; required
    * @param phone    the new phone number; required

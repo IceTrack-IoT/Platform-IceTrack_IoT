@@ -30,14 +30,6 @@ public interface UserRepository {
   Optional<User> findByUsername(String username);
 
   /**
-   * Find user by email address
-   *
-   * @param email the email address of the user
-   * @return an optional containing the user if found, or empty if not found
-   */
-  Optional<User> findByEmail(String email);
-
-  /**
    * Find user by the identifier assigned by an external identity provider.
    *
    * @param provider the identity provider that issued the identifier
@@ -68,12 +60,4 @@ public interface UserRepository {
    * @return true if the user exists, false otherwise
    */
   boolean existsByUsername(String username);
-
-  /**
-   * Check if user exists by email address
-   *
-   * @param email the email address of the user
-   * @return true if the user exists, false otherwise
-   */
-  boolean existsByEmail(String email);
 }

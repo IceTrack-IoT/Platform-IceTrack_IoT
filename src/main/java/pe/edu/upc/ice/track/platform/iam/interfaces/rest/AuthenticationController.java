@@ -23,6 +23,7 @@ import pe.edu.upc.ice.track.platform.iam.application.commandservices.UserCommand
 import pe.edu.upc.ice.track.platform.iam.application.queryservices.UserQueryService;
 import pe.edu.upc.ice.track.platform.iam.domain.model.aggregates.User;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetCurrentUserQuery;
+import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserEmailByUserIdQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.SessionTokens;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.AuthErrorResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.AuthenticatedUserResource;
@@ -400,7 +401,9 @@ public class AuthenticationController {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.unauthorized("The authenticated account no longer exists"));
     }
-    return ResponseEntity.ok(CurrentUserResourceFromEntityAssembler.toResourceFromEntity(user.get()));
+    // The email address is owned by the profile, so it is resolved separately from the account.
+    var email = userQueryService.handle(new GetUserEmailByUserIdQuery(user.get().getId())).orElse(null);
+    return ResponseEntity.ok(CurrentUserResourceFromEntityAssembler.toResourceFromEntity(user.get(), email));
   }
 
   /**

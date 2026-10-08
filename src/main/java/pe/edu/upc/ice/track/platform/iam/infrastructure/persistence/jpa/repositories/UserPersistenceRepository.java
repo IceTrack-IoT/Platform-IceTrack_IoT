@@ -21,13 +21,6 @@ public interface UserPersistenceRepository extends JpaRepository<UserPersistence
   Optional<UserPersistenceEntity> findByUsername(String username);
 
   /**
-   * This method is responsible for finding the user by email address.
-   * @param email The email address.
-   * @return The user object.
-   */
-  Optional<UserPersistenceEntity> findByEmail(String email);
-
-  /**
    * This method is responsible for finding the user by its external provider identity.
    * @param provider The identity provider.
    * @param externalId The identifier of the account at the external provider.
@@ -41,12 +34,5 @@ public interface UserPersistenceRepository extends JpaRepository<UserPersistence
    * @return True if the user exists, false otherwise.
    */
   boolean existsByUsername(String username);
-
-  /**
-   * This method is responsible for checking if the user exists by email address.
-   * @param email The email address.
-   * @return True if the user exists, false otherwise.
-   */
-  boolean existsByEmail(String email);
 
 }

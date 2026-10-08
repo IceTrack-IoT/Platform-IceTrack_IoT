@@ -33,12 +33,6 @@ public class UserRepositoryImpl implements UserRepository {
   }
 
   @Override
-  public Optional<User> findByEmail(String email) {
-    if (email == null || email.isBlank()) return Optional.empty();
-    return userPersistenceRepository.findByEmail(email).map(UserPersistenceAssembler::toDomainFromPersistence);
-  }
-
-  @Override
   public Optional<User> findByProviderAndExternalId(AuthProvider provider, String externalId) {
     if (provider == null || externalId == null || externalId.isBlank()) return Optional.empty();
     return userPersistenceRepository.findByProviderAndExternalId(provider, externalId)
@@ -59,10 +53,5 @@ public class UserRepositoryImpl implements UserRepository {
   @Override
   public boolean existsByUsername(String username) {
     return userPersistenceRepository.existsByUsername(username);
-  }
-
-  @Override
-  public boolean existsByEmail(String email) {
-    return email != null && !email.isBlank() && userPersistenceRepository.existsByEmail(email);
   }
 }

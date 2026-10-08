@@ -35,6 +35,15 @@ public interface ProfilePersistenceRepository extends JpaRepository<ProfilePersi
   boolean existsByUserId(Long userId);
 
   /**
+   * Find the profile that uses an email address, whatever its role.
+   *
+   * @param emailAddress The email address.
+   * @return An Optional containing the concrete profile entity if found, or empty if not found.
+   */
+  @Query("select profile from ProfilePersistenceEntity profile where profile.emailAddress = :emailAddress")
+  Optional<ProfilePersistenceEntity> findByEmailAddress(@Param("emailAddress") EmailAddress emailAddress);
+
+  /**
    * Count the profiles of any role using a given email address.
    *
    * @param emailAddress The email address to count profiles for.
