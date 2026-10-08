@@ -65,6 +65,21 @@ public class ProfileAccessEvaluator {
         .orElse(false);
   }
 
+  /**
+   * Checks whether the authenticated caller is the platform account itself, as required to read
+   * or change account-scoped data such as the dashboard configuration.
+   *
+   * @param userId         identifier of the account being accessed
+   * @param authentication the current authentication
+   * @return {@code true} when the identifier is the caller's own account
+   */
+  public boolean isAccountSelf(Long userId, Authentication authentication) {
+    if (userId == null) return false;
+    return resolveUserId(authentication)
+        .map(userId::equals)
+        .orElse(false);
+  }
+
   private Optional<Long> resolveUserId(Authentication authentication) {
     if (authentication == null || !authentication.isAuthenticated()) {
       return Optional.empty();

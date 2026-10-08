@@ -51,4 +51,16 @@ public class IamContextFacade {
     return result.get().getUsername();
   }
 
+  /**
+   * Checks whether an account exists for a user identifier.
+   *
+   * @param userId user identifier
+   * @return {@code true} when an account holds the identifier, {@code false} otherwise
+   */
+  public boolean existsUserById(Long userId) {
+    if (userId == null) return false;
+    var getUserByIdQuery = new GetUserByIdQuery(userId);
+    return userQueryService.handle(getUserByIdQuery).isPresent();
+  }
+
 }
