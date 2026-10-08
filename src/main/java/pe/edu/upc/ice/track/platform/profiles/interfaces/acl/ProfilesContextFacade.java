@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.OwnerCommandService;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.TechnicianCommandService;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.OwnerProfile;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Profile;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateOwnerCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateTechnicianCommand;
@@ -185,6 +186,14 @@ public class ProfilesContextFacade {
     }
     return profileRepository.findByEmailAddress(emailAddress)
         .map(profile -> profile.getUserId().userId())
+        .orElse(0L);
+  }
+
+  public Long fetchOwnerIdByUserId(Long userId) {
+    if (userId == null) return 0L;
+    return profileRepository.findByUserId(new UserId(userId))
+        .filter(profile -> profile instanceof OwnerProfile)
+        .map(Profile::getUserProfileId)
         .orElse(0L);
   }
 
