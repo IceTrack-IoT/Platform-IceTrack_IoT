@@ -48,6 +48,11 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
     this.externalAssetManagementService = externalAssetManagementService;
   }
 
+  /**
+   *  Records a new sensor reading batch, de-duplicating by {@code readingUid}, and evaluates
+   * @param command The {@link RecordReadingBatchCommand} instance
+   * @return  An {@link Optional} containing the saved {@link SensorReading} if it was new, or empty if
+   */
   @Override
   public Optional<SensorReading> handle(RecordReadingBatchCommand command) {
     if (sensorReadingRepository.findByReadingUid(command.readingUid()).isPresent()) {
@@ -66,6 +71,10 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
     return Optional.of(savedReading);
   }
 
+  /**
+   *  Evaluates the temperature thresholds for the given reading and raises or resolves alerts as needed.
+   * @param reading The {@link SensorReading} instance to evaluate
+   */
   private void evaluateThreshold(SensorReading reading) {
     var thresholdOpt = externalAssetManagementService.fetchTemperatureThreshold(reading.getEquipmentId().equipmentId());
     if (thresholdOpt.isEmpty()) {

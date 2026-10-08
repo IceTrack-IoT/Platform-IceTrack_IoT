@@ -19,6 +19,11 @@ public class AlertCommandServiceImpl implements AlertCommandService {
     this.alertRepository = alertRepository;
   }
 
+  /**
+   *  Handles the acknowledgment of an alert by finding it in the repository, acknowledging it, and saving the updated state.
+   * @param command the command containing the alert identifier and the user acknowledging it
+   * @return  an Optional containing the updated alert if found, or an empty Optional if not found
+   */
   @Override
   public Optional<Alert> handle(AcknowledgeAlertCommand command) {
     return alertRepository.findById(command.alertId()).map(alert -> {
@@ -27,6 +32,11 @@ public class AlertCommandServiceImpl implements AlertCommandService {
     });
   }
 
+  /**
+   *  Handles the resolution of an alert by finding it in the repository, resolving it, and saving the updated state.
+   * @param command the command containing the alert identifier and the user resolving it
+   * @return  an Optional containing the updated alert if found, or an empty Optional if not found
+   */
   @Override
   public Optional<Alert> handle(ResolveAlertCommand command) {
     return alertRepository.findById(command.alertId()).map(alert -> {
@@ -35,6 +45,11 @@ public class AlertCommandServiceImpl implements AlertCommandService {
     });
   }
 
+  /**
+   * Handles the dismissal of an alert by finding it in the repository, dismissing it, and saving the updated state.
+   * @param command the command containing the alert identifier and the user dismissing it
+   * @return  an Optional containing the updated alert if found, or an empty Optional if not found
+   */
   @Override
   public Optional<Alert> handle(DismissAlertCommand command) {
     return alertRepository.findById(command.alertId()).map(alert -> {

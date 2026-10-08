@@ -7,15 +7,26 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.UpdateAler
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertPolicyRepository;
 
+/**
+ *  Implementation of the AlertPolicyCommandService interface that handles commands related to alert policies.
+ */
 @Service
 public class AlertPolicyCommandServiceImpl implements AlertPolicyCommandService {
 
+  /**
+   * Repository for managing AlertPolicy entities.
+   */
   private final AlertPolicyRepository alertPolicyRepository;
 
   public AlertPolicyCommandServiceImpl(AlertPolicyRepository alertPolicyRepository) {
     this.alertPolicyRepository = alertPolicyRepository;
   }
 
+  /**
+   *  Handles the UpdateAlertPolicyCommand by either updating an existing alert policy or creating a new one if it doesn't exist.
+   * @param command the command containing the update information
+   * @return  the updated or newly created AlertPolicy
+   */
   @Override
   public AlertPolicy handle(UpdateAlertPolicyCommand command) {
     var policy = alertPolicyRepository.findByEquipmentId(command.equipmentId())
