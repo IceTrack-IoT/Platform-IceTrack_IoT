@@ -64,10 +64,7 @@ public class OpenApiConfiguration {
             .url("http://localhost:8080")
             .description("Local Development Environment"),
         new Server()
-            .url("https://staging-api.ice-track.com")
-            .description("Staging Environment"),
-        new Server()
-            .url("https://ice-track-platform.onrender.com")
+            .url("https://platform-icetrackiot-production.up.railway.app/")
             .description("Production Environment")
     ));
 
