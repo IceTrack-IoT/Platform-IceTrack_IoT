@@ -143,7 +143,8 @@ public class DashboardConfigsController {
   @PreAuthorize("@profileAccessEvaluator.isAccountSelf(#userId, authentication)")
   @Operation(
       summary = "Add a dashboard card",
-      description = "Adds a card to the dashboard of the caller's own account. A dashboard shows each card type at most once.",
+      description = "Appends a card after the existing ones on the dashboard of the caller's own account; its order "
+          + "is assigned by the server. A dashboard shows each card type at most once.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -151,7 +152,7 @@ public class DashboardConfigsController {
           description = "Card added",
           content = @Content(schema = @Schema(implementation = DashboardConfigResource.class))
       ),
-      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an unknown card type or a negative order"),
+      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an unknown card type"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not this account"),
       @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration"),
       @ApiResponse(responseCode = "409", description = "The dashboard already shows a card of that type")
@@ -216,7 +217,8 @@ public class DashboardConfigsController {
   @PreAuthorize("@profileAccessEvaluator.isAccountSelf(#userId, authentication)")
   @Operation(
       summary = "Remove a dashboard card",
-      description = "Removes a card from the dashboard of the caller's own account; the card is deleted.",
+      description = "Removes a card from the dashboard of the caller's own account; the card is deleted and the "
+          + "cards after it move up one position, so the order stays contiguous.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(

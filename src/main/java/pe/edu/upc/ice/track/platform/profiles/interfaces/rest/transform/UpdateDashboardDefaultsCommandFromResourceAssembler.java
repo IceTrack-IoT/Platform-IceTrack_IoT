@@ -20,7 +20,9 @@ public class UpdateDashboardDefaultsCommandFromResourceAssembler {
     return new UpdateDashboardDefaultsCommand(
         userId,
         resource.defaultSiteId(),
-        resource.defaultTemperatureRange().value(),
+        resource.defaultTemperatureRange().min(),
+        resource.defaultTemperatureRange().max(),
+        resource.defaultTemperatureRange().unit(),
         resource.defaultTemperatureRange().label());
   }
 }

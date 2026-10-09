@@ -28,7 +28,11 @@ public final class DashboardConfigPersistenceAssembler {
         entity.getId(),
         new UserId(entity.getUserId()),
         new SiteId(entity.getDefaultSiteId()),
-        new TemperatureRange(temperatureRange.getValue(), temperatureRange.getLabel()),
+        new TemperatureRange(
+            temperatureRange.getMin(),
+            temperatureRange.getMax(),
+            temperatureRange.getUnit(),
+            temperatureRange.getLabel()),
         entity.getCards().stream()
             .map(DashboardConfigPersistenceAssembler::toDomainFromPersistence)
             .toList());
@@ -49,9 +53,12 @@ public final class DashboardConfigPersistenceAssembler {
   public static void copyToPersistence(DashboardConfig dashboardConfig, DashboardConfigPersistenceEntity entity) {
     entity.setUserId(dashboardConfig.getUserId().userId());
     entity.setDefaultSiteId(dashboardConfig.getDefaultSiteId().siteId());
+    var temperatureRange = dashboardConfig.getDefaultTemperatureRange();
     entity.setDefaultTemperatureRange(new TemperatureRangePersistenceEmbeddable(
-        dashboardConfig.getDefaultTemperatureRange().value(),
-        dashboardConfig.getDefaultTemperatureRange().label()));
+        temperatureRange.min(),
+        temperatureRange.max(),
+        temperatureRange.unit(),
+        temperatureRange.label()));
 
     Map<Long, DashboardCard> persistedCardsById = dashboardConfig.getCards().stream()
         .filter(card -> card.getCardId() != null)

@@ -65,7 +65,7 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
       var dashboardConfig = new DashboardConfig(
           userId,
           new SiteId(command.siteId()),
-          new TemperatureRange(command.tempValue(), command.tempLabel()));
+          new TemperatureRange(command.tempMin(), command.tempMax(), command.tempUnit(), command.tempLabel()));
       var savedDashboardConfig = dashboardConfigRepository.save(dashboardConfig);
       log.info("Created dashboard configuration {} for user {}",
           savedDashboardConfig.getDashboardConfigId(), command.userId());
@@ -95,7 +95,7 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
           "The dashboard already shows a %s card".formatted(command.cardType())));
     }
     try {
-      dashboardConfig.addCard(command.cardType(), command.order(), command.isVisible());
+      dashboardConfig.addCard(command.cardType(), command.isVisible());
       var savedDashboardConfig = dashboardConfigRepository.save(dashboardConfig);
       log.info("Added a {} card to dashboard configuration {}",
           command.cardType(), savedDashboardConfig.getDashboardConfigId());
@@ -174,7 +174,7 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
       var dashboardConfig = existingDashboardConfig.get();
       dashboardConfig.updateDefaults(
           new SiteId(command.siteId()),
-          new TemperatureRange(command.tempValue(), command.tempLabel()));
+          new TemperatureRange(command.tempMin(), command.tempMax(), command.tempUnit(), command.tempLabel()));
       var savedDashboardConfig = dashboardConfigRepository.save(dashboardConfig);
       log.info("Updated the defaults of dashboard configuration {}", savedDashboardConfig.getDashboardConfigId());
       return Result.success(savedDashboardConfig);

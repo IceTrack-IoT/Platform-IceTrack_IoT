@@ -29,6 +29,9 @@ import java.util.Optional;
  * goes through this root, which guards the aggregate invariants:</p>
  * <ul>
  *   <li>a dashboard never shows the same {@link CardType} twice;</li>
+ *   <li>the card order is owned by this root, never supplied by a caller: it is the contiguous,
+ *   1-based sequence {@code 1, 2, ..., N}, a new card is appended at {@code N + 1}, and removing a
+ *   card shifts the cards after it down so no gap is ever left;</li>
  *   <li>the cards are always kept sorted by their order.</li>
  * </ul>
  *
@@ -61,6 +64,10 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
   /**
    * Reconstitutes a dashboard configuration.
    *
+   * <p>The cards are sorted by their stored order and renumbered {@code 1..N}, so the order
+   * invariant holds even for rows stored with gaps or duplicate positions; the corrected order is
+   * written back the next time the configuration is saved.</p>
+   *
    * @param dashboardConfigId       the persistence identity, or {@code null} for a configuration not yet persisted
    * @param userId                  identifier of the account the configuration belongs to; required
    * @param defaultSiteId           the site the dashboard opens on; required
@@ -78,6 +85,8 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
     this.defaultTemperatureRange = Objects.requireNonNull(defaultTemperatureRange, "defaultTemperatureRange must not be null");
     this.cards = new ArrayList<>();
     cards.forEach(this::appendCard);
+    this.cards.sort(BY_ORDER);
+    reindexCards();
   }
 
   /**
@@ -111,16 +120,18 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
   }
 
   /**
-   * Adds a new card to the dashboard.
+   * Appends a new card at the end of the dashboard.
+   *
+   * <p>The order is computed here, never supplied: with {@code N} cards on the dashboard, the new
+   * card is placed at {@code N + 1}.</p>
    *
    * @param cardType the kind of widget; required, and not yet on the dashboard
-   * @param order    the position of the card, zero or greater; required
    * @param visible  whether the card is shown
    * @return the added card, not yet persisted
    * @throws IllegalStateException when the dashboard already shows a card of that type
    */
-  public DashboardCard addCard(CardType cardType, Integer order, boolean visible) {
-    var card = new DashboardCard(cardType, order, visible);
+  public DashboardCard addCard(CardType cardType, boolean visible) {
+    var card = new DashboardCard(cardType, cards.size() + 1, visible);
     appendCard(card);
     return card;
   }
@@ -138,21 +149,8 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
   }
 
   /**
-   * Moves a card of this dashboard to another position.
-   *
-   * @param cardId   the card identifier
-   * @param newOrder the new position, zero or greater; required
-   * @throws IllegalArgumentException when this dashboard has no such card or the order is invalid
-   */
-  public void reorderCard(Long cardId, Integer newOrder) {
-    findCard(cardId)
-        .orElseThrow(() -> new IllegalArgumentException("Dashboard has no card %s".formatted(cardId)))
-        .updateOrder(newOrder);
-    cards.sort(BY_ORDER);
-  }
-
-  /**
-   * Removes a card from the dashboard. Once saved, the card no longer exists.
+   * Removes a card from the dashboard and closes the gap it leaves. Once saved, the card no
+   * longer exists and every card after it has moved up one position.
    *
    * @param cardId the card identifier
    * @throws IllegalArgumentException when this dashboard has no such card
@@ -161,6 +159,7 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
     if (cardId == null || !cards.removeIf(card -> cardId.equals(card.getCardId()))) {
       throw new IllegalArgumentException("Dashboard has no card %s".formatted(cardId));
     }
+    reindexCards();
   }
 
   /**
@@ -186,6 +185,14 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
       throw new IllegalStateException("Dashboard already shows a %s card".formatted(card.getCardType()));
     }
     cards.add(card);
-    cards.sort(BY_ORDER);
+  }
+
+  /**
+   * Renumbers the cards {@code 1..N} following their current sequence, leaving no gap.
+   */
+  private void reindexCards() {
+    for (int i = 0; i < cards.size(); i++) {
+      cards.get(i).updateOrder(i + 1);
+    }
   }
 }

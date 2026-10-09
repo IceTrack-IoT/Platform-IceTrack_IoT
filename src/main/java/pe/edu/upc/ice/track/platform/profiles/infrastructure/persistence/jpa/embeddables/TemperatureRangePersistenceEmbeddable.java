@@ -10,8 +10,14 @@ import lombok.Setter;
 @Embeddable
 public class TemperatureRangePersistenceEmbeddable {
 
-  @Column(name = "temperature_range_value")
-  private String value;
+  @Column(name = "temperature_range_min")
+  private Integer min;
+
+  @Column(name = "temperature_range_max")
+  private Integer max;
+
+  @Column(name = "temperature_range_unit")
+  private String unit;
 
   @Column(name = "temperature_range_label")
   private String label;
@@ -19,8 +25,10 @@ public class TemperatureRangePersistenceEmbeddable {
   public TemperatureRangePersistenceEmbeddable() {
   }
 
-  public TemperatureRangePersistenceEmbeddable(String value, String label) {
-    this.value = value;
+  public TemperatureRangePersistenceEmbeddable(Integer min, Integer max, String unit, String label) {
+    this.min = min;
+    this.max = max;
+    this.unit = unit;
     this.label = label;
   }
 }

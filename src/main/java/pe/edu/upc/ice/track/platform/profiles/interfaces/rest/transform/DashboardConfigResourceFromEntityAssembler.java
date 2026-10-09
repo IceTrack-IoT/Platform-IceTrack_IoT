@@ -50,6 +50,10 @@ public class DashboardConfigResourceFromEntityAssembler {
    * @return The {@link TemperatureRangeResource} resource.
    */
   public static TemperatureRangeResource toResourceFromValueObject(TemperatureRange valueObject) {
-    return new TemperatureRangeResource(valueObject.value(), valueObject.label());
+    return new TemperatureRangeResource(
+        valueObject.min(),
+        valueObject.max(),
+        valueObject.unit(),
+        valueObject.label());
   }
 }

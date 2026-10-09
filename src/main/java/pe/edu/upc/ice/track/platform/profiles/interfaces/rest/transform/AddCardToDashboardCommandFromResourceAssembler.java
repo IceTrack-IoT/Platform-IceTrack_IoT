@@ -24,7 +24,6 @@ public class AddCardToDashboardCommandFromResourceAssembler {
     return new AddCardToDashboardCommand(
         userId,
         CardType.fromString(resource.cardType()),
-        resource.order(),
         resource.isVisible());
   }
 }

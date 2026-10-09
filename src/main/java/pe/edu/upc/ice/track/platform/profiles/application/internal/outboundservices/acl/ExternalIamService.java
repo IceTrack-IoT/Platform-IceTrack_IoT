@@ -46,4 +46,17 @@ public class ExternalIamService {
     var userId = iamContextFacade.fetchUserIdByUsername(username);
     return userId == null || userId == NO_USER ? Optional.empty() : Optional.of(userId);
   }
+
+  /**
+   * Checks whether a platform account exists.
+   *
+   * @param userId the identifier of the account
+   * @return true when an account holds the identifier
+   */
+  public boolean existsUserById(Long userId) {
+    if (userId == null) {
+      return false;
+    }
+    return iamContextFacade.existsUserById(userId);
+  }
 }

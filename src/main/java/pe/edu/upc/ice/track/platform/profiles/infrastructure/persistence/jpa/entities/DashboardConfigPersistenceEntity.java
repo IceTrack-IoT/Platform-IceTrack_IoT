@@ -46,7 +46,9 @@ public class DashboardConfigPersistenceEntity extends AuditableAbstractPersisten
 
   @Embedded
   @AttributeOverrides({
-      @AttributeOverride(name = "value", column = @Column(name = "temperature_range_value", nullable = false)),
+      @AttributeOverride(name = "min", column = @Column(name = "temperature_range_min", nullable = false)),
+      @AttributeOverride(name = "max", column = @Column(name = "temperature_range_max", nullable = false)),
+      @AttributeOverride(name = "unit", column = @Column(name = "temperature_range_unit", nullable = false, length = 1)),
       @AttributeOverride(name = "label", column = @Column(name = "temperature_range_label", nullable = false))})
   private TemperatureRangePersistenceEmbeddable defaultTemperatureRange;
 

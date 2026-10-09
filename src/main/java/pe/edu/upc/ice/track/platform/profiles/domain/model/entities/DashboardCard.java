@@ -27,31 +27,43 @@ public class DashboardCard {
   /**
    * Creates a new, not yet persisted, card.
    *
+   * <p>Reserved to {@link DashboardConfig#addCard}, which computes the position: a card's order is
+   * never chosen by a caller.</p>
+   *
    * @param cardType the kind of widget; required
-   * @param order    the position of the card on the dashboard, zero or greater; required
+   * @param order    the 1-based position of the card on the dashboard; required
    * @param visible  whether the card is shown
    */
   public DashboardCard(CardType cardType, Integer order, boolean visible) {
-    this(null, cardType, order, visible);
+    this(null, cardType, requireValidOrder(order), visible);
   }
 
   /**
    * Reconstitutes a card.
    *
+   * <p>The stored order is only required to be present, not to be valid: the owning
+   * {@link DashboardConfig} renumbers its cards {@code 1..N} on reconstitution, which also repairs
+   * positions stored by an earlier scheme.</p>
+   *
    * @param cardId   the persistence identity, or {@code null} for a card not yet persisted
    * @param cardType the kind of widget; required
-   * @param order    the position of the card on the dashboard, zero or greater; required
+   * @param order    the stored position of the card on the dashboard; required
    * @param visible  whether the card is shown
    */
   public DashboardCard(Long cardId, CardType cardType, Integer order, boolean visible) {
+    if (order == null) {
+      throw new IllegalArgumentException("Card order must not be null");
+    }
     this.cardId = cardId;
     this.cardType = Objects.requireNonNull(cardType, "cardType must not be null");
-    this.order = requireValidOrder(order);
+    this.order = order;
     this.visible = visible;
   }
 
   /**
    * Shows the card when hidden, hides it when shown.
+   *
+   * <p>Reserved to {@link DashboardConfig#toggleCardVisibility}.</p>
    */
   public void changeVisibility() {
     this.visible = !this.visible;
@@ -60,7 +72,10 @@ public class DashboardCard {
   /**
    * Moves the card to another position on the dashboard.
    *
-   * @param newOrder the new position, zero or greater; required
+   * <p>Reserved to {@link DashboardConfig}, which keeps the order of all its cards contiguous:
+   * calling it from anywhere else can leave gaps or duplicate positions.</p>
+   *
+   * @param newOrder the new 1-based position; required
    */
   public void updateOrder(Integer newOrder) {
     this.order = requireValidOrder(newOrder);
@@ -70,8 +85,8 @@ public class DashboardCard {
     if (order == null) {
       throw new IllegalArgumentException("Card order must not be null");
     }
-    if (order < 0) {
-      throw new IllegalArgumentException("Card order must not be negative");
+    if (order < 1) {
+      throw new IllegalArgumentException("Card order must be 1 or greater");
     }
     return order;
   }

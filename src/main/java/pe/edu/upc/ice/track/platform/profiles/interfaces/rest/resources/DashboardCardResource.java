@@ -12,7 +12,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(
     name = "DashboardCardResponse",
     description = "Dashboard card information response",
-    example = "{\"card_id\": 7, \"card_type\": \"OPEN_ALERTS\", \"order\": 0, \"is_visible\": true}"
+    example = "{\"card_id\": 7, \"card_type\": \"OPEN_ALERTS\", \"order\": 1, \"is_visible\": true}"
 )
 public record DashboardCardResource(
     @Schema(description = "Card unique identifier", example = "7")
@@ -22,7 +22,8 @@ public record DashboardCardResource(
         allowableValues = {"MONITORED_EQUIPMENT", "OPEN_ALERTS", "ACTIVE_ORDERS", "EQUIPMENT_STATUS"})
     String cardType,
 
-    @Schema(description = "Position of the card on the dashboard, starting at zero", example = "0")
+    @Schema(description = "Read-only position of the card on the dashboard: contiguous, starting at 1, "
+        + "assigned on addition and compacted on removal", example = "1", accessMode = Schema.AccessMode.READ_ONLY)
     Integer order,
 
     @JsonProperty("is_visible")
