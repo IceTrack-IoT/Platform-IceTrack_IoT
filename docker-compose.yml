@@ -27,3 +27,6 @@ networks:
   ice-track-net:
     name: ice-track-net
     driver: bridge
+
+volumes:
+  pgdata:
