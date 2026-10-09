@@ -10,8 +10,9 @@ import java.util.Objects;
  * Dashboard card entity.
  *
  * <p>A widget shown on a user's dashboard. It is an internal entity of the
- * {@link DashboardConfig} aggregate: it has no repository of its own, and is only ever created,
- * changed or removed through its dashboard configuration.</p>
+ * {@link DashboardConfig} aggregate: it has no repository of its own, is provisioned together with
+ * its dashboard configuration and is never deleted - hiding a widget only clears its visibility, so
+ * a hidden card keeps its data.</p>
  *
  * <p>No JPA or persistence annotation is present here - those concerns live exclusively in
  * {@code DashboardCardPersistenceEntity}.</p>
@@ -20,6 +21,7 @@ import java.util.Objects;
 public class DashboardCard {
 
   private final Long cardId;
+  private DashboardConfig dashboardConfig;
   private final CardType cardType;
   private Integer order;
   private boolean visible;
@@ -27,8 +29,8 @@ public class DashboardCard {
   /**
    * Creates a new, not yet persisted, card.
    *
-   * <p>Reserved to {@link DashboardConfig#addCard}, which computes the position: a card's order is
-   * never chosen by a caller.</p>
+   * <p>Reserved to {@link DashboardConfig}, which provisions one card per {@link CardType} and
+   * computes its position: a card's order is never chosen on its own.</p>
    *
    * @param cardType the kind of widget; required
    * @param order    the 1-based position of the card on the dashboard; required
@@ -61,12 +63,40 @@ public class DashboardCard {
   }
 
   /**
+   * Associates the card with the dashboard configuration that owns it.
+   *
+   * <p>Reserved to {@link DashboardConfig}, which associates every card it holds. A card belongs to
+   * a single configuration for its whole life: it can not be moved to another one.</p>
+   *
+   * @param dashboardConfig the owning dashboard configuration; required
+   * @throws IllegalStateException when the card already belongs to another configuration
+   */
+  public void setDashboardConfig(DashboardConfig dashboardConfig) {
+    Objects.requireNonNull(dashboardConfig, "dashboardConfig must not be null");
+    if (this.dashboardConfig != null && this.dashboardConfig != dashboardConfig) {
+      throw new IllegalStateException("Card already belongs to another dashboard configuration");
+    }
+    this.dashboardConfig = dashboardConfig;
+  }
+
+  /**
+   * Shows or hides the card. A hidden card keeps its data.
+   *
+   * <p>Reserved to {@link DashboardConfig}.</p>
+   *
+   * @param visible whether the card is shown
+   */
+  public void setVisibility(boolean visible) {
+    this.visible = visible;
+  }
+
+  /**
    * Shows the card when hidden, hides it when shown.
    *
    * <p>Reserved to {@link DashboardConfig#toggleCardVisibility}.</p>
    */
   public void changeVisibility() {
-    this.visible = !this.visible;
+    setVisibility(!this.visible);
   }
 
   /**

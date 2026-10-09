@@ -9,9 +9,10 @@ import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entit
 /**
  * JPA persistence entity for a dashboard card, mapped to the {@code dashboard_cards} table.
  *
- * <p>Owned by its {@link DashboardConfigPersistenceEntity}: every row is inserted, updated and
- * deleted through the configuration's {@code cards} collection, which cascades every operation and
- * removes orphans. There is deliberately no Spring Data repository for this entity.</p>
+ * <p>Owned by its {@link DashboardConfigPersistenceEntity}: every row is inserted and updated
+ * through the configuration's {@code cards} collection, which cascades every operation, and is only
+ * ever deleted together with its configuration. There is deliberately no Spring Data repository for
+ * this entity.</p>
  *
  * <p>The card type is stored by name ({@link EnumType#STRING}) rather than by ordinal, so adding or
  * reordering a {@link CardType} constant never corrupts existing rows.</p>

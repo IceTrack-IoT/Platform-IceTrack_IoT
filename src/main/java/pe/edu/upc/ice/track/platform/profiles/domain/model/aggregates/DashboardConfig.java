@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates;
 import lombok.AccessLevel;
 import lombok.Getter;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.entities.DashboardCard;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.CardLayoutItem;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.CardType;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.TemperatureRange;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
@@ -13,6 +14,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -21,17 +24,18 @@ import java.util.Optional;
  * Dashboard configuration aggregate root.
  *
  * <p>The dashboard preferences of a platform account: the site and temperature range the
- * dashboard opens on, and the {@link DashboardCard cards} it shows. An account has at most one
+ * dashboard opens on, and the layout of its {@link DashboardCard cards}. An account has at most one
  * configuration.</p>
  *
  * <p>The cards are internal entities of this aggregate. They are only reachable through
- * {@link #getCards()}, a read-only view, and every change to them - adding, toggling, removing -
- * goes through this root, which guards the aggregate invariants:</p>
+ * {@link #getCards()}, a read-only view, and every change to them - showing, hiding, reordering,
+ * resetting - goes through this root, which guards the aggregate invariants:</p>
  * <ul>
- *   <li>a dashboard never shows the same {@link CardType} twice;</li>
- *   <li>the card order is owned by this root, never supplied by a caller: it is the contiguous,
- *   1-based sequence {@code 1, 2, ..., N}, a new card is appended at {@code N + 1}, and removing a
- *   card shifts the cards after it down so no gap is ever left;</li>
+ *   <li>the dashboard holds exactly one card of each {@link CardType}: they are provisioned with
+ *   the configuration, and never added or removed afterwards - hiding a card only clears its
+ *   visibility, so a hidden card keeps its data;</li>
+ *   <li>the card order is the contiguous, 1-based sequence {@code 1, 2, ..., N}, with no gap and
+ *   no position shared by two cards;</li>
  *   <li>the cards are always kept sorted by their order.</li>
  * </ul>
  *
@@ -41,7 +45,17 @@ import java.util.Optional;
 @Getter
 public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig> {
 
+  /**
+   * Visibility of every card in the default layout.
+   */
+  private static final boolean DEFAULT_VISIBILITY = true;
+
   private static final Comparator<DashboardCard> BY_ORDER = Comparator.comparing(DashboardCard::getOrder);
+
+  /**
+   * The default layout sequence: the declaration order of {@link CardType}.
+   */
+  private static final Comparator<DashboardCard> BY_DEFAULT_LAYOUT = Comparator.comparing(DashboardCard::getCardType);
 
   private final Long dashboardConfigId;
   private final UserId userId;
@@ -51,7 +65,8 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
   private final List<DashboardCard> cards;
 
   /**
-   * Creates a new, not yet persisted, dashboard configuration with no cards.
+   * Creates a new, not yet persisted, dashboard configuration in the default layout: one visible
+   * card of each {@link CardType}, at positions {@code 1..N} in the declaration order of the type.
    *
    * @param userId                  identifier of the account the configuration belongs to; required
    * @param defaultSiteId           the site the dashboard opens on; required
@@ -64,15 +79,18 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
   /**
    * Reconstitutes a dashboard configuration.
    *
-   * <p>The cards are sorted by their stored order and renumbered {@code 1..N}, so the order
-   * invariant holds even for rows stored with gaps or duplicate positions; the corrected order is
-   * written back the next time the configuration is saved.</p>
+   * <p>The stored cards are sorted by their stored order; a card type with no stored card - a
+   * configuration saved before every type existed - is provisioned after them, visible. The cards
+   * are then renumbered {@code 1..N}, so the invariants hold even for rows stored with gaps or
+   * duplicate positions; the repaired layout is written back the next time the configuration is
+   * saved.</p>
    *
    * @param dashboardConfigId       the persistence identity, or {@code null} for a configuration not yet persisted
    * @param userId                  identifier of the account the configuration belongs to; required
    * @param defaultSiteId           the site the dashboard opens on; required
    * @param defaultTemperatureRange the temperature range the dashboard opens on; required
-   * @param cards                   the cards of the dashboard; required, may be empty
+   * @param cards                   the stored cards of the dashboard, at most one per type; required, may be empty
+   * @throws IllegalStateException when two stored cards share a type
    */
   public DashboardConfig(Long dashboardConfigId, UserId userId, SiteId defaultSiteId,
                          TemperatureRange defaultTemperatureRange, Collection<DashboardCard> cards) {
@@ -86,6 +104,7 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
     this.cards = new ArrayList<>();
     cards.forEach(this::appendCard);
     this.cards.sort(BY_ORDER);
+    provisionMissingCards();
     reindexCards();
   }
 
@@ -110,30 +129,14 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
   }
 
   /**
-   * Checks whether this dashboard already shows a card of the given type.
+   * Shows or hides a card of this dashboard. A hidden card keeps its data and its position.
    *
-   * @param cardType the card type
-   * @return true when a card of that type is on the dashboard
+   * @param cardId    the card identifier
+   * @param isVisible whether the card is shown
+   * @throws IllegalArgumentException when this dashboard has no such card
    */
-  public boolean hasCardOfType(CardType cardType) {
-    return cards.stream().anyMatch(card -> card.getCardType() == cardType);
-  }
-
-  /**
-   * Appends a new card at the end of the dashboard.
-   *
-   * <p>The order is computed here, never supplied: with {@code N} cards on the dashboard, the new
-   * card is placed at {@code N + 1}.</p>
-   *
-   * @param cardType the kind of widget; required, and not yet on the dashboard
-   * @param visible  whether the card is shown
-   * @return the added card, not yet persisted
-   * @throws IllegalStateException when the dashboard already shows a card of that type
-   */
-  public DashboardCard addCard(CardType cardType, boolean visible) {
-    var card = new DashboardCard(cardType, cards.size() + 1, visible);
-    appendCard(card);
-    return card;
+  public void updateCardVisibility(Long cardId, boolean isVisible) {
+    requireCard(cardId).setVisibility(isVisible);
   }
 
   /**
@@ -143,22 +146,61 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
    * @throws IllegalArgumentException when this dashboard has no such card
    */
   public void toggleCardVisibility(Long cardId) {
-    findCard(cardId)
-        .orElseThrow(() -> new IllegalArgumentException("Dashboard has no card %s".formatted(cardId)))
-        .changeVisibility();
+    requireCard(cardId).changeVisibility();
   }
 
   /**
-   * Removes a card from the dashboard and closes the gap it leaves. Once saved, the card no
-   * longer exists and every card after it has moved up one position.
+   * Replaces the whole card layout: the position and visibility of every card.
    *
-   * @param cardId the card identifier
-   * @throws IllegalArgumentException when this dashboard has no such card
+   * <p>The layout is checked as a whole before any card changes, so an invalid layout leaves the
+   * dashboard untouched. It must place every card of this dashboard exactly once, at the positions
+   * {@code 1..N}: a missing, unknown or repeated card, and a missing, out of range or repeated
+   * position, are all rejected - which also rules out any gap.</p>
+   *
+   * @param layout the requested placement of every card; required
+   * @throws IllegalArgumentException when the layout does not place every card exactly once at the positions {@code 1..N}
    */
-  public void removeCard(Long cardId) {
-    if (cardId == null || !cards.removeIf(card -> cardId.equals(card.getCardId()))) {
-      throw new IllegalArgumentException("Dashboard has no card %s".formatted(cardId));
+  public void updateLayout(List<CardLayoutItem> layout) {
+    if (layout == null) {
+      throw new IllegalArgumentException("Layout must not be null");
     }
+    if (layout.size() != cards.size()) {
+      throw new IllegalArgumentException("Layout must place exactly %d cards, %d were given"
+          .formatted(cards.size(), layout.size()));
+    }
+    var placements = new HashMap<DashboardCard, CardLayoutItem>();
+    var takenOrders = new HashSet<Integer>();
+    for (var item : layout) {
+      if (item == null) {
+        throw new IllegalArgumentException("Layout entries must not be null");
+      }
+      var card = requireCard(item.cardId());
+      if (placements.putIfAbsent(card, item) != null) {
+        throw new IllegalArgumentException("Card %s is placed more than once".formatted(item.cardId()));
+      }
+      if (item.order() < 1 || item.order() > cards.size()) {
+        throw new IllegalArgumentException("Card order must be between 1 and %d, %d was given"
+            .formatted(cards.size(), item.order()));
+      }
+      if (!takenOrders.add(item.order())) {
+        throw new IllegalArgumentException("Order %d is given to more than one card".formatted(item.order()));
+      }
+    }
+    // N distinct, existing cards at N distinct positions within 1..N: every card is placed, and the positions are exactly 1..N
+    placements.forEach((card, item) -> {
+      card.updateOrder(item.order());
+      card.setVisibility(item.visible());
+    });
+    cards.sort(BY_ORDER);
+  }
+
+  /**
+   * Restores the default layout: every card visible, at positions {@code 1..N} in the declaration
+   * order of {@link CardType}. The site and temperature range defaults are left unchanged.
+   */
+  public void resetToDefaults() {
+    cards.sort(BY_DEFAULT_LAYOUT);
+    cards.forEach(card -> card.setVisibility(DEFAULT_VISIBILITY));
     reindexCards();
   }
 
@@ -179,11 +221,33 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
     return siteId;
   }
 
+  private DashboardCard requireCard(Long cardId) {
+    return findCard(cardId)
+        .orElseThrow(() -> new IllegalArgumentException("Dashboard has no card %s".formatted(cardId)));
+  }
+
+  private boolean hasCardOfType(CardType cardType) {
+    return cards.stream().anyMatch(card -> card.getCardType() == cardType);
+  }
+
+  /**
+   * Appends, visible and after the existing cards, a card of every type the dashboard does not
+   * hold yet, in the declaration order of {@link CardType}.
+   */
+  private void provisionMissingCards() {
+    for (var cardType : CardType.values()) {
+      if (!hasCardOfType(cardType)) {
+        appendCard(new DashboardCard(cardType, cards.size() + 1, DEFAULT_VISIBILITY));
+      }
+    }
+  }
+
   private void appendCard(DashboardCard card) {
     Objects.requireNonNull(card, "card must not be null");
     if (hasCardOfType(card.getCardType())) {
-      throw new IllegalStateException("Dashboard already shows a %s card".formatted(card.getCardType()));
+      throw new IllegalStateException("Dashboard already holds a %s card".formatted(card.getCardType()));
     }
+    card.setDashboardConfig(this);
     cards.add(card);
   }
 

@@ -13,7 +13,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,17 +23,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.DashboardConfigCommandService;
 import pe.edu.upc.ice.track.platform.profiles.application.queryservices.DashboardConfigQueryService;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.RemoveCardFromDashboardCommand;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.ResetDashboardConfigToDefaultCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.ToggleCardVisibilityCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetDashboardConfigByUserIdQuery;
-import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.AddCardResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.CreateDashboardConfigResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.DashboardConfigResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateDashboardDefaultsResource;
-import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.AddCardToDashboardCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateDashboardLayoutResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.DashboardConfigResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.InitializeDashboardConfigCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.UpdateDashboardDefaultsCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.UpdateDashboardLayoutCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
@@ -45,7 +44,8 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  * <p>A dashboard configuration is personal: every endpoint is scoped to a platform account and
  * may only be called by that account itself. Cards are sub-resources of the configuration - they
  * have no endpoint of their own outside it, and every change returns the whole, updated
- * configuration.</p>
+ * configuration. The configuration is created with one card of each type, and cards are never
+ * added or deleted afterwards: they are only shown, hidden and reordered.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/profiles/dashboard-configs", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -110,8 +110,9 @@ public class DashboardConfigsController {
   @PreAuthorize("@profileAccessEvaluator.isAccountSelf(#resource.userId(), authentication)")
   @Operation(
       summary = "Create a dashboard configuration",
-      description = "Creates the dashboard configuration of the caller's own account, with no cards. "
-          + "An account has at most one configuration.",
+      description = "Creates the dashboard configuration of the caller's own account in the default layout: one "
+          + "visible card of each type, in the order MONITORED_EQUIPMENT, OPEN_ALERTS, ACTIVE_ORDERS, "
+          + "EQUIPMENT_STATUS. An account has at most one configuration.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -134,41 +135,41 @@ public class DashboardConfigsController {
   }
 
   /**
-   * Add a card to the dashboard of a platform account
+   * Replace the card layout of the dashboard of a platform account
    * @param userId   The platform account ID
-   * @param resource The {@link AddCardResource} payload
+   * @param resource The {@link UpdateDashboardLayoutResource} payload
    * @return A {@link DashboardConfigResource} resource for the updated configuration
    */
-  @PostMapping(value = "/user/{userId}/cards", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PutMapping(value = "/user/{userId}/layout", consumes = MediaType.APPLICATION_JSON_VALUE)
   @PreAuthorize("@profileAccessEvaluator.isAccountSelf(#userId, authentication)")
   @Operation(
-      summary = "Add a dashboard card",
-      description = "Appends a card after the existing ones on the dashboard of the caller's own account; its order "
-          + "is assigned by the server. A dashboard shows each card type at most once.",
+      summary = "Update the dashboard layout",
+      description = "Replaces the position and visibility of every card on the dashboard of the caller's own "
+          + "account. The layout must place each card of the dashboard exactly once, at the positions 1 to N.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
-          responseCode = "201",
-          description = "Card added",
+          responseCode = "200",
+          description = "Dashboard layout updated",
           content = @Content(schema = @Schema(implementation = DashboardConfigResource.class))
       ),
-      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an unknown card type"),
+      @ApiResponse(responseCode = "400", description = "Invalid layout, such as a missing, unknown or repeated "
+          + "card, or a repeated or out of range position"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not this account"),
-      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration"),
-      @ApiResponse(responseCode = "409", description = "The dashboard already shows a card of that type")
+      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration")
   })
-  public ResponseEntity<?> addCard(
+  public ResponseEntity<?> updateLayout(
       @PathVariable
       @Parameter(description = "Platform account unique identifier", example = "42", required = true)
       Long userId,
-      @Valid @RequestBody AddCardResource resource
+      @Valid @RequestBody UpdateDashboardLayoutResource resource
   ) {
-    var addCardToDashboardCommand = AddCardToDashboardCommandFromResourceAssembler.toCommandFromResource(userId, resource);
-    var result = dashboardConfigCommandService.handle(addCardToDashboardCommand);
+    var updateDashboardLayoutCommand = UpdateDashboardLayoutCommandFromResourceAssembler.toCommandFromResource(userId, resource);
+    var result = dashboardConfigCommandService.handle(updateDashboardLayoutCommand);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         result,
         DashboardConfigResourceFromEntityAssembler::toResourceFromEntity,
-        HttpStatus.CREATED);
+        HttpStatus.OK);
   }
 
   /**
@@ -181,7 +182,7 @@ public class DashboardConfigsController {
   @PreAuthorize("@profileAccessEvaluator.isAccountSelf(#userId, authentication)")
   @Operation(
       summary = "Toggle a dashboard card's visibility",
-      description = "Shows the card when hidden, hides it when shown.",
+      description = "Shows the card when hidden, hides it when shown. A hidden card keeps its data and its position.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -208,36 +209,33 @@ public class DashboardConfigsController {
   }
 
   /**
-   * Remove a card from the dashboard of a platform account
+   * Restore the default card layout of the dashboard of a platform account
    * @param userId The platform account ID
-   * @param cardId The card ID
    * @return A {@link DashboardConfigResource} resource for the updated configuration
    */
-  @DeleteMapping("/user/{userId}/cards/{cardId}")
+  @PostMapping("/user/{userId}/reset-defaults")
   @PreAuthorize("@profileAccessEvaluator.isAccountSelf(#userId, authentication)")
   @Operation(
-      summary = "Remove a dashboard card",
-      description = "Removes a card from the dashboard of the caller's own account; the card is deleted and the "
-          + "cards after it move up one position, so the order stays contiguous.",
+      summary = "Reset the dashboard layout",
+      description = "Restores the default card layout of the dashboard of the caller's own account: every card "
+          + "visible, in the order MONITORED_EQUIPMENT, OPEN_ALERTS, ACTIVE_ORDERS, EQUIPMENT_STATUS. The default "
+          + "site and temperature range are left unchanged.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
-          description = "Card removed",
+          description = "Dashboard layout reset",
           content = @Content(schema = @Schema(implementation = DashboardConfigResource.class))
       ),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not this account"),
-      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration, or the dashboard has no such card")
+      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration")
   })
-  public ResponseEntity<?> removeCard(
+  public ResponseEntity<?> resetToDefaults(
       @PathVariable
       @Parameter(description = "Platform account unique identifier", example = "42", required = true)
-      Long userId,
-      @PathVariable
-      @Parameter(description = "Dashboard card unique identifier", example = "7", required = true)
-      Long cardId
+      Long userId
   ) {
-    var result = dashboardConfigCommandService.handle(new RemoveCardFromDashboardCommand(userId, cardId));
+    var result = dashboardConfigCommandService.handle(new ResetDashboardConfigToDefaultCommand(userId));
     return ResponseEntityAssembler.toResponseEntityFromResult(
         result,
         DashboardConfigResourceFromEntityAssembler::toResourceFromEntity,

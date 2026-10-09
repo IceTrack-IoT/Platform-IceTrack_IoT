@@ -22,12 +22,12 @@ public record DashboardCardResource(
         allowableValues = {"MONITORED_EQUIPMENT", "OPEN_ALERTS", "ACTIVE_ORDERS", "EQUIPMENT_STATUS"})
     String cardType,
 
-    @Schema(description = "Read-only position of the card on the dashboard: contiguous, starting at 1, "
-        + "assigned on addition and compacted on removal", example = "1", accessMode = Schema.AccessMode.READ_ONLY)
+    @Schema(description = "Position of the card on the dashboard: the cards of a dashboard always hold the "
+        + "positions 1 to N, with no gap and no repeat", example = "1")
     Integer order,
 
     @JsonProperty("is_visible")
-    @Schema(description = "Whether the card is shown", example = "true")
+    @Schema(description = "Whether the card is shown; a hidden card keeps its data", example = "true")
     boolean isVisible
 ) {
 }

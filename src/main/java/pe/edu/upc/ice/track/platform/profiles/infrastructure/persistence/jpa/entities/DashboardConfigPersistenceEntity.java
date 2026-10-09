@@ -10,17 +10,16 @@ import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entit
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.function.Predicate;
 
 /**
  * JPA persistence entity for a dashboard configuration, mapped to the {@code dashboard_configs}
  * table.
  *
  * <p>The {@code cards} collection cascades every operation to its {@link DashboardCardPersistenceEntity
- * cards} and removes orphans, so a card dropped from the collection is deleted, and a card can never
- * outlive - nor be saved apart from - its configuration. The collection itself is never handed out
- * for modification: cards are added and removed through {@link #addCard} and {@link #removeCardsIf},
- * which keep both sides of the association consistent.</p>
+ * cards}, so a card can never outlive - nor be saved apart from - its configuration. Cards are never
+ * deleted on their own: the collection is never handed out for modification, and the only way to
+ * change it is {@link #addCard}, which keeps both sides of the association consistent. A hidden card
+ * keeps its row, with its visibility cleared.</p>
  */
 @Getter
 @Setter
@@ -54,7 +53,7 @@ public class DashboardConfigPersistenceEntity extends AuditableAbstractPersisten
 
   @Getter(AccessLevel.NONE)
   @Setter(AccessLevel.NONE)
-  @OneToMany(mappedBy = "dashboardConfig", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+  @OneToMany(mappedBy = "dashboardConfig", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
   @OrderBy("cardOrder ASC")
   private List<DashboardCardPersistenceEntity> cards = new ArrayList<>();
 
@@ -78,15 +77,5 @@ public class DashboardConfigPersistenceEntity extends AuditableAbstractPersisten
   public void addCard(DashboardCardPersistenceEntity card) {
     card.setDashboardConfig(this);
     cards.add(card);
-  }
-
-  /**
-   * Detaches the matching cards from this configuration; orphan removal deletes them when the
-   * configuration is saved.
-   *
-   * @param filter selects the cards to detach
-   */
-  public void removeCardsIf(Predicate<DashboardCardPersistenceEntity> filter) {
-    cards.removeIf(filter);
   }
 }

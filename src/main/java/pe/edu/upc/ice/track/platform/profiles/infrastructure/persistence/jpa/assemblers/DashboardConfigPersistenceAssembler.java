@@ -42,13 +42,15 @@ public final class DashboardConfigPersistenceAssembler {
    * Copies the state of a dashboard configuration onto its persistence entity, which is either new
    * or the managed entity the configuration was loaded from.
    *
-   * <p>The cards are reconciled by identity rather than replaced, so the managed collection - and
-   * with it orphan removal - stays intact: a persisted card missing from the aggregate is detached,
-   * and therefore deleted on save; a persisted card still present is updated in place; a card the
-   * aggregate holds without an identity is attached, and therefore inserted on save.</p>
+   * <p>The cards are reconciled by identity rather than replaced, and never removed: a card the
+   * aggregate holds with an identity updates its managed row in place, so a new order or visibility
+   * is written by dirty checking; a card the aggregate holds without an identity - one provisioned
+   * with a new configuration, or for a type a stored configuration lacked - is attached, and
+   * therefore inserted on save.</p>
    *
    * @param dashboardConfig the dashboard configuration
    * @param entity          the persistence entity to update
+   * @throws IllegalStateException when the aggregate holds a persisted card that is not one of this entity's cards
    */
   public static void copyToPersistence(DashboardConfig dashboardConfig, DashboardConfigPersistenceEntity entity) {
     entity.setUserId(dashboardConfig.getUserId().userId());
@@ -60,19 +62,23 @@ public final class DashboardConfigPersistenceAssembler {
         temperatureRange.unit(),
         temperatureRange.label()));
 
-    Map<Long, DashboardCard> persistedCardsById = dashboardConfig.getCards().stream()
-        .filter(card -> card.getCardId() != null)
-        .collect(Collectors.toMap(DashboardCard::getCardId, Function.identity()));
+    Map<Long, DashboardCardPersistenceEntity> cardEntitiesById = entity.getCards().stream()
+        .collect(Collectors.toMap(DashboardCardPersistenceEntity::getId, Function.identity()));
 
-    entity.removeCardsIf(cardEntity -> !persistedCardsById.containsKey(cardEntity.getId()));
-    entity.getCards().forEach(cardEntity -> copyToPersistence(persistedCardsById.get(cardEntity.getId()), cardEntity));
-    dashboardConfig.getCards().stream()
-        .filter(card -> card.getCardId() == null)
-        .forEach(card -> {
-          var cardEntity = new DashboardCardPersistenceEntity();
-          copyToPersistence(card, cardEntity);
-          entity.addCard(cardEntity);
-        });
+    for (var card : dashboardConfig.getCards()) {
+      if (card.getCardId() == null) {
+        var cardEntity = new DashboardCardPersistenceEntity();
+        copyToPersistence(card, cardEntity);
+        entity.addCard(cardEntity);
+        continue;
+      }
+      var cardEntity = cardEntitiesById.get(card.getCardId());
+      if (cardEntity == null) {
+        throw new IllegalStateException("Card %s does not belong to dashboard configuration %s"
+            .formatted(card.getCardId(), dashboardConfig.getDashboardConfigId()));
+      }
+      copyToPersistence(card, cardEntity);
+    }
   }
 
   private static DashboardCard toDomainFromPersistence(DashboardCardPersistenceEntity entity) {

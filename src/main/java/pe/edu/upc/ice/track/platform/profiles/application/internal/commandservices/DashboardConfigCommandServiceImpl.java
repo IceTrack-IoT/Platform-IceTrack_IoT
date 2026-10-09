@@ -6,11 +6,12 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.DashboardConfigCommandService;
 import pe.edu.upc.ice.track.platform.profiles.application.internal.outboundservices.acl.ExternalIamService;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.DashboardConfig;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.AddCardToDashboardCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.InitializeDashboardConfigCommand;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.RemoveCardFromDashboardCommand;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.ResetDashboardConfigToDefaultCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.ToggleCardVisibilityCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.UpdateDashboardDefaultsCommand;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.UpdateDashboardLayoutCommand;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.CardLayoutItem;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.TemperatureRange;
 import pe.edu.upc.ice.track.platform.profiles.domain.repositories.DashboardConfigRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
@@ -80,7 +81,7 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
   // inherited javadoc
   @Override
   @Transactional
-  public Result<DashboardConfig, ApplicationError> handle(AddCardToDashboardCommand command) {
+  public Result<DashboardConfig, ApplicationError> handle(UpdateDashboardLayoutCommand command) {
     if (!externalIamService.existsUserById(command.userId())) {
       return Result.failure(ApplicationError.notFound(USER_RESOURCE, command.userId().toString()));
     }
@@ -88,22 +89,18 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
     if (existingDashboardConfig.isEmpty()) {
       return Result.failure(ApplicationError.notFound(DASHBOARD_CONFIG_RESOURCE, "user " + command.userId()));
     }
-    var dashboardConfig = existingDashboardConfig.get();
-    if (dashboardConfig.hasCardOfType(command.cardType())) {
-      return Result.failure(ApplicationError.conflict(
-          DASHBOARD_CONFIG_RESOURCE,
-          "The dashboard already shows a %s card".formatted(command.cardType())));
-    }
     try {
-      dashboardConfig.addCard(command.cardType(), command.isVisible());
+      var dashboardConfig = existingDashboardConfig.get();
+      dashboardConfig.updateLayout(command.cards().stream()
+          .map(item -> new CardLayoutItem(item.cardId(), item.order(), item.isVisible()))
+          .toList());
       var savedDashboardConfig = dashboardConfigRepository.save(dashboardConfig);
-      log.info("Added a {} card to dashboard configuration {}",
-          command.cardType(), savedDashboardConfig.getDashboardConfigId());
+      log.info("Updated the card layout of dashboard configuration {}", savedDashboardConfig.getDashboardConfigId());
       return Result.success(savedDashboardConfig);
     } catch (IllegalArgumentException e) {
       return Result.failure(ApplicationError.validationError(DASHBOARD_CARD_RESOURCE, e.getMessage()));
     } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Dashboard card addition", e.getMessage()));
+      return Result.failure(ApplicationError.unexpected("Dashboard layout update", e.getMessage()));
     }
   }
 
@@ -136,7 +133,7 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
   // inherited javadoc
   @Override
   @Transactional
-  public Result<DashboardConfig, ApplicationError> handle(RemoveCardFromDashboardCommand command) {
+  public Result<DashboardConfig, ApplicationError> handle(ResetDashboardConfigToDefaultCommand command) {
     if (!externalIamService.existsUserById(command.userId())) {
       return Result.failure(ApplicationError.notFound(USER_RESOURCE, command.userId().toString()));
     }
@@ -144,18 +141,14 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
     if (existingDashboardConfig.isEmpty()) {
       return Result.failure(ApplicationError.notFound(DASHBOARD_CONFIG_RESOURCE, "user " + command.userId()));
     }
-    var dashboardConfig = existingDashboardConfig.get();
-    if (dashboardConfig.findCard(command.cardId()).isEmpty()) {
-      return Result.failure(ApplicationError.notFound(DASHBOARD_CARD_RESOURCE, command.cardId().toString()));
-    }
     try {
-      dashboardConfig.removeCard(command.cardId());
+      var dashboardConfig = existingDashboardConfig.get();
+      dashboardConfig.resetToDefaults();
       var savedDashboardConfig = dashboardConfigRepository.save(dashboardConfig);
-      log.info("Removed card {} from dashboard configuration {}",
-          command.cardId(), savedDashboardConfig.getDashboardConfigId());
+      log.info("Reset dashboard configuration {} to the default card layout", savedDashboardConfig.getDashboardConfigId());
       return Result.success(savedDashboardConfig);
     } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Dashboard card removal", e.getMessage()));
+      return Result.failure(ApplicationError.unexpected("Dashboard layout reset", e.getMessage()));
     }
   }
 

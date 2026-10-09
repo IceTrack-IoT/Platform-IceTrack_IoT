@@ -10,7 +10,7 @@ import java.util.List;
 @Schema(
     name = "DashboardConfigResponse",
     description = "Dashboard configuration information response",
-    example = "{\"id\": 1, \"user_id\": 42, \"default_site_id\": 3, \"default_temperature_range\": {\"min\": -22, \"max\": -18, \"unit\": \"C\", \"label\": \"-18°C to -22°C\"}, \"cards\": [{\"card_id\": 7, \"card_type\": \"OPEN_ALERTS\", \"order\": 1, \"is_visible\": true}]}"
+    example = "{\"id\": 1, \"user_id\": 42, \"default_site_id\": 3, \"default_temperature_range\": {\"min\": -22, \"max\": -18, \"unit\": \"C\", \"label\": \"-18°C to -22°C\"}, \"cards\": [{\"card_id\": 7, \"card_type\": \"MONITORED_EQUIPMENT\", \"order\": 1, \"is_visible\": true}, {\"card_id\": 8, \"card_type\": \"OPEN_ALERTS\", \"order\": 2, \"is_visible\": true}, {\"card_id\": 9, \"card_type\": \"ACTIVE_ORDERS\", \"order\": 3, \"is_visible\": true}, {\"card_id\": 10, \"card_type\": \"EQUIPMENT_STATUS\", \"order\": 4, \"is_visible\": true}]}"
 )
 public record DashboardConfigResource(
     @Schema(description = "Dashboard configuration unique identifier", example = "1")
@@ -25,7 +25,7 @@ public record DashboardConfigResource(
     @Schema(description = "Temperature range the dashboard opens on")
     TemperatureRangeResource defaultTemperatureRange,
 
-    @Schema(description = "Cards of the dashboard, sorted by their order")
+    @Schema(description = "Cards of the dashboard, one per card type, sorted by their order")
     List<DashboardCardResource> cards
 ) {
 }
