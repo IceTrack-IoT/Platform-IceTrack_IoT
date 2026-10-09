@@ -18,7 +18,7 @@ import java.util.Optional;
  * <p>A unit carries no owner column of its own - it belongs to whoever owns its site - so every
  * owner-scoped lookup has to go through {@code sites}. The queries below express that as a subquery
  * on the site's identifier, which is both portable across Hibernate versions and index-friendly:
- * {@code assets.sites} is probed by its primary key and the equipment table is then filtered on
+ * {@code sites} is probed by its primary key and the equipment table is then filtered on
  * {@code site_id}, rather than being driven by a cross join whose plan depends on the optimiser.</p>
  */
 @Repository

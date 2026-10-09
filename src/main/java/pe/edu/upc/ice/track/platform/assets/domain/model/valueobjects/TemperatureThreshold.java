@@ -13,7 +13,7 @@ import java.util.Objects;
  * {@code maxCelsius}. An inverted or degenerate band - a unit that would have to be simultaneously
  * below and above the same temperature - is rejected at construction time, so no
  * {@code Equipment} can ever carry an unusable threshold. The same rule is re-asserted by a
- * {@code CHECK} constraint on the {@code assets.equipments} table, because the database is the
+ * {@code CHECK} constraint on the {@code equipments} table, because the database is the
  * last line of defence against a value that bypassed this class.</p>
  *
  * @param minCelsius the lowest acceptable temperature in Celsius; required and strictly below

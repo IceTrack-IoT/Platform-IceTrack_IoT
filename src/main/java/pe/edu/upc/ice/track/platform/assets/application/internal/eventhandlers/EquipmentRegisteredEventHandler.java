@@ -1,30 +1,51 @@
 package pe.edu.upc.ice.track.platform.assets.application.internal.eventhandlers;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.assets.domain.model.events.EquipmentRegisteredEvent;
+import pe.edu.upc.ice.track.platform.assets.interfaces.events.EquipmentRegisteredIntegrationEvent;
 
 /**
  * Internal application-layer handler for the {@link EquipmentRegisteredEvent} domain event.
  *
- * <p>Like its site counterpart, it observes and traces rather than translates: cataloguing a unit
- * has to reach no other context synchronously. It is registered after the owning transaction
- * commits, so a trace line can never advertise a unit whose insert was rolled back.</p>
+ * <p>Translates the internal domain event into an {@link EquipmentRegisteredIntegrationEvent} and
+ * re-publishes it on the Spring event bus for cross-context consumers.</p>
  */
-@Component
+@Service
 @Slf4j
 public class EquipmentRegisteredEventHandler {
 
+  private final ApplicationEventPublisher eventPublisher;
+
   /**
-   * Receives the internal {@link EquipmentRegisteredEvent} after the transaction committed.
+   * Constructor.
+   *
+   * @param eventPublisher Spring application event publisher
+   */
+  public EquipmentRegisteredEventHandler(ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
+  }
+
+  /**
+   * Receives the internal {@link EquipmentRegisteredEvent} and publishes the corresponding
+   * {@link EquipmentRegisteredIntegrationEvent}.
    *
    * @param event the internal domain event
    */
-  @TransactionalEventListener
+  @EventListener
   public void on(EquipmentRegisteredEvent event) {
     log.info("Equipment registered: id={}, siteId={}, uid='{}', type={}, threshold=[{}, {}]C",
         event.equipmentId(), event.siteId(), event.uid(), event.equipmentType(),
         event.minCelsius(), event.maxCelsius());
+    eventPublisher.publishEvent(new EquipmentRegisteredIntegrationEvent(
+        event.equipmentId(),
+        event.siteId(),
+        event.uid(),
+        event.equipmentType() == null ? null : event.equipmentType().name(),
+        event.minCelsius(),
+        event.maxCelsius(),
+        event.registeredAt()));
   }
 }

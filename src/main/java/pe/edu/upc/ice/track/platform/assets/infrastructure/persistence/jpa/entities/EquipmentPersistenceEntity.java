@@ -16,7 +16,7 @@ import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entit
 import java.time.LocalDateTime;
 
 /**
- * JPA persistence entity for an {@code Equipment}, mapped to the {@code assets.equipments} table.
+ * JPA persistence entity for an {@code Equipment}, mapped to the {@code equipments} table.
  *
  * <p>Kept separate from the {@code Equipment} aggregate, exactly like {@link
  * SitePersistenceEntity} is kept separate from {@code Site}.</p>
@@ -44,7 +44,6 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
     name = "equipments",
-    schema = "assets",
     indexes = {
         @Index(name = "idx_equipments_uid", columnList = "equipment_uid", unique = true),
         @Index(name = "idx_equipments_site_id", columnList = "site_id"),

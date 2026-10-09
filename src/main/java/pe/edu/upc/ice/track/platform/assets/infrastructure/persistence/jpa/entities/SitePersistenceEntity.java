@@ -14,14 +14,14 @@ import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.conve
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
 
 /**
- * JPA persistence entity for a {@code Site}, mapped to the {@code assets.sites} table.
+ * JPA persistence entity for a {@code Site}, mapped to the {@code sites} table.
  *
  * <p>Kept separate from the {@code Site} aggregate on purpose: the aggregate stays free of JPA so
  * it can be reasoned about, created and tested without a persistence context, while this class
  * absorbs the mapping, the column widths and the indexes.</p>
  *
  * <p>{@code ownerProfilesId} is a plain column and never a foreign key. The owner lives in the
- * {@code profiles} schema of another bounded context, so this table points at an identifier and
+ * {@code profiles} bounded context, so this table points at an identifier and
  * nothing else - which is what lets this context be upstream and run without Profiles.</p>
  *
  * <p>The index on {@code owner_profiles_id} is not decorative: every listing an owner opens is
@@ -32,7 +32,6 @@ import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entit
 @Entity
 @Table(
     name = "sites",
-    schema = "assets",
     indexes = @Index(
         name = "idx_sites_owner_profiles_id",
         columnList = "owner_profiles_id"))

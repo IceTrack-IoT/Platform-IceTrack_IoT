@@ -1,32 +1,44 @@
 package pe.edu.upc.ice.track.platform.assets.application.internal.eventhandlers;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.assets.domain.model.events.SiteCreatedEvent;
+import pe.edu.upc.ice.track.platform.assets.interfaces.events.SiteCreatedIntegrationEvent;
 
 /**
  * Internal application-layer handler for the {@link SiteCreatedEvent} domain event.
  *
- * <p>This context has no outbound integration to perform when a site is registered - the site only
- * becomes visible to the rest of the platform through its own queries - so the handler observes and
- * traces the event instead of translating it. It exists because an event nobody listens to is an
- * event nobody can tell apart from one that never fired, and a dropped registration is exactly the
- * kind of failure that is invisible until somebody notices a missing site.</p>
+ * <p>Translates the internal domain event into a {@link SiteCreatedIntegrationEvent} and
+ * re-publishes it on the Spring event bus for cross-context consumers.</p>
  */
-@Component
+@Service
 @Slf4j
 public class SiteCreatedEventHandler {
 
+  private final ApplicationEventPublisher eventPublisher;
+
   /**
-   * Receives the internal {@link SiteCreatedEvent} once the owning transaction has committed, so
-   * the trace line can never advertise a site that was rolled back.
+   * Constructor.
+   *
+   * @param eventPublisher Spring application event publisher
+   */
+  public SiteCreatedEventHandler(ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
+  }
+
+  /**
+   * Receives the internal {@link SiteCreatedEvent} and publishes the corresponding
+   * {@link SiteCreatedIntegrationEvent}.
    *
    * @param event the internal domain event
    */
-  @TransactionalEventListener
+  @EventListener
   public void on(SiteCreatedEvent event) {
     log.info("Site created: id={}, ownerId={}, name='{}'",
         event.siteId(), event.ownerId(), event.name());
+    eventPublisher.publishEvent(new SiteCreatedIntegrationEvent(
+        event.siteId(), event.ownerId(), event.name()));
   }
 }

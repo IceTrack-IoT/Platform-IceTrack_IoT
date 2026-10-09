@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,11 +25,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.EquipmentCommandService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
-import pe.edu.upc.ice.track.platform.assets.application.queryservices.SiteQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
-import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
-import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSiteByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.authorization.OwnerIdentityResolver;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ChangeStatusResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ChangeThresholdResource;
@@ -37,7 +35,11 @@ import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentT
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterEquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.StatusEquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateEquipmentResource;
-import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.EquipmentResourceTransformer;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ChangeStatusCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ChangeThresholdCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.EquipmentResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.RegisterEquipmentCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.UpdateEquipmentCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
@@ -52,39 +54,38 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  * can answer the status code its failure deserves - 400 for an inverted band, 409 for an illegal
  * transition.</p>
  *
+ * <p>Id-scoped endpoints additionally carry a method-security check through
+ * {@code @assetAccessEvaluator}, mirroring {@code @profileAccessEvaluator} in the profiles
+ * context. Listing and registration resolve the caller owner via {@link OwnerIdentityResolver},
+ * since there is no resource identifier to evaluate yet.</p>
+ *
  * <p>The listing answers a plain array by default and a {@code PagedEquipmentResource} only when
  * the caller supplies both {@code page} and {@code size}, so pagination was added without
  * breaking the shape a non-paginating client already expects.</p>
  */
 @RestController
-@RequestMapping(value = "/api/v1", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(value = "/api/v1/equipments", produces = MediaType.APPLICATION_JSON_VALUE)
 @Tag(name = "Equipment", description = "Ice track equipment endpoints: registration, listing, threshold and status management")
 public class EquipmentController {
 
   private static final String EQUIPMENT_RESOURCE = "Equipment";
-  private static final String SITE_RESOURCE = "Site";
 
   private final EquipmentQueryService equipmentQueryService;
-  private final SiteQueryService siteQueryService;
   private final EquipmentCommandService equipmentCommandService;
   private final OwnerIdentityResolver ownerIdentityResolver;
 
   /**
    * Constructor
    *
-   * @param equipmentQueryService   The {@link EquipmentQueryService} instance
-   * @param siteQueryService        The {@link SiteQueryService} instance, used to tell an empty
-   *                                site apart from a site that is not the caller's
+   * @param equipmentQueryService The {@link EquipmentQueryService} instance
    * @param equipmentCommandService The {@link EquipmentCommandService} instance
-   * @param ownerIdentityResolver   The {@link OwnerIdentityResolver} instance
+   * @param ownerIdentityResolver The {@link OwnerIdentityResolver} instance
    */
   public EquipmentController(
       EquipmentQueryService equipmentQueryService,
-      SiteQueryService siteQueryService,
       EquipmentCommandService equipmentCommandService,
       OwnerIdentityResolver ownerIdentityResolver) {
     this.equipmentQueryService = equipmentQueryService;
-    this.siteQueryService = siteQueryService;
     this.equipmentCommandService = equipmentCommandService;
     this.ownerIdentityResolver = ownerIdentityResolver;
   }
@@ -92,11 +93,11 @@ public class EquipmentController {
   /**
    * Registers a refrigeration unit at one of the authenticated owner's sites.
    *
-   * @param resource       The {@link RegisterEquipmentResource} payload
+   * @param resource The {@link RegisterEquipmentResource} payload
    * @param authentication The authenticated principal, used as a fallback identity source
    * @return The registered {@link EquipmentResource}, with 201 Created
    */
-  @PostMapping(value = "/equipments", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
   @Operation(
       summary = "Register an equipment",
       description = "Registers a refrigeration unit at a site of the authenticated owner. The unit "
@@ -120,25 +121,25 @@ public class EquipmentController {
     if (ownerId == null) {
       return noOwnerProfile();
     }
-    var command = EquipmentResourceTransformer.toRegisterCommandFromResource(ownerId, resource);
+    var command = RegisterEquipmentCommandFromResourceAssembler.toCommandFromResource(ownerId, resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
-        EquipmentResourceTransformer::toResourceFromEntity,
+        EquipmentResourceFromEntityAssembler::toResourceFromEntity,
         HttpStatus.CREATED);
   }
 
   /**
    * Lists the authenticated owner's units, optionally filtered by status, type and site.
    *
-   * @param status        Restrict to a single operational status, optional
+   * @param status Restrict to a single operational status, optional
    * @param equipmentType Restrict to a single kind of unit, optional
-   * @param siteId        Restrict to a single site, optional
-   * @param page          Zero-based page index; supply together with {@code size} to page
-   * @param size          Page size; supply together with {@code page} to page
+   * @param siteId Restrict to a single site, optional
+   * @param page Zero-based page index; supply together with {@code size} to page
+   * @param size Page size; supply together with {@code page} to page
    * @param authentication The authenticated principal, used as a fallback identity source
    * @return A plain {@link EquipmentResource} array, or a page wrapper when paging was requested
    */
-  @GetMapping("/equipments")
+  @GetMapping
   @Operation(
       summary = "List my equipment",
       description = "Lists the equipment of the authenticated owner showing at least name, type, uid "
@@ -182,21 +183,22 @@ public class EquipmentController {
         size);
     var result = equipmentQueryService.handle(query);
     if (query.isPaged()) {
-      return ResponseEntity.ok(EquipmentResourceTransformer.toPagedResourceFromPage(result));
+      return ResponseEntity.ok(EquipmentResourceFromEntityAssembler.toPagedResourceFromPage(result));
     }
     return ResponseEntity.ok(result.content().stream()
-        .map(EquipmentResourceTransformer::toResourceFromEntity)
+        .map(EquipmentResourceFromEntityAssembler::toResourceFromEntity)
         .toList());
   }
 
   /**
    * Fetches the detail of one of the authenticated owner's units.
    *
-   * @param equipmentId   The unit identifier
+   * @param equipmentId The unit identifier
    * @param authentication The authenticated principal, used as a fallback identity source
    * @return The {@link EquipmentResource}, or 404 when it is not reachable by the caller
    */
-  @GetMapping("/equipments/{equipmentId}")
+  @GetMapping("/{equipmentId}")
+  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isEquipmentOwnedBy(#equipmentId, authentication)")
   @Operation(
       summary = "Get an equipment by ID",
       description = "Retrieves the full detail of one of the authenticated owner's equipment units (US-18).",
@@ -224,58 +226,19 @@ public class EquipmentController {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.notFound(EQUIPMENT_RESOURCE, String.valueOf(equipmentId)));
     }
-    return ResponseEntity.ok(EquipmentResourceTransformer.toResourceFromEntity(equipment.get()));
-  }
-
-  /**
-   * Lists the units installed at one of the authenticated owner's sites.
-   *
-   * @param siteId         The site identifier
-   * @param authentication The authenticated principal, used as a fallback identity source
-   * @return The {@link EquipmentResource} list, or 404 when the site is not reachable by the caller
-   */
-  @GetMapping("/sites/{siteId}/equipments")
-  @Operation(
-      summary = "List the equipment of a site",
-      description = "Lists the equipment installed at one of the authenticated owner's sites.",
-      security = @SecurityRequirement(name = "bearerAuth"))
-  @ApiResponses(value = {
-      @ApiResponse(
-          responseCode = "200",
-          description = "Equipment found",
-          content = @Content(array = @ArraySchema(schema = @Schema(implementation = EquipmentResource.class)))),
-      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
-      @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller")
-  })
-  public ResponseEntity<?> getEquipmentBySite(
-      @PathVariable
-      @Parameter(description = "Site unique identifier", example = "1", required = true)
-      Long siteId,
-      Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    if (siteQueryService.handle(new GetSiteByIdQuery(siteId, ownerId)).isEmpty()) {
-      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
-          ApplicationError.notFound(SITE_RESOURCE, String.valueOf(siteId)));
-    }
-    var equipment = equipmentQueryService.handle(new GetEquipmentBySiteQuery(siteId, ownerId));
-    return ResponseEntity.ok(equipment.stream()
-        .map(EquipmentResourceTransformer::toResourceFromEntity)
-        .toList());
+    return ResponseEntity.ok(EquipmentResourceFromEntityAssembler.toResourceFromEntity(equipment.get()));
   }
 
   /**
    * Replaces the descriptive data and maintenance interval of one of the owner's units.
    *
-   * @param equipmentId   The unit identifier
-   * @param resource      The {@link UpdateEquipmentResource} payload
+   * @param equipmentId The unit identifier
+   * @param resource The {@link UpdateEquipmentResource} payload
    * @param authentication The authenticated principal, used as a fallback identity source
    * @return The updated {@link EquipmentResource}, or 404 when it is not reachable by the caller
    */
-  @PutMapping(value = "/equipments/{equipmentId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PutMapping(value = "/{equipmentId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isEquipmentOwnedBy(#equipmentId, authentication)")
   @Operation(
       summary = "Update an equipment",
       description = "Replaces the name, type and preventive maintenance interval of one of the "
@@ -302,22 +265,23 @@ public class EquipmentController {
     if (ownerId == null) {
       return noOwnerProfile();
     }
-    var command = EquipmentResourceTransformer.toUpdateCommandFromResource(equipmentId, ownerId, resource);
+    var command = UpdateEquipmentCommandFromResourceAssembler.toCommandFromResource(equipmentId, ownerId, resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
-        EquipmentResourceTransformer::toResourceFromEntity,
+        EquipmentResourceFromEntityAssembler::toResourceFromEntity,
         HttpStatus.OK);
   }
 
   /**
    * Replaces the acceptable temperature band of one of the owner's units.
    *
-   * @param equipmentId   The unit identifier
-   * @param resource      The {@link ChangeThresholdResource} payload
+   * @param equipmentId The unit identifier
+   * @param resource The {@link ChangeThresholdResource} payload
    * @param authentication The authenticated principal, used as a fallback identity source
    * @return The updated {@link EquipmentResource}, or the failure status of the change
    */
-  @PutMapping(value = "/equipments/{equipmentId}/threshold", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PutMapping(value = "/{equipmentId}/threshold", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isEquipmentOwnedBy(#equipmentId, authentication)")
   @Operation(
       summary = "Change the temperature threshold",
       description = "Replaces the acceptable temperature band of one of the authenticated owner's "
@@ -344,23 +308,24 @@ public class EquipmentController {
     if (ownerId == null) {
       return noOwnerProfile();
     }
-    var command = EquipmentResourceTransformer.toChangeThresholdCommandFromResource(
+    var command = ChangeThresholdCommandFromResourceAssembler.toCommandFromResource(
         equipmentId, ownerId, resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
-        EquipmentResourceTransformer::toResourceFromEntity,
+        EquipmentResourceFromEntityAssembler::toResourceFromEntity,
         HttpStatus.OK);
   }
 
   /**
    * Moves one of the owner's units to a new operational status.
    *
-   * @param equipmentId   The unit identifier
-   * @param resource      The {@link ChangeStatusResource} payload
+   * @param equipmentId The unit identifier
+   * @param resource The {@link ChangeStatusResource} payload
    * @param authentication The authenticated principal, used as a fallback identity source
    * @return The updated {@link EquipmentResource}, or 409 for a transition the matrix forbids
    */
-  @PutMapping(value = "/equipments/{equipmentId}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PutMapping(value = "/{equipmentId}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isEquipmentOwnedBy(#equipmentId, authentication)")
   @Operation(
       summary = "Change the equipment status",
       description = "Moves one of the authenticated owner's units to a new operational status. "
@@ -388,10 +353,10 @@ public class EquipmentController {
     if (ownerId == null) {
       return noOwnerProfile();
     }
-    var command = EquipmentResourceTransformer.toChangeStatusCommandFromResource(equipmentId, ownerId, resource);
+    var command = ChangeStatusCommandFromResourceAssembler.toCommandFromResource(equipmentId, ownerId, resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
-        EquipmentResourceTransformer::toResourceFromEntity,
+        EquipmentResourceFromEntityAssembler::toResourceFromEntity,
         HttpStatus.OK);
   }
 
