@@ -5,9 +5,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 /**
  * Domain event published when a new {@link Site} is successfully registered and persisted.
  *
- * <p>Other bounded contexts must not subscribe to this event directly; it is translated into the
- * published language of the {@code assets} context by
- * {@code assets.application.internal.eventhandlers.SiteCreatedEventHandler}.</p>
+ * <p>Handled by {@code assets.application.internal.eventhandlers.SiteCreatedEventHandler}.</p>
  *
  * @param siteId   the identity assigned to the newly registered site
  * @param ownerId  the owner the site belongs to

@@ -8,8 +8,7 @@ import java.time.LocalDateTime;
 /**
  * Domain event published when a new {@link Equipment} is successfully registered at a site.
  *
- * <p>Other bounded contexts must not subscribe to this event directly; it is translated into the
- * published language of the {@code assets} context by
+ * <p>Handled by
  * {@code assets.application.internal.eventhandlers.EquipmentRegisteredEventHandler}.</p>
  *
  * @param equipmentId    the identity assigned to the newly registered unit
