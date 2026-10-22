@@ -81,11 +81,11 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
       return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
     } catch (DataIntegrityViolationException e) {
       // A concurrent request can slip past the existsByUid precheck and still collide on the
-      // unique index; the database is the final authority on uid uniqueness, so this is reported
-      // the same way as the precheck failure rather than as an unexpected error.
-      return Result.failure(ApplicationError.conflict(
-          EQUIPMENT_RESOURCE,
-          "An equipment with uid '%s' already exists".formatted(command.uid())));
+      // unique index; the database is the final authority on uid uniqueness. Rethrown so
+      // GlobalExceptionHandler answers 409 DUPLICATE_RESOURCE_CONFLICT: the failed insert has
+      // already marked the transaction rollback-only, so returning a Result would only surface as
+      // an UnexpectedRollbackException.
+      throw e;
     } catch (OptimisticLockingFailureException e) {
       // Registering a unit also increments its site's equipment counter, a version-checked write.
       // Rethrown so GlobalExceptionHandler answers 409: the transaction is already rollback-only,

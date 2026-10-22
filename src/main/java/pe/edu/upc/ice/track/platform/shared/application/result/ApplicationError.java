@@ -76,6 +76,19 @@ public record ApplicationError(
   }
 
   /**
+   * Duplicate resource error: a uniqueness rule rejected the write because another resource
+   * already uses the same identifier, typically one created by a concurrent request that passed the
+   * same existence check. Ends in {@code _CONFLICT}, so it is answered with 409 like any other
+   * conflict.
+   */
+  public static ApplicationError duplicateResource(String reason) {
+    return new ApplicationError(
+        "DUPLICATE_RESOURCE_CONFLICT",
+        "Duplicate resource conflict",
+        reason);
+  }
+
+  /**
    * Unauthorized error: the caller's credentials are missing, invalid, expired or revoked
    */
   public static ApplicationError unauthorized(String reason) {

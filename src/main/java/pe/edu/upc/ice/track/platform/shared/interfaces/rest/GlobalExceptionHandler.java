@@ -1,7 +1,10 @@
 package pe.edu.upc.ice.track.platform.shared.interfaces.rest;
 
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -11,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 
+import java.sql.SQLException;
 import java.text.MessageFormat;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
@@ -23,8 +27,11 @@ import java.util.ResourceBundle;
  */
 @RestControllerAdvice
 @NullMarked
+@Slf4j
 public class GlobalExceptionHandler {
   private static final String MESSAGES_BASENAME = "messages";
+  // PostgreSQL's SQLSTATE for unique_violation
+  private static final String UNIQUE_VIOLATION_SQL_STATE = "23505";
 
   /**
    * Handles validation exceptions from Spring's request body validation.
@@ -105,6 +112,37 @@ public class GlobalExceptionHandler {
   }
 
   /**
+   * Handles integrity violations rejected by the database, including the
+   * {@link DuplicateKeyException} subclass.
+   *
+   * <p>A unique violation is the database settling a race that an application-level existence
+   * check cannot see - two requests registering the same equipment uid at the same instant both
+   * pass the check, and the unique index rejects the second insert. The resource the caller wanted
+   * to create already exists, so 409 Conflict is returned. Any other violation (not-null, check or
+   * foreign key) means a domain rule was bypassed, so it is still answered as an unexpected error
+   * and logged for diagnosis.</p>
+   *
+   * <p>The exception message is never echoed, in either case, because it carries the SQL statement
+   * and the table and constraint names.</p>
+   *
+   * @param ex the data integrity violation
+   * @return error response with CONFLICT status for a unique violation, INTERNAL_SERVER_ERROR otherwise
+   */
+  @ExceptionHandler(DataIntegrityViolationException.class)
+  public ResponseEntity<?> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+    if (isUniqueViolation(ex)) {
+      var applicationError = ApplicationError.duplicateResource(
+          resolveMessageOrDefault("error.duplicate-resource.reason", "Verify unique attributes such as the equipment UID and try again"));
+      return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+    }
+    log.error("Data integrity violation not caused by a unique constraint", ex);
+    var applicationError = ApplicationError.unexpected(
+        resolveMessageOrDefault("error.unexpected.context", "global-exception-handler"),
+        resolveMessageOrDefault("error.data-integrity.reason", "The data could not be stored"));
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+  }
+
+  /**
    * Handles unexpected runtime exceptions not caught by specific handlers.
    * Maps to a generic unexpected error response.
    *
@@ -134,6 +172,21 @@ public class GlobalExceptionHandler {
         ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred"
     );
     return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+  }
+
+  /**
+   * Tells whether an integrity violation was raised by a unique constraint or index.
+   *
+   * <p>Decided on the SQLSTATE reported by the driver rather than on the message, which the
+   * database server localizes and rewords between versions.</p>
+   *
+   * @param ex the data integrity violation
+   * @return {@code true} when a uniqueness rule rejected the write
+   */
+  private static boolean isUniqueViolation(DataIntegrityViolationException ex) {
+    return ex instanceof DuplicateKeyException
+        || (ex.getMostSpecificCause() instanceof SQLException sqlException
+            && UNIQUE_VIOLATION_SQL_STATE.equals(sqlException.getSQLState()));
   }
 
   private String resolveMessageOrDefault(String key, String defaultValue, Object... args) {
