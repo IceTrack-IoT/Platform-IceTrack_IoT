@@ -8,6 +8,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentPage;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
@@ -21,6 +22,10 @@ import java.util.Optional;
  * <p>Every query names its caller by username, which is resolved to an owner through the
  * {@link ExternalOwnerService} ACL before anything is read, so a query only ever sees that owner's
  * units. A caller that holds no owner profile sees no unit at all.</p>
+ *
+ * <p>Fetching a single unit and listing the units of a site are also open to a technician, who
+ * services units of any owner: for a caller acting as one, neither is scoped by ownership. The
+ * owner's listing is never opened to a technician.</p>
  */
 @Service
 public class EquipmentQueryServiceImpl implements EquipmentQueryService {
@@ -58,6 +63,9 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
   @Override
   @Transactional(readOnly = true)
   public Optional<Equipment> handle(GetEquipmentByIdQuery query) {
+    if (query.callerRole() == CallerRole.TECHNICIAN) {
+      return equipmentRepository.findById(query.equipmentId());
+    }
     return externalOwnerService.fetchOwnerIdByUsername(query.username())
         .flatMap(ownerId -> equipmentRepository.findById(query.equipmentId())
             .filter(equipment -> isOwnedBy(equipment, ownerId)));
@@ -67,6 +75,9 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
   @Override
   @Transactional(readOnly = true)
   public List<Equipment> handle(GetEquipmentBySiteQuery query) {
+    if (query.callerRole() == CallerRole.TECHNICIAN) {
+      return equipmentRepository.findBySiteId(query.siteId());
+    }
     var ownerId = externalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
     if (ownerId == null || !isSiteOwnedBy(query.siteId(), ownerId)) {
       return List.of();

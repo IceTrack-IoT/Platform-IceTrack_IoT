@@ -34,6 +34,7 @@ import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentT
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterEquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.StatusEquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateEquipmentResource;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ChangeStatusCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ChangeThresholdCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.EquipmentResourceFromEntityAssembler;
@@ -54,8 +55,11 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  * can answer the status code its failure deserves - 400 for an inverted band, 409 for an illegal
  * transition.</p>
  *
- * <p>Every endpoint is restricted to {@code OWNER_ROLE} through method security, so an account of
- * any other role is answered with 403 before a service is reached.</p>
+ * <p>Every endpoint declares its roles through method security, so an account outside them is
+ * answered with 403 before a service is reached. Registration, the listing, the update and the
+ * threshold change are {@code OWNER_ROLE} only. Fetching a unit and changing its status are also
+ * open to {@code TECHNICIAN_ROLE}: the role the caller acts in is handed to the services, which do
+ * not scope a technician by ownership, since a technician services units of any owner.</p>
  *
  * <p>The listing answers a plain array by default and a {@code PagedEquipmentResource} only when
  * the caller supplies both {@code page} and {@code size}, so pagination was added without
@@ -187,10 +191,11 @@ public class EquipmentController {
    * @return The {@link EquipmentResource}, or 404 when it is not reachable by the caller
    */
   @GetMapping("/{equipmentId}")
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
   @Operation(
       summary = "Get an equipment by ID",
-      description = "Retrieves the full detail of one of the authenticated owner's equipment units (US-18).",
+      description = "Retrieves the full detail of an equipment unit (US-18). Owners can only read their "
+          + "own units; technicians can read any unit, since they service units of any owner.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -198,7 +203,7 @@ public class EquipmentController {
           description = "Equipment found",
           content = @Content(schema = @Schema(implementation = EquipmentResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician"),
       @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller")
   })
   public ResponseEntity<?> getEquipmentById(
@@ -206,7 +211,10 @@ public class EquipmentController {
       @Parameter(description = "Equipment unique identifier", example = "10", required = true)
       Long equipmentId,
       Authentication authentication) {
-    var equipment = equipmentQueryService.handle(new GetEquipmentByIdQuery(equipmentId, authentication.getName()));
+    var equipment = equipmentQueryService.handle(new GetEquipmentByIdQuery(
+        equipmentId,
+        authentication.getName(),
+        CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication)));
     if (equipment.isEmpty()) {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.notFound(EQUIPMENT_RESOURCE, String.valueOf(equipmentId)));
@@ -303,10 +311,11 @@ public class EquipmentController {
    * @return The updated {@link EquipmentResource}, or 409 for a transition the matrix forbids
    */
   @PutMapping(value = "/{equipmentId}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
   @Operation(
       summary = "Change the equipment status",
-      description = "Moves one of the authenticated owner's units to a new operational status. "
+      description = "Moves an equipment unit to a new operational status. Owners can only move their "
+          + "own units; technicians can move any unit they service in the field. "
           + "Allowed transitions: AVAILABLE to ON or OFF, ON to OFF or OFFLINE, OFF to ON, AVAILABLE "
           + "or OFFLINE, OFFLINE to ON, OFF or AVAILABLE. A forbidden transition is rejected with 409.",
       security = @SecurityRequirement(name = "bearerAuth"))
@@ -317,7 +326,7 @@ public class EquipmentController {
           content = @Content(schema = @Schema(implementation = EquipmentResource.class))),
       @ApiResponse(responseCode = "400", description = "Invalid input data"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician, or is an owner without an owner profile"),
       @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller"),
       @ApiResponse(responseCode = "409", description = "The requested status transition is not allowed")
   })
@@ -328,7 +337,10 @@ public class EquipmentController {
       @Valid @RequestBody ChangeStatusResource resource,
       Authentication authentication) {
     var command = ChangeStatusCommandFromResourceAssembler.toCommandFromResource(
-        equipmentId, authentication.getName(), resource);
+        equipmentId,
+        authentication.getName(),
+        CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication),
+        resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
         EquipmentResourceFromEntityAssembler::toResourceFromEntity,

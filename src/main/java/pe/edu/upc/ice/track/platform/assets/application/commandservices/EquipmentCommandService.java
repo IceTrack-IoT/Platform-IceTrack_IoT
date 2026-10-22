@@ -56,10 +56,13 @@ public interface EquipmentCommandService {
    * Move a unit to a new operational status, when the transition is part of the matrix carried
    * by {@code StatusEquipment}.
    *
+   * <p>The only command open to a caller acting as a technician, for whom the unit is not scoped
+   * by ownership.</p>
+   *
    * @param command The {@link ChangeStatusCommand} Command
    * @return A {@link Result} containing the updated {@link Equipment} on success, or an
-   *         {@link ApplicationError} when the unit is missing, belongs to another owner, or the
-   *         transition is not allowed
+   *         {@link ApplicationError} when the unit is missing, belongs to another owner (for an
+   *         owner), or the transition is not allowed
    */
   Result<Equipment, ApplicationError> handle(ChangeStatusCommand command);
 }

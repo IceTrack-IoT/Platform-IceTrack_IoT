@@ -20,8 +20,9 @@ public interface EquipmentQueryService {
   /**
    * Fetch a single equipment unit.
    *
-   * <p>A unit belonging to somebody else is reported as empty, exactly like a unit that does not
-   * exist, and so is every unit when the caller holds no owner profile.</p>
+   * <p>For a caller acting as an owner, a unit belonging to somebody else is reported as empty,
+   * exactly like a unit that does not exist, and so is every unit when the caller holds no owner
+   * profile. A caller acting as a technician reaches any unit.</p>
    *
    * @param query The {@link GetEquipmentByIdQuery} Query
    * @return the unit, or empty when it does not exist or is out of the caller's reach
@@ -29,10 +30,11 @@ public interface EquipmentQueryService {
   Optional<Equipment> handle(GetEquipmentByIdQuery query);
 
   /**
-   * List the units installed at a site the caller owns.
+   * List the units installed at a site the caller owns, or at any site for a technician.
    *
    * @param query The {@link GetEquipmentBySiteQuery} Query
-   * @return the units of that site, empty when the site does not exist or is not the caller's
+   * @return the units of that site, empty when the site does not exist or, for an owner, is not
+   *         the caller's
    */
   List<Equipment> handle(GetEquipmentBySiteQuery query);
 

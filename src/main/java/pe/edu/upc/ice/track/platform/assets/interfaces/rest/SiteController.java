@@ -33,6 +33,7 @@ import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterSi
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.SiteResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateSiteAddressResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateSiteResource;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.EquipmentResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.RegisterSiteCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.SiteResourceFromEntityAssembler;
@@ -50,8 +51,11 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  * ownership rules. No request body carries an owner and no endpoint accepts one as a parameter, so
  * a client cannot register a site for somebody else or read one that is not its own.</p>
  *
- * <p>Every endpoint is restricted to {@code OWNER_ROLE} through method security, so an account of
- * any other role is answered with 403 before a service is reached.</p>
+ * <p>Every endpoint declares its roles through method security, so an account outside them is
+ * answered with 403 before a service is reached. Registration, the listing and both updates are
+ * {@code OWNER_ROLE} only. Fetching a site and listing its equipment are also open to
+ * {@code TECHNICIAN_ROLE}: the role the caller acts in is handed to the query services, which do
+ * not scope a technician by ownership, since a technician is sent to sites of any owner.</p>
  *
  * <p>This controller holds no business logic: it converts a payload into a command through its
  * atomic assembler, delegates to a command or query service, and converts the outcome into a
@@ -158,10 +162,11 @@ public class SiteController {
    * @return The {@link SiteResource}, or 404 when it is not reachable by the caller
    */
   @GetMapping("/{siteId}")
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
   @Operation(
       summary = "Get a site by ID",
-      description = "Retrieves one of the authenticated owner's sites by its unique identifier.",
+      description = "Retrieves a site by its unique identifier. Owners can only read their own sites; "
+          + "technicians can read any site, so they can reach the equipment they service.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -169,7 +174,7 @@ public class SiteController {
           description = "Site found",
           content = @Content(schema = @Schema(implementation = SiteResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician"),
       @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller")
   })
   public ResponseEntity<?> getSiteById(
@@ -177,7 +182,10 @@ public class SiteController {
       @Parameter(description = "Site unique identifier", example = "1", required = true)
       Long siteId,
       Authentication authentication) {
-    var site = siteQueryService.handle(new GetSiteByIdQuery(siteId, authentication.getName()));
+    var site = siteQueryService.handle(new GetSiteByIdQuery(
+        siteId,
+        authentication.getName(),
+        CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication)));
     if (site.isEmpty()) {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.notFound(SITE_RESOURCE, String.valueOf(siteId)));
@@ -193,10 +201,11 @@ public class SiteController {
    * @return The {@link EquipmentResource} list, or 404 when the site is not reachable by the caller
    */
   @GetMapping("/{siteId}/equipments")
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
   @Operation(
       summary = "List the equipment of a site",
-      description = "Lists the equipment installed at one of the authenticated owner's sites.",
+      description = "Lists the equipment installed at a site. Owners can only list their own sites; "
+          + "technicians can list any site they inspect.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -204,7 +213,7 @@ public class SiteController {
           description = "Equipment found",
           content = @Content(array = @ArraySchema(schema = @Schema(implementation = EquipmentResource.class)))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician"),
       @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller")
   })
   public ResponseEntity<?> getEquipmentBySite(
@@ -213,11 +222,12 @@ public class SiteController {
       Long siteId,
       Authentication authentication) {
     var username = authentication.getName();
-    if (siteQueryService.handle(new GetSiteByIdQuery(siteId, username)).isEmpty()) {
+    var callerRole = CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication);
+    if (siteQueryService.handle(new GetSiteByIdQuery(siteId, username, callerRole)).isEmpty()) {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.notFound(SITE_RESOURCE, String.valueOf(siteId)));
     }
-    var equipment = equipmentQueryService.handle(new GetEquipmentBySiteQuery(siteId, username));
+    var equipment = equipmentQueryService.handle(new GetEquipmentBySiteQuery(siteId, username, callerRole));
     return ResponseEntity.ok(equipment.stream()
         .map(EquipmentResourceFromEntityAssembler::toResourceFromEntity)
         .toList());

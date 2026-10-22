@@ -12,13 +12,12 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCo
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateEquipmentCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.TemperatureThreshold;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
-
-import java.util.Optional;
 
 /**
  * Equipment Command Service Implementation.
@@ -29,6 +28,10 @@ import java.util.Optional;
  * and confirming it belongs to that owner, which is what makes the "one unit, one owner" rule
  * impossible to bypass. An account that holds no owner profile is answered with
  * {@code ACCESS_DENIED}.</p>
+ *
+ * <p>The single exception is a status change by a caller acting as a technician, who services
+ * units of any owner and is therefore not scoped by ownership. Registering, updating and changing
+ * the threshold of a unit carry no role at all and are always owner-scoped.</p>
  *
  * <p>A caller that asks for a unit it does not own is told the unit does not exist rather than
  * that it belongs to somebody else: the alternative would turn this endpoint into an oracle for
@@ -65,141 +68,151 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(RegisterEquipmentCommand command) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
-    if (ownerId == null) {
-      return Result.failure(noOwnerProfile());
-    }
-    if (!isSiteOwnedBy(command.siteId(), ownerId)) {
-      return Result.failure(notReachableSite(command.siteId()));
-    }
-    if (equipmentRepository.existsByUid(command.uid())) {
-      return Result.failure(ApplicationError.conflict(
-          EQUIPMENT_RESOURCE,
-          "An equipment with uid '%s' already exists".formatted(command.uid())));
-    }
-    try {
-      var equipment = new Equipment(
-          null,
-          command.siteId(),
-          command.uid(),
-          command.name(),
-          command.equipmentType(),
-          new TemperatureThreshold(command.minCelsius(), command.maxCelsius()),
-          command.reminderIntervalDays());
-      var savedEquipment = equipmentRepository.save(equipment);
-      log.info("Registered equipment {} (uid {}) at site {}",
-          savedEquipment.getEquipmentId(), savedEquipment.getUid(), command.siteId());
-      return Result.success(savedEquipment);
-    } catch (IllegalArgumentException e) {
-      return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
-    } catch (DataIntegrityViolationException e) {
-      // A concurrent request can slip past the existsByUid precheck and still collide on the
-      // unique index; the database is the final authority on uid uniqueness. Rethrown so
-      // GlobalExceptionHandler answers 409 DUPLICATE_RESOURCE_CONFLICT: the failed insert has
-      // already marked the transaction rollback-only, so returning a Result would only surface as
-      // an UnexpectedRollbackException.
-      throw e;
-    } catch (OptimisticLockingFailureException e) {
-      // Registering a unit also increments its site's equipment counter, a version-checked write.
-      // Rethrown so GlobalExceptionHandler answers 409: the transaction is already rollback-only,
-      // and returning a Result would only surface as an UnexpectedRollbackException.
-      throw e;
-    } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Equipment registration", e.getMessage()));
-    }
+    return resolveOwnerId(command.username()).flatMap(ownerId -> {
+      if (!isSiteOwnedBy(command.siteId(), ownerId)) {
+        return Result.failure(notReachableSite(command.siteId()));
+      }
+      if (equipmentRepository.existsByUid(command.uid())) {
+        return Result.failure(ApplicationError.conflict(
+            EQUIPMENT_RESOURCE,
+            "An equipment with uid '%s' already exists".formatted(command.uid())));
+      }
+      try {
+        var equipment = new Equipment(
+            null,
+            command.siteId(),
+            command.uid(),
+            command.name(),
+            command.equipmentType(),
+            new TemperatureThreshold(command.minCelsius(), command.maxCelsius()),
+            command.reminderIntervalDays());
+        var savedEquipment = equipmentRepository.save(equipment);
+        log.info("Registered equipment {} (uid {}) at site {}",
+            savedEquipment.getEquipmentId(), savedEquipment.getUid(), command.siteId());
+        return Result.success(savedEquipment);
+      } catch (IllegalArgumentException e) {
+        return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
+      } catch (DataIntegrityViolationException e) {
+        // A concurrent request can slip past the existsByUid precheck and still collide on the
+        // unique index; the database is the final authority on uid uniqueness. Rethrown so
+        // GlobalExceptionHandler answers 409 DUPLICATE_RESOURCE_CONFLICT: the failed insert has
+        // already marked the transaction rollback-only, so returning a Result would only surface
+        // as an UnexpectedRollbackException.
+        throw e;
+      } catch (OptimisticLockingFailureException e) {
+        // Registering a unit also increments its site's equipment counter, a version-checked
+        // write. Rethrown so GlobalExceptionHandler answers 409: the transaction is already
+        // rollback-only, and returning a Result would only surface as an
+        // UnexpectedRollbackException.
+        throw e;
+      } catch (Exception e) {
+        return Result.failure(ApplicationError.unexpected("Equipment registration", e.getMessage()));
+      }
+    });
   }
 
   // inherited javadoc
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(UpdateEquipmentCommand command) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
-    if (ownerId == null) {
-      return Result.failure(noOwnerProfile());
-    }
-    var reachable = reachableEquipment(command.equipmentId(), ownerId);
-    if (reachable.isEmpty()) {
-      return Result.failure(notReachableEquipment(command.equipmentId()));
-    }
-    try {
-      var equipment = reachable.get();
-      equipment.updateInfo(command.name(), command.equipmentType(), command.reminderIntervalDays());
-      var savedEquipment = equipmentRepository.save(equipment);
-      log.info("Updated equipment {}", savedEquipment.getEquipmentId());
-      return Result.success(savedEquipment);
-    } catch (IllegalArgumentException e) {
-      return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
-    } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Equipment update", e.getMessage()));
-    }
+    return reachableEquipment(command.equipmentId(), command.username()).flatMap(equipment -> {
+      try {
+        equipment.updateInfo(command.name(), command.equipmentType(), command.reminderIntervalDays());
+        var savedEquipment = equipmentRepository.save(equipment);
+        log.info("Updated equipment {}", savedEquipment.getEquipmentId());
+        return Result.success(savedEquipment);
+      } catch (IllegalArgumentException e) {
+        return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
+      } catch (Exception e) {
+        return Result.failure(ApplicationError.unexpected("Equipment update", e.getMessage()));
+      }
+    });
   }
 
   // inherited javadoc
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(ChangeThresholdCommand command) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
-    if (ownerId == null) {
-      return Result.failure(noOwnerProfile());
-    }
-    var reachable = reachableEquipment(command.equipmentId(), ownerId);
-    if (reachable.isEmpty()) {
-      return Result.failure(notReachableEquipment(command.equipmentId()));
-    }
-    try {
-      var equipment = reachable.get();
-      // The threshold value object rejects an inverted band by throwing, before the aggregate is
-      // modified, so the domain event it registers is never raised for a rejected threshold.
-      equipment.changeThreshold(new TemperatureThreshold(command.minCelsius(), command.maxCelsius()));
-      var savedEquipment = equipmentRepository.save(equipment);
-      log.info("Changed threshold of equipment {} to [{}, {}]C",
-          savedEquipment.getEquipmentId(), command.minCelsius(), command.maxCelsius());
-      return Result.success(savedEquipment);
-    } catch (IllegalArgumentException e) {
-      return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
-    } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Equipment threshold update", e.getMessage()));
-    }
+    return reachableEquipment(command.equipmentId(), command.username()).flatMap(equipment -> {
+      try {
+        // The threshold value object rejects an inverted band by throwing, before the aggregate is
+        // modified, so the domain event it registers is never raised for a rejected threshold.
+        equipment.changeThreshold(new TemperatureThreshold(command.minCelsius(), command.maxCelsius()));
+        var savedEquipment = equipmentRepository.save(equipment);
+        log.info("Changed threshold of equipment {} to [{}, {}]C",
+            savedEquipment.getEquipmentId(), command.minCelsius(), command.maxCelsius());
+        return Result.success(savedEquipment);
+      } catch (IllegalArgumentException e) {
+        return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
+      } catch (Exception e) {
+        return Result.failure(ApplicationError.unexpected("Equipment threshold update", e.getMessage()));
+      }
+    });
   }
 
   // inherited javadoc
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(ChangeStatusCommand command) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
-    if (ownerId == null) {
-      return Result.failure(noOwnerProfile());
-    }
-    var reachable = reachableEquipment(command.equipmentId(), ownerId);
-    if (reachable.isEmpty()) {
-      return Result.failure(notReachableEquipment(command.equipmentId()));
-    }
-    try {
-      var equipment = reachable.get();
-      equipment.changeStatus(command.newStatus());
-      var savedEquipment = equipmentRepository.save(equipment);
-      log.info("Changed status of equipment {} to {}",
-          savedEquipment.getEquipmentId(), command.newStatus());
-      return Result.success(savedEquipment);
-    } catch (IllegalStateException e) {
-      return Result.failure(ApplicationError.conflict(EQUIPMENT_RESOURCE, e.getMessage()));
-    } catch (IllegalArgumentException e) {
-      return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
-    } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Equipment status update", e.getMessage()));
-    }
+    // A technician changes the status of the units it services in the field, whatever their
+    // owner, so this is the one write not scoped by ownership.
+    var reachable = command.callerRole() == CallerRole.TECHNICIAN
+        ? existingEquipment(command.equipmentId())
+        : reachableEquipment(command.equipmentId(), command.username());
+    return reachable.flatMap(equipment -> {
+      try {
+        equipment.changeStatus(command.newStatus());
+        var savedEquipment = equipmentRepository.save(equipment);
+        log.info("Changed status of equipment {} to {}",
+            savedEquipment.getEquipmentId(), command.newStatus());
+        return Result.success(savedEquipment);
+      } catch (IllegalStateException e) {
+        return Result.failure(ApplicationError.conflict(EQUIPMENT_RESOURCE, e.getMessage()));
+      } catch (IllegalArgumentException e) {
+        return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
+      } catch (Exception e) {
+        return Result.failure(ApplicationError.unexpected("Equipment status update", e.getMessage()));
+      }
+    });
   }
 
   /**
-   * Loads a unit only when the site it is installed at belongs to the requesting owner.
+   * Resolves the caller's username to the owner it acts as.
+   *
+   * @param username username of the requesting caller
+   * @return the owner identifier, or a 403 failure when the caller holds no owner profile
+   */
+  private Result<Long, ApplicationError> resolveOwnerId(String username) {
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(username);
+    return ownerId.<Result<Long, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(noOwnerProfile()));
+  }
+
+  /**
+   * Loads a unit the caller may act on as an owner: it must exist, and the site it is installed at
+   * must belong to the owner the caller's username resolves to.
    *
    * @param equipmentId the unit identifier
-   * @param ownerId     the requesting owner
-   * @return the unit, or empty when it does not exist or is owned by somebody else
+   * @param username    username of the requesting caller
+   * @return the unit; a 403 failure when the caller holds no owner profile; or a 404 failure when
+   *         the unit does not exist or is owned by somebody else
    */
-  private Optional<Equipment> reachableEquipment(Long equipmentId, Long ownerId) {
-    return equipmentRepository.findById(equipmentId)
-        .filter(equipment -> isSiteOwnedBy(equipment.getSiteId(), ownerId));
+  private Result<Equipment, ApplicationError> reachableEquipment(Long equipmentId, String username) {
+    return resolveOwnerId(username).flatMap(ownerId -> {
+      var equipment = equipmentRepository.findById(equipmentId)
+          .filter(candidate -> isSiteOwnedBy(candidate.getSiteId(), ownerId));
+      return equipment.<Result<Equipment, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(notReachableEquipment(equipmentId)));
+    });
+  }
+
+  /**
+   * Loads a unit whatever its owner, for the one write a technician may perform.
+   *
+   * @param equipmentId the unit identifier
+   * @return the unit, or a 404 failure when it does not exist
+   */
+  private Result<Equipment, ApplicationError> existingEquipment(Long equipmentId) {
+    var equipment = equipmentRepository.findById(equipmentId);
+    return equipment.<Result<Equipment, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(notReachableEquipment(equipmentId)));
   }
 
   /**

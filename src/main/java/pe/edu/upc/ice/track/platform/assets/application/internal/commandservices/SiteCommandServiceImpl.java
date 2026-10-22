@@ -16,8 +16,6 @@ import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
-import java.util.Optional;
-
 /**
  * Site Command Service Implementation.
  *
@@ -66,102 +64,102 @@ public class SiteCommandServiceImpl implements SiteCommandService {
   @Override
   @Transactional
   public Result<Site, ApplicationError> handle(RegisterSiteCommand command) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
-    if (ownerId == null) {
-      return Result.failure(noOwnerProfile());
-    }
-    try {
-      var site = new Site(
-          null,
-          ownerId,
-          command.name(),
-          new Address(command.address()),
-          command.contactName(),
-          new Phone(command.phone()));
-      var savedSite = siteRepository.save(site);
-      log.info("Registered site {} for owner {}", savedSite.getSiteId(), ownerId);
-      return Result.success(savedSite);
-    } catch (IllegalArgumentException e) {
-      return Result.failure(ApplicationError.validationError(SITE_RESOURCE, e.getMessage()));
-    } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Site registration", e.getMessage()));
-    }
+    return resolveOwnerId(command.username()).flatMap(ownerId -> {
+      try {
+        var site = new Site(
+            null,
+            ownerId,
+            command.name(),
+            new Address(command.address()),
+            command.contactName(),
+            new Phone(command.phone()));
+        var savedSite = siteRepository.save(site);
+        log.info("Registered site {} for owner {}", savedSite.getSiteId(), ownerId);
+        return Result.success(savedSite);
+      } catch (IllegalArgumentException e) {
+        return Result.failure(ApplicationError.validationError(SITE_RESOURCE, e.getMessage()));
+      } catch (Exception e) {
+        return Result.failure(ApplicationError.unexpected("Site registration", e.getMessage()));
+      }
+    });
   }
 
   // inherited javadoc
   @Override
   @Transactional
   public Result<Site, ApplicationError> handle(UpdateSiteInfoCommand command) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
-    if (ownerId == null) {
-      return Result.failure(noOwnerProfile());
-    }
-    var reachable = reachableSite(command.siteId(), ownerId);
-    if (reachable.isEmpty()) {
-      return Result.failure(notReachableSite(command.siteId()));
-    }
-    var site = reachable.get();
-    try {
-      site.updateInfo(
-          command.name(),
-          new Address(command.address()),
-          command.contactName(),
-          new Phone(command.phone()));
-      var savedSite = siteRepository.save(site);
-      log.info("Updated site {}", savedSite.getSiteId());
-      return Result.success(savedSite);
-    } catch (IllegalArgumentException e) {
-      return Result.failure(ApplicationError.validationError(SITE_RESOURCE, e.getMessage()));
-    } catch (OptimisticLockingFailureException e) {
-      throw e;
-    } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Site update", e.getMessage()));
-    }
+    return reachableSite(command.siteId(), command.username()).flatMap(site -> {
+      try {
+        site.updateInfo(
+            command.name(),
+            new Address(command.address()),
+            command.contactName(),
+            new Phone(command.phone()));
+        var savedSite = siteRepository.save(site);
+        log.info("Updated site {}", savedSite.getSiteId());
+        return Result.success(savedSite);
+      } catch (IllegalArgumentException e) {
+        return Result.failure(ApplicationError.validationError(SITE_RESOURCE, e.getMessage()));
+      } catch (OptimisticLockingFailureException e) {
+        throw e;
+      } catch (Exception e) {
+        return Result.failure(ApplicationError.unexpected("Site update", e.getMessage()));
+      }
+    });
   }
 
   // inherited javadoc
   @Override
   @Transactional
   public Result<Site, ApplicationError> handle(UpdateSiteAddressCommand command) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
-    if (ownerId == null) {
-      return Result.failure(noOwnerProfile());
-    }
-    var reachable = reachableSite(command.siteId(), ownerId);
-    if (reachable.isEmpty()) {
-      return Result.failure(notReachableSite(command.siteId()));
-    }
-    var site = reachable.get();
-    try {
-      // The geocoding lookup is not called from here: changeAddress only queues it as a domain
-      // event, which is dispatched asynchronously once this transaction has committed.
-      site.changeAddress(new Address(command.newAddress()));
-      var savedSite = siteRepository.save(site);
-      log.info("Changed address of site {}; geocoding is {}", savedSite.getSiteId(), savedSite.getGeocodingStatus());
-      return Result.success(savedSite);
-    } catch (IllegalArgumentException e) {
-      return Result.failure(ApplicationError.validationError(SITE_RESOURCE, e.getMessage()));
-    } catch (OptimisticLockingFailureException e) {
-      throw e;
-    } catch (Exception e) {
-      return Result.failure(ApplicationError.unexpected("Site address update", e.getMessage()));
-    }
+    return reachableSite(command.siteId(), command.username()).flatMap(site -> {
+      try {
+        // The geocoding lookup is not called from here: changeAddress only queues it as a domain
+        // event, which is dispatched asynchronously once this transaction has committed.
+        site.changeAddress(new Address(command.newAddress()));
+        var savedSite = siteRepository.save(site);
+        log.info("Changed address of site {}; geocoding is {}", savedSite.getSiteId(), savedSite.getGeocodingStatus());
+        return Result.success(savedSite);
+      } catch (IllegalArgumentException e) {
+        return Result.failure(ApplicationError.validationError(SITE_RESOURCE, e.getMessage()));
+      } catch (OptimisticLockingFailureException e) {
+        throw e;
+      } catch (Exception e) {
+        return Result.failure(ApplicationError.unexpected("Site address update", e.getMessage()));
+      }
+    });
   }
 
   /**
-   * Loads a site only when it belongs to the requesting owner.
+   * Resolves the caller's username to the owner it acts as.
+   *
+   * @param username username of the requesting caller
+   * @return the owner identifier, or a 403 failure when the caller holds no owner profile
+   */
+  private Result<Long, ApplicationError> resolveOwnerId(String username) {
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(username);
+    return ownerId.<Result<Long, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(noOwnerProfile()));
+  }
+
+  /**
+   * Loads a site the caller may act on: it must exist and belong to the owner the caller's
+   * username resolves to.
    *
    * <p>A site of another owner is reported the same way as a missing one, never as a conflict:
    * telling the caller the site belongs to somebody else would turn these endpoints into an oracle
    * for discovering which site identifiers are real, exactly as Equipment's commands already
    * avoid.</p>
    *
-   * @param siteId  the site identifier
-   * @param ownerId the requesting owner
-   * @return the site, or empty when it does not exist or is owned by somebody else
+   * @param siteId   the site identifier
+   * @param username username of the requesting caller
+   * @return the site; a 403 failure when the caller holds no owner profile; or a 404 failure when
+   *         the site does not exist or is owned by somebody else
    */
-  private Optional<Site> reachableSite(Long siteId, Long ownerId) {
-    return siteRepository.findById(siteId).filter(site -> site.belongsTo(ownerId));
+  private Result<Site, ApplicationError> reachableSite(Long siteId, String username) {
+    return resolveOwnerId(username).flatMap(ownerId -> {
+      var site = siteRepository.findById(siteId).filter(candidate -> candidate.belongsTo(ownerId));
+      return site.<Result<Site, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(notReachableSite(siteId)));
+    });
   }
 
   /**
