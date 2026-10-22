@@ -13,7 +13,7 @@ import java.util.Set;
  * question an operator actually asks:</p>
  * <ul>
  *   <li>{@link #AVAILABLE} - catalogued and ready to be put into service, never connected yet;</li>
- *   <li>{@link #ON} - powered and running, whether or not it is currently reporting;</li>
+ *   <li>{@link #ON} - powered and running, whether it is currently reporting;</li>
  *   <li>{@link #OFF} - powered down on purpose, for cleaning, defrosting or a scheduled shutdown;</li>
  *   <li>{@link #OFFLINE} - supposed to be running but has stopped reporting, which is the state an
  *       operator has to react to.</li>
@@ -46,7 +46,7 @@ public enum StatusEquipment {
   /** Catalogued and ready to be put into service, never connected yet. */
   AVAILABLE,
 
-  /** Powered and running, whether or not it is currently reporting. */
+  /** Powered and running, whether it is currently reporting. */
   ON,
 
   /** Powered down on purpose, for cleaning, defrosting or a scheduled shutdown. */

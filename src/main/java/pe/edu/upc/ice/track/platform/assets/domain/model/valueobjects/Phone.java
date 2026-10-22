@@ -5,7 +5,7 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects;
  *
  * <p>Contact number of the person reachable at a {@code Site}. Deliberately narrower than
  * {@code profiles.domain.model.valueobjects.Phone}: this context never models a national number
- * separately from its dialling prefix, it only needs a number that can be dialled.</p>
+ * separately from its dialing prefix, it only needs a number that can be dialed.</p>
  *
  * <p>Accepted shape is digits and spaces with at most one leading {@code +} for the international
  * prefix, so {@code "+51 987654321"}, {@code "987654321"} and {@code "+51 987 654 321"} are all
@@ -17,17 +17,17 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects;
 public record Phone(String value) {
 
   /**
-   * Minimum number of digits a diallable national or international number may hold.
+   * Minimum number of digits a callable national or international number may hold.
    */
   public static final int MIN_DIGITS = 7;
 
   /**
-   * Maximum number of digits a diallable number may hold, as allowed by E.164.
+   * Maximum number of digits a callable number may hold, as allowed by E.164.
    */
   public static final int MAX_DIGITS = 15;
 
   /**
-   * Validates the number format and normalises it by collapsing the runs of spaces a human types
+   * Validates the number format and normalizes it by collapsing the runs of spaces a human types
    * into single spaces.
    *
    * @throws IllegalArgumentException when the number is missing, malformed or of implausible length
