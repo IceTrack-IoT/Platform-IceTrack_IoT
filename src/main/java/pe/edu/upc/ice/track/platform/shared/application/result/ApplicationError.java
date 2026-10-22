@@ -64,6 +64,18 @@ public record ApplicationError(
   }
 
   /**
+   * Concurrent modification error: the resource changed after the caller read it, so the write
+   * was rejected rather than allowed to overwrite the other change. Ends in {@code _CONFLICT}, so
+   * it is answered with 409 like any other conflict.
+   */
+  public static ApplicationError concurrentModification(String reason) {
+    return new ApplicationError(
+        "CONCURRENT_MODIFICATION_CONFLICT",
+        "Concurrent modification conflict",
+        reason);
+  }
+
+  /**
    * Unauthorized error: the caller's credentials are missing, invalid, expired or revoked
    */
   public static ApplicationError unauthorized(String reason) {

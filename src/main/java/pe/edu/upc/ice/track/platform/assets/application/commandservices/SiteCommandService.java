@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.assets.application.commandservices;
 
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterSiteCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateSiteAddressCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateSiteInfoCommand;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
@@ -38,4 +39,18 @@ public interface SiteCommandService {
    *         value violates a site invariant
    */
   Result<Site, ApplicationError> handle(UpdateSiteInfoCommand command);
+
+  /**
+   * Change the address of an existing site and queue a new lookup of its location.
+   *
+   * <p>Returns as soon as the new address is saved, with the site {@code PENDING}: the lookup
+   * itself happens asynchronously after the transaction commits, so neither its duration nor its
+   * failure can affect this call.</p>
+   *
+   * @param command The {@link UpdateSiteAddressCommand} Command
+   * @return A {@link Result} containing the updated {@link Site} on success, or an
+   *         {@link ApplicationError} when the site is missing, belongs to another owner, or the
+   *         address violates a site invariant
+   */
+  Result<Site, ApplicationError> handle(UpdateSiteAddressCommand command);
 }

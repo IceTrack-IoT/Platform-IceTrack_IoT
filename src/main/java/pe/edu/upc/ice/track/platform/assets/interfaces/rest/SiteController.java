@@ -32,10 +32,12 @@ import pe.edu.upc.ice.track.platform.assets.interfaces.rest.authorization.OwnerI
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterSiteResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.SiteResource;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateSiteAddressResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateSiteResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.EquipmentResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.RegisterSiteCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.SiteResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.UpdateSiteAddressCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.UpdateSiteInfoCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
@@ -103,7 +105,8 @@ public class SiteController {
   @Operation(
       summary = "Register a site",
       description = "Registers a new site for the authenticated owner. The owner is taken from the "
-          + "authenticated identity and cannot be supplied in the payload.",
+          + "authenticated identity and cannot be supplied in the payload. The site is answered with "
+          + "geocoding_status PENDING and no location; its address is located in the background.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -253,7 +256,8 @@ public class SiteController {
   @Operation(
       summary = "Update a site",
       description = "Replaces the name, address, contact name and contact phone number of one of the "
-          + "authenticated owner's sites. The owner of a site never changes.",
+          + "authenticated owner's sites. The owner of a site never changes. A different address "
+          + "restarts geocoding; an unchanged one keeps the current location.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -277,6 +281,49 @@ public class SiteController {
       return noOwnerProfile();
     }
     var command = UpdateSiteInfoCommandFromResourceAssembler.toCommandFromResource(siteId, ownerId, resource);
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        siteCommandService.handle(command),
+        SiteResourceFromEntityAssembler::toResourceFromEntity,
+        HttpStatus.OK);
+  }
+
+  /**
+   * Changes the address of one of the authenticated owner's sites and restarts its geocoding.
+   *
+   * @param siteId The site identifier
+   * @param resource The {@link UpdateSiteAddressResource} payload
+   * @param authentication The authenticated principal, used as a fallback identity source
+   * @return The updated {@link SiteResource}, with 200 OK and {@code geocoding_status} PENDING
+   */
+  @PutMapping(value = "/{siteId}/address", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isSiteOwnedBy(#siteId, authentication)")
+  @Operation(
+      summary = "Change the address of a site",
+      description = "Replaces the address of one of the authenticated owner's sites and answers immediately "
+          + "with geocoding_status PENDING and no location; the coordinates are resolved in the background. "
+          + "Submitting the current address again retries a FAILED or NOT_FOUND lookup.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Address changed, geocoding queued",
+          content = @Content(schema = @Schema(implementation = SiteResource.class))),
+      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an address longer than 50 characters"),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
+      @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller")
+  })
+  public ResponseEntity<?> updateSiteAddress(
+      @PathVariable
+      @Parameter(description = "Site unique identifier", example = "1", required = true)
+      Long siteId,
+      @Valid @RequestBody UpdateSiteAddressResource resource,
+      Authentication authentication) {
+    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
+    if (ownerId == null) {
+      return noOwnerProfile();
+    }
+    var command = UpdateSiteAddressCommandFromResourceAssembler.toCommandFromResource(siteId, ownerId, resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         siteCommandService.handle(command),
         SiteResourceFromEntityAssembler::toResourceFromEntity,

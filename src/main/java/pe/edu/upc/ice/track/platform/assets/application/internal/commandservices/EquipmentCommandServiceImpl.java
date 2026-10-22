@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.assets.application.internal.commandservice
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.EquipmentCommandService;
@@ -85,6 +86,11 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
       return Result.failure(ApplicationError.conflict(
           EQUIPMENT_RESOURCE,
           "An equipment with uid '%s' already exists".formatted(command.uid())));
+    } catch (OptimisticLockingFailureException e) {
+      // Registering a unit also increments its site's equipment counter, a version-checked write.
+      // Rethrown so GlobalExceptionHandler answers 409: the transaction is already rollback-only,
+      // and returning a Result would only surface as an UnexpectedRollbackException.
+      throw e;
     } catch (Exception e) {
       return Result.failure(ApplicationError.unexpected("Equipment registration", e.getMessage()));
     }

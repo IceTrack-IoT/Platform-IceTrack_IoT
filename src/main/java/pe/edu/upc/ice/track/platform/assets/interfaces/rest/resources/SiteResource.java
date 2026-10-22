@@ -7,11 +7,19 @@ import io.swagger.v3.oas.annotations.media.Schema;
  *
  * <p>Carries the owner identifier because an owner listing has to tell a caller which of the rows
  * is whose, but it is read-only here: it is never accepted as input.</p>
+ *
+ * <p>{@code location} and {@code navigation_url} are present only when {@code geocoding_status}
+ * is {@code RESOLVED}, and {@code null} otherwise. A client therefore never has to tell real
+ * coordinates from placeholder zeroes: no coordinates are sent unless they were resolved.</p>
  */
 @Schema(
     name = "SiteResponse",
     description = "Site information response",
-    example = "{\"id\": 1, \"owner_id\": 42, \"name\": \"Sede Central\", \"address\": \"Av. Primavera 123, Lima\", \"contact_name\": \"Maria Lopez\", \"phone\": \"+51 987654321\"}")
+    example = "{\"id\": 1, \"owner_id\": 42, \"name\": \"Sede Central\", \"address\": \"Av. Primavera 123, Lima\", "
+        + "\"contact_name\": \"Maria Lopez\", \"phone\": \"+51 987654321\", \"equipment_count\": 3, "
+        + "\"geocoding_status\": \"RESOLVED\", \"location\": {\"latitude\": -12.0931, \"longitude\": -77.0465, "
+        + "\"place_id\": \"ChIJ8e8c9yLIBZERt0P0wP0xV5A\"}, \"navigation_url\": "
+        + "\"https://www.google.com/maps/dir/?api=1&destination=-12.0931,-77.0465&destination_place_id=ChIJ8e8c9yLIBZERt0P0wP0xV5A\"}")
 public record SiteResource(
     @Schema(description = "Site unique identifier", example = "1")
     Long id,
@@ -29,6 +37,23 @@ public record SiteResource(
     String contactName,
 
     @Schema(description = "Contact phone number", example = "+51 987654321")
-    String phone
+    String phone,
+
+    @Schema(description = "Number of equipment units installed at the site", example = "3")
+    Integer equipmentCount,
+
+    @Schema(description = "Where the site stands in locating its address", example = "RESOLVED")
+    GeocodingStatusResource geocodingStatus,
+
+    @Schema(
+        description = "Resolved coordinates; null unless geocoding_status is RESOLVED",
+        nullable = true)
+    GeoLocationResource location,
+
+    @Schema(
+        description = "Google Maps directions link to the site; null unless geocoding_status is RESOLVED",
+        example = "https://www.google.com/maps/dir/?api=1&destination=-12.0931,-77.0465",
+        nullable = true)
+    String navigationUrl
 ) {
 }

@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.shared.interfaces.rest;
 
 import org.jspecify.annotations.NullMarked;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -80,6 +81,26 @@ public class GlobalExceptionHandler {
   public ResponseEntity<?> handleAccessDeniedException(AccessDeniedException ex) {
     var applicationError = ApplicationError.accessDenied(
         resolveMessageOrDefault("error.access-denied.reason", "You are not allowed to perform this operation"));
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+  }
+
+  /**
+   * Handles optimistic locking failures, including the JPA-specific
+   * {@code ObjectOptimisticLockingFailureException} subclass.
+   *
+   * <p>Raised when a {@code @Version}-checked write finds the row changed after it was read - for
+   * instance an owner editing a site at the instant its background geocoding is recorded. Nothing
+   * failed on the server: the caller acted on a stale copy and only has to re-read and retry, so
+   * 409 Conflict is returned. The exception message is not echoed because it names the
+   * persistence entity and its identifier.</p>
+   *
+   * @param ex the optimistic locking failure
+   * @return error response with CONFLICT status
+   */
+  @ExceptionHandler(OptimisticLockingFailureException.class)
+  public ResponseEntity<?> handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
+    var applicationError = ApplicationError.concurrentModification(
+        resolveMessageOrDefault("error.concurrent-modification.reason", "Reload the resource and retry the operation"));
     return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
   }
 

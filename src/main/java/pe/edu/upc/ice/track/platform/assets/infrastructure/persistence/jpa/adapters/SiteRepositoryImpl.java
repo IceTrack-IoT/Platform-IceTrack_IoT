@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.adap
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Repository;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingStatus;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.assemblers.SitePersistenceAssembler;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.repositories.SitePersistenceRepository;
@@ -18,6 +19,10 @@ import java.util.Optional;
  * persistence identity and there is nothing to announce before it exists. Publishing here, rather
  * than from the command service, is what guarantees that identity is present and that the event
  * follows the same fate as the transaction that produced the row.</p>
+ *
+ * <p>Events raised by an <em>update</em> - a {@code SiteAddressChangedEvent} - are dispatched here
+ * too, right after the row is written, exactly as {@code EquipmentRepositoryImpl} does for its
+ * own updates.</p>
  */
 @Repository
 public class SiteRepositoryImpl implements SiteRepository {
@@ -60,12 +65,27 @@ public class SiteRepositoryImpl implements SiteRepository {
 
   // inherited javadoc
   @Override
+  public List<Site> findByGeocodingStatus(GeocodingStatus geocodingStatus) {
+    if (geocodingStatus == null) {
+      return List.of();
+    }
+    return sitePersistenceRepository.findByGeocodingStatus(geocodingStatus).stream()
+        .map(SitePersistenceAssembler::toDomainFromPersistence)
+        .toList();
+  }
+
+  // inherited javadoc
+  @Override
   public boolean existsById(Long siteId) {
     return siteId != null && sitePersistenceRepository.existsById(siteId);
   }
 
   /**
-   * Persists a site and, when it was new, announces it.
+   * Persists a site and dispatches whatever domain events the change raised.
+   *
+   * <p>The events an update raised are read from the incoming aggregate, which is the one the
+   * caller changed; the creation events are raised on the rehydrated copy, because they carry the
+   * identity the incoming aggregate does not have yet.</p>
    *
    * @param site the site to persist
    * @return the persisted site
@@ -76,11 +96,22 @@ public class SiteRepositoryImpl implements SiteRepository {
     var savedEntity = sitePersistenceRepository.save(
         SitePersistenceAssembler.toPersistenceFromDomain(site));
     var savedSite = SitePersistenceAssembler.toDomainFromPersistence(savedEntity);
+    publishPendingEvents(site);
     if (isNew) {
       savedSite.onCreated();
-      savedSite.domainEvents().forEach(eventPublisher::publishEvent);
-      savedSite.clearDomainEvents();
+      publishPendingEvents(savedSite);
     }
     return savedSite;
+  }
+
+  /**
+   * Dispatches the events the aggregate registered, then clears them so a later save of the same
+   * aggregate does not announce the same change twice.
+   *
+   * @param site the aggregate that was just persisted
+   */
+  private void publishPendingEvents(Site site) {
+    site.domainEvents().forEach(eventPublisher::publishEvent);
+    site.clearDomainEvents();
   }
 }
