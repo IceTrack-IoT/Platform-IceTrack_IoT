@@ -23,11 +23,11 @@ import java.time.LocalDateTime;
  *
  * <p>Three index groups, each matching a query this context actually serves:</p>
  * <ul>
- *   <li>{@code equipment_uid} is unique, because a uid printed on a device is what Device
+ *   <li>{@code equipment_uid} is unique, because an uid printed on a device is what Device
  *       Management resolves a unit by and two units answering to the same uid would make that
  *       resolution ambiguous;</li>
  *   <li>{@code site_id} serves the "equipment of a site" listing;</li>
- *   <li>{@code (status, equipment_type)} serves the US-11 dashboard filters, which always narrow
+ *   <li>{@code (status, equipment_type)} serves the dashboard filters, which always narrow
  *       by those two columns and are read far more often than they are written.</li>
  * </ul>
  *

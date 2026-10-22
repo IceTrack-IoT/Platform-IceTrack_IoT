@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /**
  * Outbound REST resource representing a refrigeration unit.
  *
- * <p>Carries the fields US-18 and US-11 ask a listing to show - name, type, uid and status - plus
+ * <p>When listing to show - name, type, uid and status - plus
  * the detail a unit opens with. The telemetry columns {@code online}, {@code last_reading_at} and
  * {@code last_known_temperature} are exposed but not writable: they are written by the Monitoring
  * and Alerting context, never through these endpoints.</p>

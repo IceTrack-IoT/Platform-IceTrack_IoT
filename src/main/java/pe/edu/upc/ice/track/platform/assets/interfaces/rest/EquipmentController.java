@@ -45,7 +45,7 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorRespo
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 /**
- * REST controller exposing the refrigeration units of an owner (US-03, US-11, US-18).
+ * REST controller exposing the refrigeration units of an owner.
  *
  * <p>Like the site endpoints, every action is scoped to the authenticated caller: the controller
  * only hands the principal's username to the command and query services, which resolve it to an
@@ -139,7 +139,7 @@ public class EquipmentController {
   @Operation(
       summary = "List my equipment",
       description = "Lists the equipment of the authenticated owner showing at least name, type, uid "
-          + "and status, optionally filtered by status, type and site (US-11, US-18). Supplying both "
+          + "and status, optionally filtered by status, type and site. Supplying both "
           + "page and size returns a page wrapper with the total count instead of a plain array.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
@@ -194,7 +194,7 @@ public class EquipmentController {
   @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
   @Operation(
       summary = "Get an equipment by ID",
-      description = "Retrieves the full detail of an equipment unit (US-18). Owners can only read their "
+      description = "Retrieves the full detail of an equipment unit. Owners can only read their "
           + "own units; technicians can read any unit, since they service units of any owner.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {

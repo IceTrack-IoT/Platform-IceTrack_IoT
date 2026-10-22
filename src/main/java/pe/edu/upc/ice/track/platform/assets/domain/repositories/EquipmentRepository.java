@@ -42,7 +42,7 @@ public interface EquipmentRepository {
    * Find one page of the units of an owner, optionally narrowed by site, status and type.
    *
    * <p>A {@code null} filter does not restrict that dimension. This is the query behind the
-   * dashboard listing and the US-11 filters, so it is served by the indexes on {@code site_id},
+   * dashboard listing and filters, so it is served by the indexes on {@code site_id},
    * on {@code (status, equipment_type)} and by the join on the owner's
    * {@code owner_profiles_id}.</p>
    *
