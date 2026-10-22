@@ -20,10 +20,8 @@ public interface EquipmentQueryService {
   /**
    * Fetch a single equipment unit.
    *
-   * <p>When the query carries an {@code ownerId}, a unit belonging to somebody else is reported as
-   * empty, exactly like a unit that does not exist. When it carries none, the unit is returned
-   * whatever its owner: that is the shape the ACL facade needs to answer other bounded
-   * contexts.</p>
+   * <p>A unit belonging to somebody else is reported as empty, exactly like a unit that does not
+   * exist, and so is every unit when the caller holds no owner profile.</p>
    *
    * @param query The {@link GetEquipmentByIdQuery} Query
    * @return the unit, or empty when it does not exist or is out of the caller's reach

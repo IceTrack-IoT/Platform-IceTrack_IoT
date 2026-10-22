@@ -28,7 +28,6 @@ import pe.edu.upc.ice.track.platform.assets.application.queryservices.SiteQueryS
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSiteByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSitesByOwnerQuery;
-import pe.edu.upc.ice.track.platform.assets.interfaces.rest.authorization.OwnerIdentityResolver;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterSiteResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.SiteResource;
@@ -46,15 +45,13 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
 /**
  * REST controller exposing the sites of an owner (US-20).
  *
- * <p>Every endpoint acts on the owner established by the API Gateway, read through
- * {@link OwnerIdentityResolver}: no request body carries an owner and no endpoint accepts one as a
- * parameter, so a client cannot register a site for somebody else or read one that is not its
- * own. A request whose identity cannot be resolved is answered with 403, since the caller is
- * known and simply has nothing to act on.</p>
+ * <p>Every endpoint acts on the authenticated caller: the controller only hands the principal's
+ * username to the command and query services, which resolve it to an owner and apply the
+ * ownership rules. No request body carries an owner and no endpoint accepts one as a parameter, so
+ * a client cannot register a site for somebody else or read one that is not its own.</p>
  *
- * <p>Id-scoped endpoints additionally carry a method-security check through
- * {@code @assetAccessEvaluator}, mirroring {@code @profileAccessEvaluator} in the profiles
- * context.</p>
+ * <p>Every endpoint is restricted to {@code OWNER_ROLE} through method security, so an account of
+ * any other role is answered with 403 before a service is reached.</p>
  *
  * <p>This controller holds no business logic: it converts a payload into a command through its
  * atomic assembler, delegates to a command or query service, and converts the outcome into a
@@ -63,7 +60,7 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  * {@link pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler}.</p>
  */
 @RestController
-@RequestMapping(value = "/api/v1/sites", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(value = "/api/v1/assets/sites", produces = MediaType.APPLICATION_JSON_VALUE)
 @Tag(name = "Sites", description = "Ice track site endpoints: registration and listing of the premises where equipment is installed")
 public class SiteController {
 
@@ -72,7 +69,6 @@ public class SiteController {
   private final SiteQueryService siteQueryService;
   private final SiteCommandService siteCommandService;
   private final EquipmentQueryService equipmentQueryService;
-  private final OwnerIdentityResolver ownerIdentityResolver;
 
   /**
    * Constructor
@@ -81,27 +77,25 @@ public class SiteController {
    * @param siteCommandService The {@link SiteCommandService} instance
    * @param equipmentQueryService The {@link EquipmentQueryService} instance, used to list the
    *                              equipment installed at a site
-   * @param ownerIdentityResolver The {@link OwnerIdentityResolver} instance
    */
   public SiteController(
       SiteQueryService siteQueryService,
       SiteCommandService siteCommandService,
-      EquipmentQueryService equipmentQueryService,
-      OwnerIdentityResolver ownerIdentityResolver) {
+      EquipmentQueryService equipmentQueryService) {
     this.siteQueryService = siteQueryService;
     this.siteCommandService = siteCommandService;
     this.equipmentQueryService = equipmentQueryService;
-    this.ownerIdentityResolver = ownerIdentityResolver;
   }
 
   /**
    * Registers a new site for the authenticated owner.
    *
    * @param resource The {@link RegisterSiteResource} payload
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The registered {@link SiteResource}, with 201 Created
    */
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "Register a site",
       description = "Registers a new site for the authenticated owner. The owner is taken from the "
@@ -120,11 +114,7 @@ public class SiteController {
   public ResponseEntity<?> registerSite(
       @Valid @RequestBody RegisterSiteResource resource,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    var command = RegisterSiteCommandFromResourceAssembler.toCommandFromResource(ownerId, resource);
+    var command = RegisterSiteCommandFromResourceAssembler.toCommandFromResource(authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         siteCommandService.handle(command),
         SiteResourceFromEntityAssembler::toResourceFromEntity,
@@ -134,10 +124,11 @@ public class SiteController {
   /**
    * Lists every site belonging to the authenticated owner.
    *
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The {@link SiteResource} list, with 200 OK
    */
   @GetMapping
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "List my sites",
       description = "Lists every site belonging to the authenticated owner, with its name, address, "
@@ -149,14 +140,10 @@ public class SiteController {
           description = "Sites found",
           content = @Content(array = @ArraySchema(schema = @Schema(implementation = SiteResource.class)))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile")
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner")
   })
   public ResponseEntity<?> getMySites(Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    var sites = siteQueryService.handle(new GetSitesByOwnerQuery(ownerId));
+    var sites = siteQueryService.handle(new GetSitesByOwnerQuery(authentication.getName()));
     return ResponseEntity.ok(sites.stream().map(SiteResourceFromEntityAssembler::toResourceFromEntity).toList());
   }
 
@@ -167,11 +154,11 @@ public class SiteController {
    * endpoint cannot be used to discover which site identifiers are real.</p>
    *
    * @param siteId The site identifier
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The {@link SiteResource}, or 404 when it is not reachable by the caller
    */
   @GetMapping("/{siteId}")
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isSiteOwnedBy(#siteId, authentication)")
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "Get a site by ID",
       description = "Retrieves one of the authenticated owner's sites by its unique identifier.",
@@ -182,7 +169,7 @@ public class SiteController {
           description = "Site found",
           content = @Content(schema = @Schema(implementation = SiteResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
       @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller")
   })
   public ResponseEntity<?> getSiteById(
@@ -190,11 +177,7 @@ public class SiteController {
       @Parameter(description = "Site unique identifier", example = "1", required = true)
       Long siteId,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    var site = siteQueryService.handle(new GetSiteByIdQuery(siteId, ownerId));
+    var site = siteQueryService.handle(new GetSiteByIdQuery(siteId, authentication.getName()));
     if (site.isEmpty()) {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.notFound(SITE_RESOURCE, String.valueOf(siteId)));
@@ -206,11 +189,11 @@ public class SiteController {
    * Lists the units installed at one of the authenticated owner's sites.
    *
    * @param siteId The site identifier
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The {@link EquipmentResource} list, or 404 when the site is not reachable by the caller
    */
   @GetMapping("/{siteId}/equipments")
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isSiteOwnedBy(#siteId, authentication)")
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "List the equipment of a site",
       description = "Lists the equipment installed at one of the authenticated owner's sites.",
@@ -221,7 +204,7 @@ public class SiteController {
           description = "Equipment found",
           content = @Content(array = @ArraySchema(schema = @Schema(implementation = EquipmentResource.class)))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
       @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller")
   })
   public ResponseEntity<?> getEquipmentBySite(
@@ -229,15 +212,12 @@ public class SiteController {
       @Parameter(description = "Site unique identifier", example = "1", required = true)
       Long siteId,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    if (siteQueryService.handle(new GetSiteByIdQuery(siteId, ownerId)).isEmpty()) {
+    var username = authentication.getName();
+    if (siteQueryService.handle(new GetSiteByIdQuery(siteId, username)).isEmpty()) {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.notFound(SITE_RESOURCE, String.valueOf(siteId)));
     }
-    var equipment = equipmentQueryService.handle(new GetEquipmentBySiteQuery(siteId, ownerId));
+    var equipment = equipmentQueryService.handle(new GetEquipmentBySiteQuery(siteId, username));
     return ResponseEntity.ok(equipment.stream()
         .map(EquipmentResourceFromEntityAssembler::toResourceFromEntity)
         .toList());
@@ -248,11 +228,11 @@ public class SiteController {
    *
    * @param siteId The site identifier
    * @param resource The {@link UpdateSiteResource} payload
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The updated {@link SiteResource}, with 200 OK
    */
   @PutMapping(value = "/{siteId}", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isSiteOwnedBy(#siteId, authentication)")
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "Update a site",
       description = "Replaces the name, address, contact name and contact phone number of one of the "
@@ -276,11 +256,8 @@ public class SiteController {
       Long siteId,
       @Valid @RequestBody UpdateSiteResource resource,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    var command = UpdateSiteInfoCommandFromResourceAssembler.toCommandFromResource(siteId, ownerId, resource);
+    var command = UpdateSiteInfoCommandFromResourceAssembler.toCommandFromResource(
+        siteId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         siteCommandService.handle(command),
         SiteResourceFromEntityAssembler::toResourceFromEntity,
@@ -292,11 +269,11 @@ public class SiteController {
    *
    * @param siteId The site identifier
    * @param resource The {@link UpdateSiteAddressResource} payload
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The updated {@link SiteResource}, with 200 OK and {@code geocoding_status} PENDING
    */
   @PutMapping(value = "/{siteId}/address", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isSiteOwnedBy(#siteId, authentication)")
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "Change the address of a site",
       description = "Replaces the address of one of the authenticated owner's sites and answers immediately "
@@ -319,27 +296,11 @@ public class SiteController {
       Long siteId,
       @Valid @RequestBody UpdateSiteAddressResource resource,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    var command = UpdateSiteAddressCommandFromResourceAssembler.toCommandFromResource(siteId, ownerId, resource);
+    var command = UpdateSiteAddressCommandFromResourceAssembler.toCommandFromResource(
+        siteId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         siteCommandService.handle(command),
         SiteResourceFromEntityAssembler::toResourceFromEntity,
         HttpStatus.OK);
-  }
-
-  /**
-   * Builds the 403 returned when a request carries no owner identity this context can act on.
-   *
-   * <p>Reported as access denied rather than as a validation failure: the payload may be perfectly
-   * fine, there is simply nobody behind it.</p>
-   *
-   * @return the 403 response
-   */
-  private static ResponseEntity<?> noOwnerProfile() {
-    return ErrorResponseAssembler.toErrorResponseFromApplicationError(ApplicationError.accessDenied(
-        "The authenticated account has no owner profile, so it owns no site or equipment"));
   }
 }

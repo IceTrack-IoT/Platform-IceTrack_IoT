@@ -27,7 +27,6 @@ import pe.edu.upc.ice.track.platform.assets.application.commandservices.Equipmen
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
-import pe.edu.upc.ice.track.platform.assets.interfaces.rest.authorization.OwnerIdentityResolver;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ChangeStatusResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ChangeThresholdResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentResource;
@@ -47,24 +46,23 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
 /**
  * REST controller exposing the refrigeration units of an owner (US-03, US-11, US-18).
  *
- * <p>Like the site endpoints, every action is scoped to the owner established by the API Gateway
- * and read through {@link OwnerIdentityResolver}; a unit of another owner is reported exactly like
- * a unit that does not exist. The temperature band and the status change have their own endpoints
+ * <p>Like the site endpoints, every action is scoped to the authenticated caller: the controller
+ * only hands the principal's username to the command and query services, which resolve it to an
+ * owner and apply the ownership rules. A unit of another owner is reported exactly like a unit that
+ * does not exist. The temperature band and the status change have their own endpoints
  * rather than being folded into the update, so that each publishes its own domain event and each
  * can answer the status code its failure deserves - 400 for an inverted band, 409 for an illegal
  * transition.</p>
  *
- * <p>Id-scoped endpoints additionally carry a method-security check through
- * {@code @assetAccessEvaluator}, mirroring {@code @profileAccessEvaluator} in the profiles
- * context. Listing and registration resolve the caller owner via {@link OwnerIdentityResolver},
- * since there is no resource identifier to evaluate yet.</p>
+ * <p>Every endpoint is restricted to {@code OWNER_ROLE} through method security, so an account of
+ * any other role is answered with 403 before a service is reached.</p>
  *
  * <p>The listing answers a plain array by default and a {@code PagedEquipmentResource} only when
  * the caller supplies both {@code page} and {@code size}, so pagination was added without
  * breaking the shape a non-paginating client already expects.</p>
  */
 @RestController
-@RequestMapping(value = "/api/v1/equipments", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(value = "/api/v1/assets/equipments", produces = MediaType.APPLICATION_JSON_VALUE)
 @Tag(name = "Equipment", description = "Ice track equipment endpoints: registration, listing, threshold and status management")
 public class EquipmentController {
 
@@ -72,32 +70,29 @@ public class EquipmentController {
 
   private final EquipmentQueryService equipmentQueryService;
   private final EquipmentCommandService equipmentCommandService;
-  private final OwnerIdentityResolver ownerIdentityResolver;
 
   /**
    * Constructor
    *
    * @param equipmentQueryService The {@link EquipmentQueryService} instance
    * @param equipmentCommandService The {@link EquipmentCommandService} instance
-   * @param ownerIdentityResolver The {@link OwnerIdentityResolver} instance
    */
   public EquipmentController(
       EquipmentQueryService equipmentQueryService,
-      EquipmentCommandService equipmentCommandService,
-      OwnerIdentityResolver ownerIdentityResolver) {
+      EquipmentCommandService equipmentCommandService) {
     this.equipmentQueryService = equipmentQueryService;
     this.equipmentCommandService = equipmentCommandService;
-    this.ownerIdentityResolver = ownerIdentityResolver;
   }
 
   /**
    * Registers a refrigeration unit at one of the authenticated owner's sites.
    *
    * @param resource The {@link RegisterEquipmentResource} payload
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The registered {@link EquipmentResource}, with 201 Created
    */
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "Register an equipment",
       description = "Registers a refrigeration unit at a site of the authenticated owner. The unit "
@@ -117,11 +112,7 @@ public class EquipmentController {
   public ResponseEntity<?> registerEquipment(
       @Valid @RequestBody RegisterEquipmentResource resource,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    var command = RegisterEquipmentCommandFromResourceAssembler.toCommandFromResource(ownerId, resource);
+    var command = RegisterEquipmentCommandFromResourceAssembler.toCommandFromResource(authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
         EquipmentResourceFromEntityAssembler::toResourceFromEntity,
@@ -136,10 +127,11 @@ public class EquipmentController {
    * @param siteId Restrict to a single site, optional
    * @param page Zero-based page index; supply together with {@code size} to page
    * @param size Page size; supply together with {@code page} to page
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return A plain {@link EquipmentResource} array, or a page wrapper when paging was requested
    */
   @GetMapping
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "List my equipment",
       description = "Lists the equipment of the authenticated owner showing at least name, type, uid "
@@ -151,7 +143,8 @@ public class EquipmentController {
           responseCode = "200",
           description = "Equipment found",
           content = @Content(array = @ArraySchema(schema = @Schema(implementation = EquipmentResource.class)))),
-      @ApiResponse(responseCode = "401", description = "Unauthorized - no owner identity on the request")
+      @ApiResponse(responseCode = "401", description = "Unauthorized - no owner identity on the request"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner")
   })
   public ResponseEntity<?> getMyEquipment(
       @RequestParam(required = false)
@@ -170,12 +163,8 @@ public class EquipmentController {
       @Parameter(description = "Page size; supply with page", example = "20")
       Integer size,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
     var query = new GetEquipmentByOwnerQuery(
-        ownerId,
+        authentication.getName(),
         siteId,
         status == null ? null : status.toDomain(),
         equipmentType == null ? null : equipmentType.toDomain(),
@@ -194,11 +183,11 @@ public class EquipmentController {
    * Fetches the detail of one of the authenticated owner's units.
    *
    * @param equipmentId The unit identifier
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The {@link EquipmentResource}, or 404 when it is not reachable by the caller
    */
   @GetMapping("/{equipmentId}")
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isEquipmentOwnedBy(#equipmentId, authentication)")
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "Get an equipment by ID",
       description = "Retrieves the full detail of one of the authenticated owner's equipment units (US-18).",
@@ -209,7 +198,7 @@ public class EquipmentController {
           description = "Equipment found",
           content = @Content(schema = @Schema(implementation = EquipmentResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
       @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller")
   })
   public ResponseEntity<?> getEquipmentById(
@@ -217,11 +206,7 @@ public class EquipmentController {
       @Parameter(description = "Equipment unique identifier", example = "10", required = true)
       Long equipmentId,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    var equipment = equipmentQueryService.handle(new GetEquipmentByIdQuery(equipmentId, ownerId));
+    var equipment = equipmentQueryService.handle(new GetEquipmentByIdQuery(equipmentId, authentication.getName()));
     if (equipment.isEmpty()) {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.notFound(EQUIPMENT_RESOURCE, String.valueOf(equipmentId)));
@@ -234,11 +219,11 @@ public class EquipmentController {
    *
    * @param equipmentId The unit identifier
    * @param resource The {@link UpdateEquipmentResource} payload
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The updated {@link EquipmentResource}, or 404 when it is not reachable by the caller
    */
   @PutMapping(value = "/{equipmentId}", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isEquipmentOwnedBy(#equipmentId, authentication)")
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "Update an equipment",
       description = "Replaces the name, type and preventive maintenance interval of one of the "
@@ -261,11 +246,8 @@ public class EquipmentController {
       Long equipmentId,
       @Valid @RequestBody UpdateEquipmentResource resource,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    var command = UpdateEquipmentCommandFromResourceAssembler.toCommandFromResource(equipmentId, ownerId, resource);
+    var command = UpdateEquipmentCommandFromResourceAssembler.toCommandFromResource(
+        equipmentId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
         EquipmentResourceFromEntityAssembler::toResourceFromEntity,
@@ -277,11 +259,11 @@ public class EquipmentController {
    *
    * @param equipmentId The unit identifier
    * @param resource The {@link ChangeThresholdResource} payload
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The updated {@link EquipmentResource}, or the failure status of the change
    */
   @PutMapping(value = "/{equipmentId}/threshold", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isEquipmentOwnedBy(#equipmentId, authentication)")
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "Change the temperature threshold",
       description = "Replaces the acceptable temperature band of one of the authenticated owner's "
@@ -304,12 +286,8 @@ public class EquipmentController {
       Long equipmentId,
       @Valid @RequestBody ChangeThresholdResource resource,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
     var command = ChangeThresholdCommandFromResourceAssembler.toCommandFromResource(
-        equipmentId, ownerId, resource);
+        equipmentId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
         EquipmentResourceFromEntityAssembler::toResourceFromEntity,
@@ -321,11 +299,11 @@ public class EquipmentController {
    *
    * @param equipmentId The unit identifier
    * @param resource The {@link ChangeStatusResource} payload
-   * @param authentication The authenticated principal, used as a fallback identity source
+   * @param authentication The authenticated principal, whose name identifies the caller
    * @return The updated {@link EquipmentResource}, or 409 for a transition the matrix forbids
    */
   @PutMapping(value = "/{equipmentId}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @assetAccessEvaluator.isEquipmentOwnedBy(#equipmentId, authentication)")
+  @PreAuthorize("hasAuthority('OWNER_ROLE')")
   @Operation(
       summary = "Change the equipment status",
       description = "Moves one of the authenticated owner's units to a new operational status. "
@@ -349,28 +327,11 @@ public class EquipmentController {
       Long equipmentId,
       @Valid @RequestBody ChangeStatusResource resource,
       Authentication authentication) {
-    var ownerId = ownerIdentityResolver.resolveOwnerIdOrNull(authentication);
-    if (ownerId == null) {
-      return noOwnerProfile();
-    }
-    var command = ChangeStatusCommandFromResourceAssembler.toCommandFromResource(equipmentId, ownerId, resource);
+    var command = ChangeStatusCommandFromResourceAssembler.toCommandFromResource(
+        equipmentId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
         EquipmentResourceFromEntityAssembler::toResourceFromEntity,
         HttpStatus.OK);
-  }
-
-  /**
-   * Builds the 403 returned when the authenticated account owns no owner profile, and therefore
-   * owns no site and no equipment either.
-   *
-   * <p>Distinct from the 401 the security filter chain answers for a missing or invalid token:
-   * there the caller is unknown, here the caller is known and simply has nothing to act on.</p>
-   *
-   * @return the 403 response
-   */
-  private static ResponseEntity<?> noOwnerProfile() {
-    return ErrorResponseAssembler.toErrorResponseFromApplicationError(ApplicationError.accessDenied(
-        "The authenticated account has no owner profile, so it owns no site or equipment"));
   }
 }

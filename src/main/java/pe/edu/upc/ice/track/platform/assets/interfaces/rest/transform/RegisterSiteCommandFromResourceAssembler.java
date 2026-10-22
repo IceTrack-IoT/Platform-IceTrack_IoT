@@ -11,12 +11,12 @@ public class RegisterSiteCommandFromResourceAssembler {
   /**
    * Converts the site registration payload into its command representation.
    *
-   * @param ownerId identifier of the authenticated owner
+   * @param username username of the authenticated caller
    * @param resource the {@link RegisterSiteResource} payload
    * @return the {@link RegisterSiteCommand} command
    */
-  public static RegisterSiteCommand toCommandFromResource(Long ownerId, RegisterSiteResource resource) {
+  public static RegisterSiteCommand toCommandFromResource(String username, RegisterSiteResource resource) {
     return new RegisterSiteCommand(
-        ownerId, resource.name(), resource.address(), resource.contactName(), resource.phone());
+        username, resource.name(), resource.address(), resource.contactName(), resource.phone());
   }
 }

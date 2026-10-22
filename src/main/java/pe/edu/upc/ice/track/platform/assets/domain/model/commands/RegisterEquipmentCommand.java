@@ -5,7 +5,8 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentT
 /**
  * Command to register a new refrigeration unit at a site.
  *
- * @param ownerId             identifier of the owner the site's site must belong to; required
+ * @param username            username of the authenticated caller, resolved by the command service
+ *                            to the owner the site must belong to; required
  * @param siteId              identifier of the site the unit is installed at; required
  * @param uid                 the unit's own identifier, unique across the platform; required
  * @param name                the name assigned to the unit; required
@@ -15,7 +16,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentT
  * @param reminderIntervalDays the preventive maintenance interval in days; required and positive
  */
 public record RegisterEquipmentCommand(
-    Long ownerId,
+    String username,
     Long siteId,
     String uid,
     String name,

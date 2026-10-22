@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.assets.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.ExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
@@ -17,9 +18,9 @@ import java.util.Optional;
 /**
  * Application service that resolves equipment read queries.
  *
- * <p>Two owner rules live here. A query that names an owner only ever sees that owner's units, and
- * a query that names none deliberately sees any unit, which is the shape the ACL facade uses to
- * answer the other bounded contexts.</p>
+ * <p>Every query names its caller by username, which is resolved to an owner through the
+ * {@link ExternalOwnerService} ACL before anything is read, so a query only ever sees that owner's
+ * units. A caller that holds no owner profile sees no unit at all.</p>
  */
 @Service
 public class EquipmentQueryServiceImpl implements EquipmentQueryService {
@@ -35,31 +36,39 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
 
   private final EquipmentRepository equipmentRepository;
   private final SiteRepository siteRepository;
+  private final ExternalOwnerService externalOwnerService;
 
   /**
-   * Creates the query service with its repository dependencies.
+   * Creates the query service with its dependencies.
    *
-   * @param equipmentRepository equipment repository port
-   * @param siteRepository     site repository port, used to resolve the owner of a unit's site
+   * @param equipmentRepository  equipment repository port
+   * @param siteRepository       site repository port, used to resolve the owner of a unit's site
+   * @param externalOwnerService outbound ACL service, used to resolve the caller to its owner
    */
-  public EquipmentQueryServiceImpl(EquipmentRepository equipmentRepository, SiteRepository siteRepository) {
+  public EquipmentQueryServiceImpl(
+      EquipmentRepository equipmentRepository,
+      SiteRepository siteRepository,
+      ExternalOwnerService externalOwnerService) {
     this.equipmentRepository = equipmentRepository;
     this.siteRepository = siteRepository;
+    this.externalOwnerService = externalOwnerService;
   }
 
   // inherited javadoc
   @Override
   @Transactional(readOnly = true)
   public Optional<Equipment> handle(GetEquipmentByIdQuery query) {
-    return equipmentRepository.findById(query.equipmentId())
-        .filter(equipment -> query.ownerId() == null || isOwnedBy(equipment, query.ownerId()));
+    return externalOwnerService.fetchOwnerIdByUsername(query.username())
+        .flatMap(ownerId -> equipmentRepository.findById(query.equipmentId())
+            .filter(equipment -> isOwnedBy(equipment, ownerId)));
   }
 
   // inherited javadoc
   @Override
   @Transactional(readOnly = true)
   public List<Equipment> handle(GetEquipmentBySiteQuery query) {
-    if (!isSiteOwnedBy(query.siteId(), query.ownerId())) {
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
+    if (ownerId == null || !isSiteOwnedBy(query.siteId(), ownerId)) {
       return List.of();
     }
     return equipmentRepository.findBySiteId(query.siteId());
@@ -73,13 +82,18 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
    * without {@code size} is answered as a single page holding everything, which keeps the
    * response shape of the basic listing identical for clients that do not paginate.</p>
    *
-   * @param query the query naming the owner, the filters and the requested slice
-   * @return the requested page of matching units
+   * @param query the query naming the caller, the filters and the requested slice
+   * @return the requested page of matching units, empty when the caller holds no owner profile
    */
   @Override
   @Transactional(readOnly = true)
   public EquipmentPage handle(GetEquipmentByOwnerQuery query) {
-    var ownerId = query.ownerId();
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
+    if (ownerId == null) {
+      return query.isPaged()
+          ? new EquipmentPage(List.of(), query.page(), query.size(), 0)
+          : EquipmentPage.unpaged(List.of());
+    }
     var siteId = query.siteId();
     var status = query.status();
     var equipmentType = query.equipmentType();

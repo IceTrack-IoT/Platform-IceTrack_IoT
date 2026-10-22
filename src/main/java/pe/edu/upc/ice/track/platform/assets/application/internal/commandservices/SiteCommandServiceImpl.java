@@ -5,6 +5,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.SiteCommandService;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.ExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterSiteCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateSiteAddressCommand;
@@ -25,6 +26,10 @@ import java.util.Optional;
  * its creation event. The creation event is not registered here on purpose: it carries the
  * persistence identity, which only exists after the insert.</p>
  *
+ * <p>Every command names its caller by username, never by owner: the owner is resolved here
+ * through the {@link ExternalOwnerService} ACL, so a client cannot act as an owner it does not
+ * hold. An account that holds no owner profile is answered with {@code ACCESS_DENIED}.</p>
+ *
  * <p>No method here calls the geocoding provider, directly or indirectly. Registering a site or
  * changing its address only saves it as {@code PENDING} and raises a
  * {@code SiteAddressChangedEvent}, which is handled asynchronously after commit; a slow or failing
@@ -44,30 +49,37 @@ public class SiteCommandServiceImpl implements SiteCommandService {
   private static final String SITE_RESOURCE = "Site";
 
   private final SiteRepository siteRepository;
+  private final ExternalOwnerService externalOwnerService;
 
   /**
    * Constructor
    *
-   * @param siteRepository The {@link SiteRepository} instance
+   * @param siteRepository       The {@link SiteRepository} instance
+   * @param externalOwnerService The {@link ExternalOwnerService} instance
    */
-  public SiteCommandServiceImpl(SiteRepository siteRepository) {
+  public SiteCommandServiceImpl(SiteRepository siteRepository, ExternalOwnerService externalOwnerService) {
     this.siteRepository = siteRepository;
+    this.externalOwnerService = externalOwnerService;
   }
 
   // inherited javadoc
   @Override
   @Transactional
   public Result<Site, ApplicationError> handle(RegisterSiteCommand command) {
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
+    if (ownerId == null) {
+      return Result.failure(noOwnerProfile());
+    }
     try {
       var site = new Site(
           null,
-          command.ownerId(),
+          ownerId,
           command.name(),
           new Address(command.address()),
           command.contactName(),
           new Phone(command.phone()));
       var savedSite = siteRepository.save(site);
-      log.info("Registered site {} for owner {}", savedSite.getSiteId(), command.ownerId());
+      log.info("Registered site {} for owner {}", savedSite.getSiteId(), ownerId);
       return Result.success(savedSite);
     } catch (IllegalArgumentException e) {
       return Result.failure(ApplicationError.validationError(SITE_RESOURCE, e.getMessage()));
@@ -80,7 +92,11 @@ public class SiteCommandServiceImpl implements SiteCommandService {
   @Override
   @Transactional
   public Result<Site, ApplicationError> handle(UpdateSiteInfoCommand command) {
-    var reachable = reachableSite(command.siteId(), command.ownerId());
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
+    if (ownerId == null) {
+      return Result.failure(noOwnerProfile());
+    }
+    var reachable = reachableSite(command.siteId(), ownerId);
     if (reachable.isEmpty()) {
       return Result.failure(notReachableSite(command.siteId()));
     }
@@ -107,7 +123,11 @@ public class SiteCommandServiceImpl implements SiteCommandService {
   @Override
   @Transactional
   public Result<Site, ApplicationError> handle(UpdateSiteAddressCommand command) {
-    var reachable = reachableSite(command.siteId(), command.ownerId());
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
+    if (ownerId == null) {
+      return Result.failure(noOwnerProfile());
+    }
+    var reachable = reachableSite(command.siteId(), ownerId);
     if (reachable.isEmpty()) {
       return Result.failure(notReachableSite(command.siteId()));
     }
@@ -152,5 +172,18 @@ public class SiteCommandServiceImpl implements SiteCommandService {
    */
   private static ApplicationError notReachableSite(Long siteId) {
     return ApplicationError.notFound(SITE_RESOURCE, String.valueOf(siteId));
+  }
+
+  /**
+   * Builds the failure reported when the caller's account holds no owner profile.
+   *
+   * <p>Reported as access denied rather than as a missing site: the caller is known and the
+   * payload may be perfectly fine, there is simply no owner behind it.</p>
+   *
+   * @return a 403 failure
+   */
+  private static ApplicationError noOwnerProfile() {
+    return ApplicationError.accessDenied(
+        "The authenticated account has no owner profile, so it owns no site or equipment");
   }
 }

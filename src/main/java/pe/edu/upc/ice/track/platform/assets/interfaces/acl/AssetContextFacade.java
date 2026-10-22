@@ -3,10 +3,9 @@ package pe.edu.upc.ice.track.platform.assets.interfaces.acl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
-import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
+import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 
 import java.util.Optional;
 
@@ -26,26 +25,28 @@ import java.util.Optional;
  * callers use these methods to decide whether to continue with their own work. A {@code null}
  * identifier is answered as "not found" instead of being passed down, so a caller that fails to
  * resolve an id cannot provoke a database round trip for nothing.</p>
+ *
+ * <p>Reads go straight to the repositories rather than through the query services: those resolve
+ * an authenticated caller's username to an owner, while a cross-context caller either asks about a
+ * unit whatever its owner or already holds the owner identifier to check against.</p>
  */
 @Service
 @Slf4j
 public class AssetContextFacade {
 
-  private final EquipmentQueryService equipmentQueryService;
   private final EquipmentRepository equipmentRepository;
+  private final SiteRepository siteRepository;
 
   /**
    * Constructor
    *
-   * @param equipmentQueryService The {@link EquipmentQueryService} instance, used for the reads
-   *                              that do not need to check ownership
-   * @param equipmentRepository The {@link EquipmentRepository} instance, used for the uid lookup,
-   *                            which has no owner to scope by
+   * @param equipmentRepository The {@link EquipmentRepository} instance
+   * @param siteRepository      The {@link SiteRepository} instance, used to resolve the owner of a
+   *                            unit's site
    */
-  public AssetContextFacade(
-      EquipmentQueryService equipmentQueryService, EquipmentRepository equipmentRepository) {
-    this.equipmentQueryService = equipmentQueryService;
+  public AssetContextFacade(EquipmentRepository equipmentRepository, SiteRepository siteRepository) {
     this.equipmentRepository = equipmentRepository;
+    this.siteRepository = siteRepository;
   }
 
   /**
@@ -80,7 +81,10 @@ public class AssetContextFacade {
     if (equipmentId == null || ownerId == null) {
       return false;
     }
-    return equipmentQueryService.handle(new GetEquipmentByIdQuery(equipmentId, ownerId)).isPresent();
+    return findAnyEquipment(equipmentId)
+        .flatMap(equipment -> siteRepository.findById(equipment.getSiteId()))
+        .filter(site -> site.belongsTo(ownerId))
+        .isPresent();
   }
 
   /**
@@ -122,6 +126,6 @@ public class AssetContextFacade {
     if (equipmentId == null) {
       return Optional.empty();
     }
-    return equipmentQueryService.handle(new GetEquipmentByIdQuery(equipmentId, null));
+    return equipmentRepository.findById(equipmentId);
   }
 }

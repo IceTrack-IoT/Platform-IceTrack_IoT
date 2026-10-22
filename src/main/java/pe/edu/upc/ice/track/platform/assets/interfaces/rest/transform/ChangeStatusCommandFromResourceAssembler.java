@@ -12,12 +12,12 @@ public class ChangeStatusCommandFromResourceAssembler {
    * Converts the status change payload into its command representation.
    *
    * @param equipmentId identifier of the unit, taken from the request path
-   * @param ownerId identifier of the authenticated owner
+   * @param username username of the authenticated caller
    * @param resource the {@link ChangeStatusResource} payload
    * @return the {@link ChangeStatusCommand} command
    */
   public static ChangeStatusCommand toCommandFromResource(
-      Long equipmentId, Long ownerId, ChangeStatusResource resource) {
-    return new ChangeStatusCommand(equipmentId, ownerId, resource.newStatus().toDomain());
+      Long equipmentId, String username, ChangeStatusResource resource) {
+    return new ChangeStatusCommand(equipmentId, username, resource.newStatus().toDomain());
   }
 }

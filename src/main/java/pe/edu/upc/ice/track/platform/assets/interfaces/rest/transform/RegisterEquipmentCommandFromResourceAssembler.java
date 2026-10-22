@@ -11,13 +11,13 @@ public class RegisterEquipmentCommandFromResourceAssembler {
   /**
    * Converts the equipment registration payload into its command representation.
    *
-   * @param ownerId identifier of the authenticated owner
+   * @param username username of the authenticated caller
    * @param resource the {@link RegisterEquipmentResource} payload
    * @return the {@link RegisterEquipmentCommand} command
    */
-  public static RegisterEquipmentCommand toCommandFromResource(Long ownerId, RegisterEquipmentResource resource) {
+  public static RegisterEquipmentCommand toCommandFromResource(String username, RegisterEquipmentResource resource) {
     return new RegisterEquipmentCommand(
-        ownerId,
+        username,
         resource.siteId(),
         resource.uid(),
         resource.name(),

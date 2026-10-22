@@ -12,15 +12,15 @@ public class UpdateEquipmentCommandFromResourceAssembler {
    * Converts the equipment update payload into its command representation.
    *
    * @param equipmentId identifier of the unit being updated, taken from the request path
-   * @param ownerId identifier of the authenticated owner
+   * @param username username of the authenticated caller
    * @param resource the {@link UpdateEquipmentResource} payload
    * @return the {@link UpdateEquipmentCommand} command
    */
   public static UpdateEquipmentCommand toCommandFromResource(
-      Long equipmentId, Long ownerId, UpdateEquipmentResource resource) {
+      Long equipmentId, String username, UpdateEquipmentResource resource) {
     return new UpdateEquipmentCommand(
         equipmentId,
-        ownerId,
+        username,
         resource.name(),
         resource.equipmentType().toDomain(),
         resource.reminderIntervalDays());

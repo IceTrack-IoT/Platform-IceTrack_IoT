@@ -13,12 +13,12 @@ public class UpdateSiteAddressCommandFromResourceAssembler {
    * Converts the address update payload into its command representation.
    *
    * @param siteId identifier of the site being updated, taken from the request path
-   * @param ownerId identifier of the authenticated owner
+   * @param username username of the authenticated caller
    * @param resource the {@link UpdateSiteAddressResource} payload
    * @return the {@link UpdateSiteAddressCommand} command
    */
   public static UpdateSiteAddressCommand toCommandFromResource(
-      Long siteId, Long ownerId, UpdateSiteAddressResource resource) {
-    return new UpdateSiteAddressCommand(siteId, ownerId, resource.address());
+      Long siteId, String username, UpdateSiteAddressResource resource) {
+    return new UpdateSiteAddressCommand(siteId, username, resource.address());
   }
 }

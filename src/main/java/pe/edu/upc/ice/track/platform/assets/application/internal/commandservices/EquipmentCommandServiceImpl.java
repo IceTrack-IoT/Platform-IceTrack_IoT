@@ -6,6 +6,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.EquipmentCommandService;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.ExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
@@ -23,9 +24,11 @@ import java.util.Optional;
  * Equipment Command Service Implementation.
  *
  * <p>Ownership is resolved through the site, never through a column on the unit: a unit belongs to
- * whoever owns the site it is installed at. Every command therefore starts by loading the site and
- * confirming it belongs to the requesting owner, which is what makes the "one unit, one owner" rule
- * impossible to bypass.</p>
+ * whoever owns the site it is installed at. Every command therefore starts by resolving the
+ * caller's username to an owner through the {@link ExternalOwnerService} ACL, then loading the site
+ * and confirming it belongs to that owner, which is what makes the "one unit, one owner" rule
+ * impossible to bypass. An account that holds no owner profile is answered with
+ * {@code ACCESS_DENIED}.</p>
  *
  * <p>A caller that asks for a unit it does not own is told the unit does not exist rather than
  * that it belongs to somebody else: the alternative would turn this endpoint into an oracle for
@@ -40,23 +43,33 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
 
   private final EquipmentRepository equipmentRepository;
   private final SiteRepository siteRepository;
+  private final ExternalOwnerService externalOwnerService;
 
   /**
    * Constructor
    *
-   * @param equipmentRepository The {@link EquipmentRepository} instance
-   * @param siteRepository     The {@link SiteRepository} instance
+   * @param equipmentRepository  The {@link EquipmentRepository} instance
+   * @param siteRepository       The {@link SiteRepository} instance
+   * @param externalOwnerService The {@link ExternalOwnerService} instance
    */
-  public EquipmentCommandServiceImpl(EquipmentRepository equipmentRepository, SiteRepository siteRepository) {
+  public EquipmentCommandServiceImpl(
+      EquipmentRepository equipmentRepository,
+      SiteRepository siteRepository,
+      ExternalOwnerService externalOwnerService) {
     this.equipmentRepository = equipmentRepository;
     this.siteRepository = siteRepository;
+    this.externalOwnerService = externalOwnerService;
   }
 
   // inherited javadoc
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(RegisterEquipmentCommand command) {
-    if (!isSiteOwnedBy(command.siteId(), command.ownerId())) {
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
+    if (ownerId == null) {
+      return Result.failure(noOwnerProfile());
+    }
+    if (!isSiteOwnedBy(command.siteId(), ownerId)) {
       return Result.failure(notReachableSite(command.siteId()));
     }
     if (equipmentRepository.existsByUid(command.uid())) {
@@ -100,7 +113,11 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(UpdateEquipmentCommand command) {
-    var reachable = reachableEquipment(command.equipmentId(), command.ownerId());
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
+    if (ownerId == null) {
+      return Result.failure(noOwnerProfile());
+    }
+    var reachable = reachableEquipment(command.equipmentId(), ownerId);
     if (reachable.isEmpty()) {
       return Result.failure(notReachableEquipment(command.equipmentId()));
     }
@@ -121,7 +138,11 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(ChangeThresholdCommand command) {
-    var reachable = reachableEquipment(command.equipmentId(), command.ownerId());
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
+    if (ownerId == null) {
+      return Result.failure(noOwnerProfile());
+    }
+    var reachable = reachableEquipment(command.equipmentId(), ownerId);
     if (reachable.isEmpty()) {
       return Result.failure(notReachableEquipment(command.equipmentId()));
     }
@@ -145,7 +166,11 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(ChangeStatusCommand command) {
-    var reachable = reachableEquipment(command.equipmentId(), command.ownerId());
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(command.username()).orElse(null);
+    if (ownerId == null) {
+      return Result.failure(noOwnerProfile());
+    }
+    var reachable = reachableEquipment(command.equipmentId(), ownerId);
     if (reachable.isEmpty()) {
       return Result.failure(notReachableEquipment(command.equipmentId()));
     }
@@ -210,5 +235,18 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
    */
   private static ApplicationError notReachableSite(Long siteId) {
     return ApplicationError.notFound(SITE_RESOURCE, String.valueOf(siteId));
+  }
+
+  /**
+   * Builds the failure reported when the caller's account holds no owner profile.
+   *
+   * <p>Reported as access denied rather than as a missing unit: the caller is known and the
+   * payload may be perfectly fine, there is simply no owner behind it.</p>
+   *
+   * @return a 403 failure
+   */
+  private static ApplicationError noOwnerProfile() {
+    return ApplicationError.accessDenied(
+        "The authenticated account has no owner profile, so it owns no site or equipment");
   }
 }

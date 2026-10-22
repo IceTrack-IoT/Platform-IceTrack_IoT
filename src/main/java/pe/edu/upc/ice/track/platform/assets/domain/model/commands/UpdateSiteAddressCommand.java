@@ -8,10 +8,10 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.commands;
  * {@code RESOLVED}.</p>
  *
  * @param siteId     identifier of the site to update; required
- * @param ownerId    identifier of the owner the site must belong to; required. Carried in the
- *                   command, not in the payload, so the ownership rule is enforced by the command
- *                   service rather than trusted to the caller
+ * @param username   username of the authenticated caller; required. Carried in the command, not in
+ *                   the payload, and resolved to an owner by the command service, so the ownership
+ *                   rule is enforced there rather than trusted to the caller
  * @param newAddress the new address; required, at most 50 characters
  */
-public record UpdateSiteAddressCommand(Long siteId, Long ownerId, String newAddress) {
+public record UpdateSiteAddressCommand(Long siteId, String username, String newAddress) {
 }
