@@ -88,10 +88,13 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
   /**
    * Lists the caller's units, applying the optional filters and the optional paging of the query.
    *
-   * <p>Paging is delegated to the repository as an offset and a limit, so a dashboard listing
-   * never materialises the whole collection to slice it in memory. A query without {@code page} or
+   * <p>Paging is delegated to the repository as a page index and a size, so a dashboard listing
+   * never materializes the whole collection to slice it in memory. A query without {@code page} or
    * without {@code size} is answered as a single page holding everything, which keeps the
    * response shape of the basic listing identical for clients that do not paginate.</p>
+   *
+   * <p>The owner is resolved from the caller before any filter is looked at, and is handed to the
+   * repository as a mandatory restriction; the filters of the query can only narrow it.</p>
    *
    * @param query the query naming the caller, the filters and the requested slice
    * @return the requested page of matching units, empty when the caller holds no owner profile
@@ -105,19 +108,14 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
           ? new EquipmentPage(List.of(), query.page(), query.size(), 0)
           : EquipmentPage.unpaged(List.of());
     }
-    var siteId = query.siteId();
-    var status = query.status();
-    var equipmentType = query.equipmentType();
     if (!query.isPaged()) {
-      var all = equipmentRepository.findByOwnerId(ownerId, siteId, status, equipmentType, 0, MAX_UNPAGED_ROWS);
-      var total = equipmentRepository.countByOwnerId(ownerId, siteId, status, equipmentType);
-      return EquipmentPage.unpaged(all, total);
+      var firstRows = equipmentRepository.findPageByOwnerId(
+          ownerId, query.siteId(), query.status(), query.equipmentType(), query.search(), 0, MAX_UNPAGED_ROWS);
+      return EquipmentPage.unpaged(firstRows.content(), firstRows.totalElements());
     }
-    var page = query.page();
-    var size = query.size();
-    var content = equipmentRepository.findByOwnerId(ownerId, siteId, status, equipmentType, page * size, size);
-    var total = equipmentRepository.countByOwnerId(ownerId, siteId, status, equipmentType);
-    return new EquipmentPage(content, page, size, total);
+    return equipmentRepository.findPageByOwnerId(
+        ownerId, query.siteId(), query.status(), query.equipmentType(), query.search(),
+        query.page(), query.size());
   }
 
   /**

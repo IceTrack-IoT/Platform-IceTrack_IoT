@@ -2,13 +2,16 @@ package pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.adap
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentPage;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.assemblers.EquipmentPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.repositories.EquipmentPersistenceRepository;
+import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.specifications.EquipmentPersistenceSpecifications;
 
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +29,8 @@ import java.util.Optional;
  */
 @Repository
 public class EquipmentRepositoryImpl implements EquipmentRepository {
+
+  private static final Sort LISTING_ORDER = Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"));
 
   private final EquipmentPersistenceRepository equipmentPersistenceRepository;
   private final ApplicationEventPublisher eventPublisher;
@@ -64,41 +69,45 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
   }
 
   /**
-   * Returns one slice of the units of an owner.
+   * Returns one page of the units of an owner, with the count of every matching unit.
    *
-   * <p>The offset and the limit handed in by the port are turned back into a page index so that
-   * Spring Data can apply them in the database, which is what keeps a paged listing from loading
-   * every matching row and discarding most of them in memory.</p>
+   * <p>The rows and the count come from the same specification, so the total can never disagree
+   * with the filters the rows were selected by. Spring Data applies the page in the database, which
+   * is what keeps a paged listing from loading every matching row and discarding most of them in
+   * memory, and it skips the count query whenever the page itself already tells the total.</p>
+   *
+   * <p>Rows are ordered by name and then by identifier, because a listing paginated without a
+   * total order silently drops and repeats rows from one page to the next. A page whose first row
+   * lies beyond what a JDBC offset can address is necessarily past the end, so it is answered
+   * empty, with the real total, instead of failing.</p>
    *
    * @param ownerId       the owner identifier
    * @param siteId        restrict to a single site, may be {@code null}
    * @param status        restrict to a single status, may be {@code null}
    * @param equipmentType restrict to a single type, may be {@code null}
-   * @param offset        zero-based index of the first row to return
-   * @param limit         maximum number of rows to return
-   * @return the rows of that slice
+   * @param search        case-insensitive text matched against the name or the uid, may be
+   *                      {@code null}
+   * @param page          zero-based page index
+   * @param size          maximum number of rows the page may hold
+   * @return the rows of that page and the total count
    */
   @Override
-  public List<Equipment> findByOwnerId(
-      Long ownerId, Long siteId, StatusEquipment status, EquipmentType equipmentType, int offset, int limit) {
-    if (ownerId == null || offset < 0 || limit <= 0) {
-      return List.of();
+  public EquipmentPage findPageByOwnerId(
+      Long ownerId, Long siteId, StatusEquipment status, EquipmentType equipmentType, String search,
+      int page, int size) {
+    if (ownerId == null) {
+      return new EquipmentPage(List.of(), page, size, 0L);
     }
-    var page = PageRequest.of(offset / limit, limit);
-    return equipmentPersistenceRepository
-        .findPageByOwner(ownerId, siteId, status, equipmentType, page)
-        .stream()
+    var specification = EquipmentPersistenceSpecifications.ownerListing(
+        ownerId, siteId, status, equipmentType, search);
+    if ((long) page * size > Integer.MAX_VALUE) {
+      return new EquipmentPage(List.of(), page, size, equipmentPersistenceRepository.count(specification));
+    }
+    var slice = equipmentPersistenceRepository.findAll(specification, PageRequest.of(page, size, LISTING_ORDER));
+    var content = slice.getContent().stream()
         .map(EquipmentPersistenceAssembler::toDomainFromPersistence)
         .toList();
-  }
-
-  // inherited javadoc
-  @Override
-  public long countByOwnerId(Long ownerId, Long siteId, StatusEquipment status, EquipmentType equipmentType) {
-    if (ownerId == null) {
-      return 0L;
-    }
-    return equipmentPersistenceRepository.countByOwner(ownerId, siteId, status, equipmentType);
+    return new EquipmentPage(content, page, size, slice.getTotalElements());
   }
 
   // inherited javadoc
@@ -123,7 +132,7 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
    * <p>The registration event is raised on the rehydrated copy rather than on the incoming
    * aggregate, because it carries the persistence identity and the incoming aggregate has none
    * yet; the events an update raised are read from the incoming aggregate instead, since they were
-   * built from exactly what the caller asked for and rehydration normalises values. Both sets are
+   * built from exactly what the caller asked for and rehydration normalizes values. Both sets are
    * therefore published, in that order, so a caller that registers a unit and immediately changes
    * its threshold emits the creation and the threshold change rather than only one of them.</p>
    *

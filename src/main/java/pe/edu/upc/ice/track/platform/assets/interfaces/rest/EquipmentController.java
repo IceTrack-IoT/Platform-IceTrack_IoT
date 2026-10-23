@@ -100,7 +100,7 @@ public class EquipmentController {
   @Operation(
       summary = "Register an equipment",
       description = "Registers a refrigeration unit at a site of the authenticated owner. The unit "
-          + "starts AVAILABLE and disconnected, and its uid must be unique across the platform.",
+          + "starts ACTIVE and disconnected, and its uid must be unique across the platform.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -124,13 +124,15 @@ public class EquipmentController {
   }
 
   /**
-   * Lists the authenticated owner's units, optionally filtered by status, type and site.
+   * Lists the authenticated owner's units, optionally searched by name or uid and filtered by
+   * status, type and site.
    *
-   * @param status Restrict to a single operational status, optional
+   * @param search Case-insensitive text matched against the unit name or uid, optional
+   * @param status Restrict to a single lifecycle status, optional
    * @param equipmentType Restrict to a single kind of unit, optional
    * @param siteId Restrict to a single site, optional
    * @param page Zero-based page index; supply together with {@code size} to page
-   * @param size Page size; supply together with {@code page} to page
+   * @param size Page size, from 1 to 100; supply together with {@code page} to page
    * @param authentication The authenticated principal, whose name identifies the caller
    * @return A plain {@link EquipmentResource} array, or a page wrapper when paging was requested
    */
@@ -139,20 +141,26 @@ public class EquipmentController {
   @Operation(
       summary = "List my equipment",
       description = "Lists the equipment of the authenticated owner showing at least name, type, uid "
-          + "and status, optionally filtered by status, type and site. Supplying both "
-          + "page and size returns a page wrapper with the total count instead of a plain array.",
+          + "and status, optionally searched by name or uid and filtered by status, type and site. "
+          + "Every filter combines with the others and only ever narrows the caller's own units. "
+          + "Supplying both page and size returns a page wrapper with the total count instead of "
+          + "a plain array.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
           description = "Equipment found",
           content = @Content(array = @ArraySchema(schema = @Schema(implementation = EquipmentResource.class)))),
+      @ApiResponse(responseCode = "400", description = "Invalid filter or paging value, such as an unknown status or a page size above 100"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - no owner identity on the request"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner")
   })
   public ResponseEntity<?> getMyEquipment(
       @RequestParam(required = false)
-      @Parameter(description = "Restrict to a single status", example = "ON")
+      @Parameter(description = "Case-insensitive search matching equipment name or UID", example = "ESP32")
+      String search,
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to a single status", example = "ACTIVE")
       StatusEquipmentResource status,
       @RequestParam(required = false)
       @Parameter(description = "Restrict to a single equipment type", example = "FREEZER")
@@ -164,11 +172,12 @@ public class EquipmentController {
       @Parameter(description = "Zero-based page index; supply with size", example = "0")
       Integer page,
       @RequestParam(required = false)
-      @Parameter(description = "Page size; supply with page", example = "20")
+      @Parameter(description = "Page size, from 1 to 100; supply with page", example = "20")
       Integer size,
       Authentication authentication) {
     var query = new GetEquipmentByOwnerQuery(
         authentication.getName(),
+        search,
         siteId,
         status == null ? null : status.toDomain(),
         equipmentType == null ? null : equipmentType.toDomain(),
@@ -314,10 +323,11 @@ public class EquipmentController {
   @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
   @Operation(
       summary = "Change the equipment status",
-      description = "Moves an equipment unit to a new operational status. Owners can only move their "
+      description = "Moves an equipment unit to a new lifecycle status. Owners can only move their "
           + "own units; technicians can move any unit they service in the field. "
-          + "Allowed transitions: AVAILABLE to ON or OFF, ON to OFF or OFFLINE, OFF to ON, AVAILABLE "
-          + "or OFFLINE, OFFLINE to ON, OFF or AVAILABLE. A forbidden transition is rejected with 409.",
+          + "Allowed transitions: ACTIVE to DESACTIVATE, MAINTENANCE or REPAIR; DESACTIVATE to ACTIVE "
+          + "or REPAIR; MAINTENANCE to ACTIVE, DESACTIVATE or REPAIR; REPAIR to ACTIVE or DESACTIVATE. "
+          + "Maintenance is only entered from ACTIVE. A forbidden transition is rejected with 409.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(

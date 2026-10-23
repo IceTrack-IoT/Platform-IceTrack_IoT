@@ -7,15 +7,18 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 
 import java.sql.SQLException;
 import java.text.MessageFormat;
+import java.util.Arrays;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
 
@@ -56,6 +59,58 @@ public class GlobalExceptionHandler {
         .orElse(resolveMessageOrDefault("validation.request.failed", "Request validation failed"));
 
     var applicationError = ApplicationError.validationError("request-body", errorDetails);
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+  }
+
+  /**
+   * Handles a path variable or query parameter whose text cannot be converted to the declared type,
+   * such as {@code ?status=ON} for an enum that has no such constant or {@code ?siteId=abc}.
+   *
+   * <p>Without this handler the conversion failure would fall into the generic
+   * {@link RuntimeException} handler and be rendered as a 500, although the request is what is
+   * wrong. For an enum parameter the accepted constants are listed, so a client can correct the
+   * value without reading the API documentation.</p>
+   *
+   * @param ex the type mismatch raised while binding the parameter
+   * @return error response with BAD_REQUEST status
+   */
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  public ResponseEntity<?> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException ex) {
+    var parameterName = ex.getName();
+    var requiredType = ex.getRequiredType();
+    String reason;
+    if (requiredType != null && requiredType.isEnum()) {
+      var acceptedValues = Arrays.toString(requiredType.getEnumConstants());
+      reason = resolveMessageOrDefault(
+          "validation.request.parameter.enum",
+          "Parameter '%s' must be one of %s".formatted(parameterName, acceptedValues),
+          parameterName, acceptedValues);
+    } else {
+      reason = resolveMessageOrDefault(
+          "validation.request.parameter.invalid",
+          "Parameter '%s' has an invalid value".formatted(parameterName),
+          parameterName);
+    }
+    var applicationError = ApplicationError.validationError(parameterName, reason);
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+  }
+
+  /**
+   * Handles a request body that cannot be read, either because it is not well-formed JSON or
+   * because a value does not fit its field, such as an enum constant the API does not define.
+   *
+   * <p>The exception message is not echoed because it names internal classes.</p>
+   *
+   * @param ex the read failure raised while converting the body
+   * @return error response with BAD_REQUEST status
+   */
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<?> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
+    var applicationError = ApplicationError.validationError(
+        "request-body",
+        resolveMessageOrDefault(
+            "validation.request.body.unreadable",
+            "The request body is malformed or holds a value outside the accepted set"));
     return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
   }
 

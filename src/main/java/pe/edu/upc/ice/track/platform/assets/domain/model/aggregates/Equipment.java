@@ -65,9 +65,9 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   /**
    * Registers a new equipment unit at a site.
    *
-   * <p>The unit starts {@link StatusEquipment#AVAILABLE} and disconnected: a unit is catalogued
-   * before a device is ever paired with it, so claiming it is already running or already online
-   * would be a lie the dashboard would then report against.</p>
+   * <p>The unit starts {@link StatusEquipment#ACTIVE} and disconnected: registering a unit puts it
+   * in service at its site, but it is catalogued before a device is ever paired with it, so
+   * claiming it is already online would be a lie the dashboard would then report against.</p>
    *
    * @param equipmentId         the persistence identity, or {@code null} when not yet persisted
    * @param siteId              identifier of the site the unit is installed at; required
@@ -89,7 +89,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     this.temperatureThreshold = Objects.requireNonNull(
         temperatureThreshold, "temperatureThreshold must not be null");
     this.reminderIntervalDays = validatedReminderIntervalDays(reminderIntervalDays);
-    this.status = StatusEquipment.AVAILABLE;
+    this.status = StatusEquipment.ACTIVE;
     this.online = false;
   }
 
@@ -155,8 +155,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * @throws IllegalArgumentException when {@code minCelsius} is not strictly below {@code maxCelsius}
    */
   public void changeThreshold(TemperatureThreshold temperatureThreshold) {
-    var validated = Objects.requireNonNull(temperatureThreshold, "temperatureThreshold must not be null");
-    this.temperatureThreshold = validated;
+    this.temperatureThreshold = Objects.requireNonNull(temperatureThreshold, "temperatureThreshold must not be null");
     registerDomainEvent(TemperatureThresholdUpdatedEvent.from(this));
   }
 
@@ -180,9 +179,9 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
               .formatted(this.status, target, this.status.allowedTransitions()));
     }
     this.status = target;
-    // A unit that is not powered cannot be connected; keeping the two consistent stops the
-    // dashboard from showing an OFF unit as still reporting.
-    if (target == StatusEquipment.OFF || target == StatusEquipment.AVAILABLE) {
+    // A unit taken out of service is powered down and cannot be connected; keeping the two
+    // consistent stops the dashboard from showing a deactivated unit as still reporting.
+    if (target == StatusEquipment.DESACTIVATE) {
       this.online = false;
     }
   }

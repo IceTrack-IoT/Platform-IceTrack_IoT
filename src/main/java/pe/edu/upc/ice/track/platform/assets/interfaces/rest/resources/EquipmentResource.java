@@ -13,7 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(
     name = "EquipmentResponse",
     description = "Equipment information response",
-    example = "{\"id\": 10, \"site_id\": 1, \"uid\": \"ESP32-0001\", \"name\": \"Congelador 1\", \"equipment_type\": \"FREEZER\", \"status\": \"ON\", \"online\": true, \"min_celsius\": -25.0, \"max_celsius\": -15.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30\", \"last_known_temperature\": -20.5}")
+    example = "{\"id\": 10, \"site_id\": 1, \"uid\": \"ESP32-0001\", \"name\": \"Congelador 1\", \"equipment_type\": \"FREEZER\", \"status\": \"ACTIVE\", \"online\": true, \"min_celsius\": -25.0, \"max_celsius\": -15.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30\", \"last_known_temperature\": -20.5}")
 public record EquipmentResource(
     @Schema(description = "Equipment unique identifier", example = "10")
     Long id,
@@ -30,7 +30,7 @@ public record EquipmentResource(
     @Schema(description = "Kind of refrigeration unit", example = "FREEZER")
     EquipmentTypeResource equipmentType,
 
-    @Schema(description = "Current operational status", example = "ON")
+    @Schema(description = "Current lifecycle status", example = "ACTIVE")
     StatusEquipmentResource status,
 
     @Schema(description = "Whether the unit is currently connected", example = "true")

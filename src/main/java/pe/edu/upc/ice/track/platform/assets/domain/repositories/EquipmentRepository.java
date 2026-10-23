@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.assets.domain.repositories;
 
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentPage;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 
@@ -17,8 +18,9 @@ import java.util.Optional;
  * of its own, it belongs to whoever owns the site it is installed at. Joining here, once, keeps
  * that rule in a single place instead of spreading it across the query services.</p>
  *
- * <p>Pagination is expressed as an {@code offset}/{@code limit} pair plus a separate count rather
- * than through a framework page type, so that this port stays free of any framework type.</p>
+ * <p>Pagination is expressed as a page index and a page size and answered with the domain
+ * {@link EquipmentPage} rather than through a framework page type, so that this port stays free of
+ * any framework type.</p>
  */
 public interface EquipmentRepository {
 
@@ -39,9 +41,12 @@ public interface EquipmentRepository {
   List<Equipment> findBySiteId(Long siteId);
 
   /**
-   * Find one page of the units of an owner, optionally narrowed by site, status and type.
+   * Find one page of the units of an owner, optionally narrowed by site, status, type and a
+   * free-text search, together with the number of units matching across every page.
    *
-   * <p>A {@code null} filter does not restrict that dimension. This is the query behind the
+   * <p>A {@code null} filter does not restrict that dimension, and neither does a blank
+   * {@code search}. Every filter is combined with the ownership rule, never in place of it, so no
+   * combination of filters reaches a unit of another owner. This is the query behind the
    * dashboard listing and filters, so it is served by the indexes on {@code site_id},
    * on {@code (status, equipment_type)} and by the join on the owner's
    * {@code owner_profiles_id}.</p>
@@ -50,23 +55,17 @@ public interface EquipmentRepository {
    * @param siteId        restrict to a single site, may be {@code null}
    * @param status        restrict to a single status, may be {@code null}
    * @param equipmentType restrict to a single type, may be {@code null}
-   * @param offset        zero-based index of the first row to return; not negative
-   * @param limit         maximum number of rows to return; strictly positive
-   * @return the matching units of that page
+   * @param search        case-insensitive text matched against the unit name or uid, may be
+   *                      {@code null}
+   * @param page          zero-based page index; not negative
+   * @param size          maximum number of units the page may hold; strictly positive
+   * @return the matching units of that page and the total count, an empty page when the owner is
+   *         missing
+   * @throws IllegalArgumentException when the page index is negative or the size is not positive
    */
-  List<Equipment> findByOwnerId(
-      Long ownerId, Long siteId, StatusEquipment status, EquipmentType equipmentType, int offset, int limit);
-
-  /**
-   * Count the units of an owner matching the very same filters, to size the pages of a listing.
-   *
-   * @param ownerId       the owner identifier; required
-   * @param siteId        restrict to a single site, may be {@code null}
-   * @param status        restrict to a single status, may be {@code null}
-   * @param equipmentType restrict to a single type, may be {@code null}
-   * @return the number of matching units, ignoring paging
-   */
-  long countByOwnerId(Long ownerId, Long siteId, StatusEquipment status, EquipmentType equipmentType);
+  EquipmentPage findPageByOwnerId(
+      Long ownerId, Long siteId, StatusEquipment status, EquipmentType equipmentType, String search,
+      int page, int size);
 
   /**
    * Check whether a unit's own identifier is already taken.

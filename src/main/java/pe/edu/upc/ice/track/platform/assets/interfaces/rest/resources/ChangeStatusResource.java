@@ -8,18 +8,19 @@ import jakarta.validation.constraints.NotNull;
  *
  * <p>Whether the requested move is actually allowed is decided by the transition matrix carried by
  * {@code StatusEquipment}, not here: a rejected transition is a 409, not a validation failure,
- * because the payload itself is well formed.</p>
+ * because the payload itself is well-formed.</p>
  */
 @Schema(
     name = "ChangeStatusRequest",
     description = "Equipment status change request",
-    example = "{\"new_status\": \"ON\"}")
+    example = "{\"new_status\": \"MAINTENANCE\"}")
 public record ChangeStatusResource(
     @NotNull(message = "{validation.not-null}")
     @Schema(
-        description = "Status to move to. Allowed transitions: AVAILABLE to ON/OFF, ON to OFF/OFFLINE, "
-            + "OFF to ON/AVAILABLE/OFFLINE, OFFLINE to ON/OFF/AVAILABLE",
-        example = "ON")
+        description = "Status to move to. Allowed transitions: ACTIVE to DESACTIVATE/MAINTENANCE/REPAIR, "
+            + "DESACTIVATE to ACTIVE/REPAIR, MAINTENANCE to ACTIVE/DESACTIVATE/REPAIR, "
+            + "REPAIR to ACTIVE/DESACTIVATE",
+        example = "MAINTENANCE")
     StatusEquipmentResource newStatus
 ) {
 }
