@@ -100,12 +100,17 @@ public final class ErrorResponseAssembler {
   /**
    * Determines the appropriate HTTP status code for a given error code.
    *
+   * <p>Conflicts are recognized by their {@code _CONFLICT} suffix, except for the state machine
+   * codes of the {@code service.request} context, whose names describe the rule that was broken
+   * rather than the resource, and which are listed explicitly.</p>
+   *
    * @param errorCode the error code string (e.g., "PROFILE_NOT_FOUND", "VALIDATION_ERROR")
    * @return the corresponding HttpStatus
    */
   public static HttpStatusCode toStatusFromErrorCode(String errorCode) {
     return switch (errorCode) {
       case "VALIDATION_ERROR" -> HttpStatus.BAD_REQUEST;
+      case "INVALID_STATUS_TRANSITION", "TECHNICIAN_NOT_ELIGIBLE", "REVIEW_NOT_ALLOWED" -> HttpStatus.CONFLICT;
       case String s when s.endsWith("_NOT_FOUND") -> HttpStatus.NOT_FOUND;
       case "BUSINESS_RULE_VIOLATION" -> HttpStatusCode.valueOf(422);
       case "UNAUTHORIZED" -> HttpStatus.UNAUTHORIZED;

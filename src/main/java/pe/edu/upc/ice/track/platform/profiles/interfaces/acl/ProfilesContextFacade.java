@@ -8,6 +8,7 @@ import pe.edu.upc.ice.track.platform.profiles.application.commandservices.OwnerC
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.TechnicianCommandService;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.OwnerProfile;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Profile;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.TechnicianProfile;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateOwnerCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateTechnicianCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.factories.ProfileCreationData;
@@ -18,6 +19,7 @@ import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Ruc;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Speciality;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.StreetAddress;
 import pe.edu.upc.ice.track.platform.profiles.domain.repositories.ProfileRepository;
+import pe.edu.upc.ice.track.platform.profiles.domain.repositories.TechnicianProfileRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
@@ -65,14 +67,17 @@ public class ProfilesContextFacade {
   private final OwnerCommandService ownerCommandService;
   private final TechnicianCommandService technicianCommandService;
   private final ProfileRepository profileRepository;
+  private final TechnicianProfileRepository technicianProfileRepository;
 
   public ProfilesContextFacade(
       OwnerCommandService ownerCommandService,
       TechnicianCommandService technicianCommandService,
-      ProfileRepository profileRepository) {
+      ProfileRepository profileRepository,
+      TechnicianProfileRepository technicianProfileRepository) {
     this.ownerCommandService = ownerCommandService;
     this.technicianCommandService = technicianCommandService;
     this.profileRepository = profileRepository;
+    this.technicianProfileRepository = technicianProfileRepository;
   }
 
   /**
@@ -195,6 +200,38 @@ public class ProfilesContextFacade {
         .filter(profile -> profile instanceof OwnerProfile)
         .map(Profile::getUserProfileId)
         .orElse(0L);
+  }
+
+  /**
+   * Fetches the technician profile bound to a platform account.
+   *
+   * @param userId identifier of the account
+   * @return the technician profile identifier, or {@code 0L} when the account holds no technician
+   *         profile
+   */
+  @Transactional(readOnly = true)
+  public Long fetchTechnicianIdByUserId(Long userId) {
+    if (userId == null) return 0L;
+    return profileRepository.findByUserId(new UserId(userId))
+        .filter(profile -> profile instanceof TechnicianProfile)
+        .map(Profile::getUserProfileId)
+        .orElse(0L);
+  }
+
+  /**
+   * Checks whether a technician profile is ready to be assigned maintenance work.
+   *
+   * <p>A technician profile cannot exist without a speciality and a certification number - both
+   * are invariants of {@code TechnicianProfile} - so a profile that exists and belongs to a
+   * technician is ready. A profile of another role, or an unknown identifier, is not.</p>
+   *
+   * @param technicianProfileId identifier of the technician profile
+   * @return {@code true} when the identifier names a technician profile
+   */
+  @Transactional(readOnly = true)
+  public boolean isTechnicianEligibleForAssignment(Long technicianProfileId) {
+    if (technicianProfileId == null) return false;
+    return technicianProfileRepository.findById(technicianProfileId).isPresent();
   }
 
   /**
