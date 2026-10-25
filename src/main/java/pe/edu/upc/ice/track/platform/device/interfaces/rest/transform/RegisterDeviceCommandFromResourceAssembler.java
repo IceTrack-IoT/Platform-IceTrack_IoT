@@ -8,7 +8,13 @@ public final class RegisterDeviceCommandFromResourceAssembler {
   private RegisterDeviceCommandFromResourceAssembler() {
   }
 
-  public static RegisterDeviceCommand toCommandFromResource(RegisterDeviceResource resource) {
-    return new RegisterDeviceCommand(resource.deviceUid(), resource.boardModel(), resource.firmwareVersion());
+  public static RegisterDeviceCommand toCommandFromResource(
+      String username, RegisterDeviceResource resource) {
+    return new RegisterDeviceCommand(
+        username,
+        resource.equipmentId(),
+        resource.deviceUid(),
+        resource.boardModel(),
+        resource.firmwareVersion());
   }
 }
