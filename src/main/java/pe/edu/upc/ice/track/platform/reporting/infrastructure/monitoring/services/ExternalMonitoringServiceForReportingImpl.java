@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.reporting.infrastructure.monitoring.services;
 
 import org.springframework.stereotype.Service;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.acl.MonitoringContextFacade;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.monitoring.ExternalMonitoringServiceForReporting;
 
 import java.time.LocalDateTime;
@@ -48,27 +49,22 @@ import java.time.LocalDateTime;
 @Service
 public class ExternalMonitoringServiceForReportingImpl implements ExternalMonitoringServiceForReporting {
 
-  // private final MonitoringContextFacade monitoringContextFacade;
-  //
-  // public ExternalMonitoringServiceForReportingImpl(MonitoringContextFacade monitoringContextFacade) {
-  //   this.monitoringContextFacade = monitoringContextFacade;
-  // }
+   private final MonitoringContextFacade monitoringContextFacade;
+
+   public ExternalMonitoringServiceForReportingImpl(MonitoringContextFacade monitoringContextFacade) {
+     this.monitoringContextFacade = monitoringContextFacade;
+   }
 
   @Override
   public long countAlertsByEquipmentAndTypeInRange(
       Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
-    // return monitoringContextFacade.countAlertsByEquipmentAndTypeInRange(equipmentId, alertType, from, to);
-    throw new UnsupportedOperationException(
-        "MonitoringContextFacade.countAlertsByEquipmentAndTypeInRange(...) does not exist yet -- "
-            + "see this class's Javadoc for the exact patch to apply.");
+    return monitoringContextFacade.countAlertsByEquipmentAndTypeInRange(equipmentId, alertType, from, to);
   }
 
   @Override
   public double fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
       Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
-    // return monitoringContextFacade.fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(equipmentId, alertType, from, to);
-    throw new UnsupportedOperationException(
-        "MonitoringContextFacade.fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(...) does not exist yet -- "
-            + "see this class's Javadoc for the exact patch to apply.");
+    return monitoringContextFacade.fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
+        equipmentId, alertType, from, to);
   }
 }

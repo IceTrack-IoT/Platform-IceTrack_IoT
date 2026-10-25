@@ -20,6 +20,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    environment:
+      - GCS_CREDENTIALS_PATH=/icetrack-sa.json
+    volumes:
+      - ${GCS_KEY_HOST_PATH}:/icetrack-sa.json:ro
     networks:
       - ice-track-net
 

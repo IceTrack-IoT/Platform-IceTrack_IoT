@@ -34,7 +34,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
   private final Long triggeringReadingId;
   private final Temperature peakTemperature;
   private final Duration excursionDuration;
-  private final LocalDateTime openedAt;
+  private LocalDateTime openedAt;
   private LocalDateTime resolvedAt;
 
 
@@ -88,5 +88,17 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     }
     this.status = AlertStatus.DISMISSED;
     this.resolvedAt = LocalDateTime.now();
+  }
+
+  /**
+   *  Restores the state of an alert aggregate from persisted data, bypassing the constructor and
+   * @param status the persisted status of the alert
+   * @param openedAt  the persisted timestamp when the alert was opened
+   * @param resolvedAt  the persisted timestamp when the alert was resolved or dismissed, may be null if still open
+   */
+  public void restoreState(AlertStatus status, LocalDateTime openedAt, LocalDateTime resolvedAt) {
+    this.status = Objects.requireNonNull(status, "status must not be null");
+    this.openedAt = Objects.requireNonNull(openedAt, "openedAt must not be null");
+    this.resolvedAt = resolvedAt;
   }
 }

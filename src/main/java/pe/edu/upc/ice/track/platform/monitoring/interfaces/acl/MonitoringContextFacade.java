@@ -1,5 +1,7 @@
 package pe.edu.upc.ice.track.platform.monitoring.interfaces.acl;
 
+import java.time.LocalDateTime;
+
 /**
  * ACL facade that exposes Monitoring and Alerting capabilities to other bounded contexts.
  *
@@ -15,4 +17,12 @@ public interface MonitoringContextFacade {
 
   /** @return the identifier of the most recent alert matching the status, or {@code 0L}. */
   Long fetchLatestAlertIdByEquipmentAndStatus(Long equipmentId, String status);
+
+  /** @return how many alerts of the type were opened for the equipment within the range. */
+  long countAlertsByEquipmentAndTypeInRange(
+      Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to);
+
+  /** @return total hours the equipment spent under alerts of the type within the range. */
+  double fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
+      Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to);
 }

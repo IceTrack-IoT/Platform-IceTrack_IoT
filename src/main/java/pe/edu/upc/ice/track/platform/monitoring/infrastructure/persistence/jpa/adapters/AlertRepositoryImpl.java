@@ -8,6 +8,8 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertReposit
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.assemblers.AlertPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.repositories.AlertPersistenceRepository;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,5 +50,22 @@ public class AlertRepositoryImpl implements AlertRepository {
     return persistenceRepository
         .findFirstByEquipmentIdAndTypeAndStatusIn(equipmentId, type.name(), openStatuses)
         .map(AlertPersistenceAssembler::toDomainFromPersistenceEntity);
+  }
+
+  @Override
+  public long countByEquipmentIdAndTypeInRange(Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to) {
+    return persistenceRepository.findByEquipmentIdAndTypeAndOpenedAtBetween(equipmentId, type.name(), from, to).size();
+  }
+
+  @Override
+  public double totalDurationHoursByEquipmentIdAndTypeInRange(Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to) {
+    return persistenceRepository
+        .findByEquipmentIdAndTypeAndOpenedAtBetween(equipmentId, type.name(), from, to).stream()
+        .mapToDouble(a -> {
+          var start = a.getOpenedAt().isBefore(from) ? from : a.getOpenedAt();
+          var end = (a.getResolvedAt() == null || a.getResolvedAt().isAfter(to)) ? to : a.getResolvedAt();
+          return Math.max(0, Duration.between(start, end).toMinutes()) / 60.0;
+        })
+        .sum();
   }
 }

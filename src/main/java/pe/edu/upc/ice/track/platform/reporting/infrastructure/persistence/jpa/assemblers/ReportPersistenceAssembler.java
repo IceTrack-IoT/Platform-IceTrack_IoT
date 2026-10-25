@@ -34,11 +34,14 @@ public class ReportPersistenceAssembler {
         report.getUserId().userId(),
         filters.siteId() != null ? filters.siteId().siteId() : null,
         filters.equipmentId() != null ? filters.equipmentId().equipmentId() : null,
-        filters.technicianId().technicianId(),
+        filters.technicianId() != null ? filters.technicianId().technicianId() : null,
         range.from(),
         range.to(),
         report.getRequestedAt(),
-        report.getCompletedAt());
+        report.getCompletedAt(),
+        report.getFile() != null ? report.getFile().key() : null,
+        report.getFile() != null ? report.getFile().contentType() : null,
+        report.getFile() != null ? report.getFile().sizeBytes() : null);
   }
 
   /**
@@ -49,8 +52,13 @@ public class ReportPersistenceAssembler {
     var filters = new ReportFilters(
         entity.getSiteId() != null ? new SiteId(entity.getSiteId()) : null,
         entity.getEquipmentId() != null ? new EquipmentId(entity.getEquipmentId()) : null,
-        new TechnicianId(entity.getTechnicianId()),
+        entity.getTechnicianId() != null ? new TechnicianId(entity.getTechnicianId()) : null,
         new DateRange(entity.getRangeFrom(), entity.getRangeTo()));
+
+    var file = entity.getFileKey() != null
+        ? new ReportFile(entity.getFileKey(), entity.getFileContentType(),
+        entity.getFileSizeBytes() != null ? entity.getFileSizeBytes() : 0L)
+        : null;
 
     return Report.rehydrate(
         entity.getId(),
@@ -62,6 +70,7 @@ public class ReportPersistenceAssembler {
         new UserId(entity.getUserId()),
         filters,
         entity.getRequestedAt(),
-        entity.getCompletedAt());
+        entity.getCompletedAt(),
+        file);
   }
 }

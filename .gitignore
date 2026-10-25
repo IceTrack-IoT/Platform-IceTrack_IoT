@@ -35,3 +35,7 @@ build/
 
 ### Environment ###
 .env
+
+### GCS###
+*.json.key
+icetrack-sa*.json

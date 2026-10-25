@@ -42,6 +42,7 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
   private final ReportFilters filters;
   private LocalDateTime requestedAt;
   private LocalDate completedAt;
+  private ReportFile file;
 
   public Report(String title, ReportType type, ReportFormat format, UserId userId, ReportFilters filters) {
     this.title = Objects.requireNonNull(title, "title must not be null");
@@ -63,13 +64,14 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
   public static Report rehydrate(
       Long id, String title, ReportType type, ReportFormat format, ReportStatus status,
       String resultPayload, UserId userId, ReportFilters filters, LocalDateTime requestedAt,
-      LocalDate completedAt) {
+      LocalDate completedAt, ReportFile file) {
     var report = new Report(title, type, format, userId, filters);
     report.id = id;
     report.status = status;
     report.resultPayload = resultPayload;
     report.requestedAt = requestedAt;
     report.completedAt = completedAt;
+    report.file =file;
     return report;
   }
 
@@ -90,11 +92,12 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
    *
    * @param payload the JSON serialization of the KPI values the strategy produced; required
    */
-  public void markAsCompleted(String payload) {
+  public void markAsCompleted(String payload,ReportFile file) {
     if (status != ReportStatus.GENERATING) {
       throw new IllegalStateException("Only a GENERATING report can be completed, was " + status);
     }
     this.resultPayload = Objects.requireNonNull(payload, "payload must not be null");
+    this.file = Objects.requireNonNull(file, "file must not be null");
     this.status = ReportStatus.COMPLETED;
     this.completedAt = LocalDate.now();
   }
@@ -112,4 +115,24 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
     this.status = ReportStatus.FAILED;
     this.completedAt = LocalDate.now();
   }
+
+  /**
+   * Whether a downloadable file exists for this report.
+   *
+   * @return {@code true} only for a {@code COMPLETED} report with a stored file
+   */
+  public boolean hasFile() {
+    return status == ReportStatus.COMPLETED && file != null;
+  }
+
+  /**
+   * Whether the given user is the one who requested this report.
+   *
+   * @param candidate the user to check
+   * @return {@code true} if {@code candidate} is the requester
+   */
+  public boolean isOwnedBy(UserId candidate) {
+    return userId.equals(candidate);
+  }
+
 }

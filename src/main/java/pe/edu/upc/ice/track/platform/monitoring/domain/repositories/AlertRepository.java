@@ -2,7 +2,9 @@ package pe.edu.upc.ice.track.platform.monitoring.domain.repositories;
 
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.Alert;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertStatus;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,4 +46,24 @@ public interface AlertRepository {
    */
   Optional<Alert> findOpenAlertByEquipmentIdAndType(
       Long equipmentId, pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType type);
+
+  /**
+   *  Counts the number of alerts for a given equipment ID and alert type within a specified time range.
+   * @param equipmentId the identifier of the equipment for which to count alerts
+   * @param type  the type of the alerts to be counted
+   * @param from  the start of the time range for which to count alerts
+   * @param to  the end of the time range for which to count alerts
+   * @return  the number of alerts matching the given equipment ID, type, and time range
+   */
+  long countByEquipmentIdAndTypeInRange(Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to);
+
+  /**
+   *  Calculates the total duration in hours of alerts for a given equipment ID and alert type within a specified time range.
+   * @param equipmentId the identifier of the equipment for which to calculate the total duration of alerts
+   * @param type  the type of the alerts for which to calculate the total duration
+   * @param from  the start of the time range for which to calculate the total duration
+   * @param to  the end of the time range for which to calculate the total duration
+   * @return  the total duration in hours of alerts matching the given equipment ID, type, and time range
+   */
+  double totalDurationHoursByEquipmentIdAndTypeInRange(Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to);
 }

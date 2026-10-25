@@ -74,4 +74,13 @@ public class ReportPersistenceEntity {
 
   @Column(name = "completed_at")
   private LocalDate completedAt;
+
+  @Column(name = "file_key", length = 255)
+  private String fileKey;
+
+  @Column(name = "file_content_type", length = 100)
+  private String fileContentType;
+
+  @Column(name = "file_size_bytes")
+  private Long fileSizeBytes;
 }

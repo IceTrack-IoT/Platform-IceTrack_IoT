@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.
 
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.Alert;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertSeverity;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertStatus;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.entities.AlertPersistenceEntity;
 
@@ -44,8 +45,10 @@ public final class AlertPersistenceAssembler {
         entity.getExcursionDurationSeconds() == null
             ? null : Duration.ofSeconds(entity.getExcursionDurationSeconds()));
     alert.assignId(entity.getId());
-    // status/openedAt/resolvedAt are set via reflection-free domain transitions in a real
-    // implementation (e.g. a package-private rehydration constructor); omitted here for brevity.
+    alert.restoreState(
+        AlertStatus.valueOf(entity.getStatus()),
+        entity.getOpenedAt(),
+        entity.getResolvedAt());
     return alert;
   }
 }

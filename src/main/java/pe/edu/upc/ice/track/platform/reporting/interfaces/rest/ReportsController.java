@@ -15,9 +15,12 @@ import pe.edu.upc.ice.track.platform.reporting.application.commandservices.Repor
 import pe.edu.upc.ice.track.platform.reporting.application.queryservices.ReportQueryService;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates.Report;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportByIdQuery;
+import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportDownloadLinkQuery;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportsByUserQuery;
+import pe.edu.upc.ice.track.platform.reporting.interfaces.rest.resources.ReportDownloadResource;
 import pe.edu.upc.ice.track.platform.reporting.interfaces.rest.resources.ReportResource;
 import pe.edu.upc.ice.track.platform.reporting.interfaces.rest.resources.RequestReportResource;
+import pe.edu.upc.ice.track.platform.reporting.interfaces.rest.transform.ReportDownloadResourceFromLinkAssembler;
 import pe.edu.upc.ice.track.platform.reporting.interfaces.rest.transform.ReportResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.reporting.interfaces.rest.transform.RequestReportCommandFromResourceAssembler;
 
@@ -109,5 +112,33 @@ public class ReportsController {
         .map(ReportResourceFromEntityAssembler::toResourceFromEntity)
         .toList();
     return ResponseEntity.ok(resources);
+  }
+
+  /**
+   *  Obtains a temporary link to download a report's file.
+   * @param reportId the identifier of the report
+   * @param userId   the identifier of the user asking; must be the report's requester
+   * @return the temporary download link, or 404 when it is not available to this user
+   */
+  @GetMapping("/{reportId}/download")
+  @Operation(summary = "Get a temporary download link for a report's file",
+      description = "Returns a time-limited URL to download the report's rendered file straight "
+          + "from the file storage. Only the user who requested the report can obtain it, and only "
+          + "once the report is COMPLETED. A new link must be requested after it expires.")
+  @ApiResponses(value = {
+      @ApiResponse(responseCode = "200", description = "Download link generated",
+          content = @Content(schema = @Schema(implementation = ReportDownloadResource.class))),
+      @ApiResponse(responseCode = "404",
+          description = "Report not found, requested by another user, or without a file")
+  })
+  public ResponseEntity<ReportDownloadResource> getReportDownloadLink(
+      @Parameter(description = "Identifier of the report", example = "1", required = true)
+      @PathVariable Long reportId,
+      @Parameter(description = "Identifier of the requesting user", example = "1", required = true)
+      @RequestParam Long userId) {
+    return reportQueryService.handle(new GetReportDownloadLinkQuery(reportId, userId))
+        .map(ReportDownloadResourceFromLinkAssembler::toResourceFromLink)
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.notFound().build());
   }
 }
