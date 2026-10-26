@@ -40,7 +40,7 @@ public class NotificationQueryServiceImpl implements NotificationQueryService {
    */
   @Override
   public List<Notification> handle(GetNotificationsByRecipientQuery query) {
-    return notificationRepository.findByRecipientUserId(query.recipientUserId());
+    return notificationRepository.findActiveByRecipientUserId(query.recipientUserId());
   }
 
   /**

@@ -22,7 +22,7 @@ public class ExternalAssetManagementServiceForNotificationsImpl
   }
 
   @Override
-  public Optional<Double> fetchEquipmentOwnerId(Long equipmentId) {
-    return assetContextFacade.getEquipmentThreshold(equipmentId);
+  public Optional<Long> fetchEquipmentOwnerId(Long equipmentId) {
+    return assetContextFacade.getEquipmentOwnerId(equipmentId);
   }
 }

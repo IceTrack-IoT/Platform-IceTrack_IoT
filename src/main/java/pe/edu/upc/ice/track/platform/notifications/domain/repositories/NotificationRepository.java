@@ -32,7 +32,7 @@ public interface NotificationRepository {
    * @param recipientUserId The recipient user Id
    * @return  A list of notifications for the given recipient user.
    */
-  List<Notification> findByRecipientUserId(Long recipientUserId);
+  List<Notification> findActiveByRecipientUserId(Long recipientUserId);
 
   /**
    *  Fetches all unread notifications for a given recipient user.

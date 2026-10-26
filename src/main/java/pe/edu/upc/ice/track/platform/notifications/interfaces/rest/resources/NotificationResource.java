@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 /** Outbound REST resource representing a notification. */
 public record NotificationResource(
     Long id,
+    Long recipientUserId,
     Long equipmentId,
     Long deviceId,
     Long sourceAlertId,

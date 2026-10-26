@@ -18,5 +18,5 @@ public interface ExternalAssetManagementServiceForNotifications {
    * @return the identifier of the equipment's owner, or {@code 0L} when the equipment does
    * not exist
    */
-  Optional<Double> fetchEquipmentOwnerId(Long equipmentId);
+  Optional<Long> fetchEquipmentOwnerId(Long equipmentId);
 }

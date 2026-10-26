@@ -26,9 +26,9 @@ public final class NotificationPersistenceAssembler {
     var entity = new NotificationPersistenceEntity();
     entity.setId(notification.getId());
     entity.setRecipientUserId(notification.getRecipientUserId());
-    entity.setEquipmentId(notification.getEquipmentId().equipmentId());
-    entity.setDeviceId(notification.getDeviceId().deviceId());
-    entity.setSourceAlertId(notification.getSourceAlertId().alertId());
+    entity.setEquipmentId(notification.getEquipmentId() == null ? null : notification.getEquipmentId().equipmentId());
+    entity.setDeviceId(notification.getDeviceId() == null ? null : notification.getDeviceId().deviceId());
+    entity.setSourceAlertId(notification.getSourceAlertId() == null ? null : notification.getSourceAlertId().alertId());
     entity.setMessage(notification.getMessage());
     entity.setType(NotificationType.valueOf(notification.getType().name()));
     entity.setSeverity(NotificationSeverity.valueOf(notification.getSeverity().name()));
@@ -47,12 +47,12 @@ public final class NotificationPersistenceAssembler {
     return Notification.rehydrate(
         entity.getId(),
         entity.getRecipientUserId(),
-        new EquipmentId(entity.getEquipmentId()),
-        new DeviceId(entity.getDeviceId()),
-        new AlertId(entity.getSourceAlertId()),
+        entity.getEquipmentId() == null ? null : new EquipmentId(entity.getEquipmentId()),
+        entity.getDeviceId() == null ? null : new DeviceId(entity.getDeviceId()),
+        entity.getSourceAlertId() == null ? null : new AlertId(entity.getSourceAlertId()),
         entity.getMessage(),
-        NotificationType.valueOf(String.valueOf(entity.getType())),
-        NotificationSeverity.valueOf(String.valueOf(entity.getSeverity())),
+        entity.getType(),
+        entity.getSeverity(),
         entity.isRead(),
         entity.getReadAt(),
         entity.getDismissedAt());

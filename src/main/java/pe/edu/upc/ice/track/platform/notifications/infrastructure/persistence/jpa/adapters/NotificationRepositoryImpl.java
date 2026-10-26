@@ -33,7 +33,7 @@ public class NotificationRepositoryImpl implements NotificationRepository {
   }
 
   @Override
-  public List<Notification> findByRecipientUserId(Long recipientUserId) {
+  public List<Notification> findActiveByRecipientUserId(Long recipientUserId) {
     return persistenceRepository.findByRecipientUserId(recipientUserId).stream()
         .map(NotificationPersistenceAssembler::toDomainFromPersistenceEntity)
         .toList();

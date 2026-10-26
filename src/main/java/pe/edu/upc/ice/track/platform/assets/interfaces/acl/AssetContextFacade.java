@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
+import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 
@@ -64,6 +65,21 @@ public class AssetContextFacade {
   @Transactional(readOnly = true)
   public Optional<Double> getEquipmentThreshold(Long equipmentId) {
     return findAnyEquipment(equipmentId).map(equipment -> equipment.getTemperatureThreshold().maxCelsius());
+  }
+
+  /**
+   * Returns the identifier of the owner a unit belongs to, resolved through the unit's site.
+   *
+   * <p>Notifications calls this to decide who must be told about an alert raised for a unit.</p>
+   *
+   * @param equipmentId identifier of the equipment
+   * @return the owner identifier, or empty when the unit or its site does not exist
+   */
+  @Transactional(readOnly = true)
+  public Optional<Long> getEquipmentOwnerId(Long equipmentId) {
+    return findAnyEquipment(equipmentId)
+        .flatMap(equipment -> siteRepository.findById(equipment.getSiteId()))
+        .map(Site::getOwnerId);
   }
 
   /**

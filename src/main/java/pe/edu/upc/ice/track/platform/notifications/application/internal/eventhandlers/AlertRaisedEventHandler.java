@@ -40,14 +40,14 @@ public class AlertRaisedEventHandler {
 
   @EventListener
   public void on(AlertRaisedIntegrationEvent event) {
-    Optional<Double> recipientUserId = externalAssetManagementService.fetchEquipmentOwnerId(event.equipmentId());
+    Optional<Long> recipientUserId = externalAssetManagementService.fetchEquipmentOwnerId(event.equipmentId());
     if (recipientUserId ==  null || recipientUserId.isEmpty()) {
       new RuntimeException("No recipient user ID found for equipment ID: " + event.equipmentId());
       return;
     }
 
     var command = new CreateNotificationCommand(
-        recipientUserId.get().longValue(),
+        recipientUserId.get(),
         new EquipmentId(event.equipmentId()),
         null,
         new AlertId(event.alertId()),
@@ -60,17 +60,19 @@ public class AlertRaisedEventHandler {
 
   private NotificationType mapAlertTypeToNotificationType(String alertType) {
     return switch (alertType) {
+      case "TEMPERATURE_EXCURSION" -> NotificationType.TEMPERATURE_EXCURSION;
       case "DEVICE_OFFLINE" -> NotificationType.DEVICE_OFFLINE;
       case "SENSOR_FAILURE" -> NotificationType.SENSOR_FAILURE;
-      default -> NotificationType.TEMPERATURE_EXCURSION;
+      default -> throw new IllegalArgumentException("Unmapped alert type: " + alertType);
     };
   }
 
   private NotificationSeverity mapAlertSeverityToNotificationSeverity(String alertSeverity) {
     return switch (alertSeverity) {
+      case "INFO" -> NotificationSeverity.INFO;
       case "CRITICAL" -> NotificationSeverity.CRITICAL;
       case "WARNING" -> NotificationSeverity.WARNING;
-      default -> NotificationSeverity.INFO;
+      default -> throw new IllegalArgumentException("Unmapped alert severity: " + alertSeverity);
     };
   }
 

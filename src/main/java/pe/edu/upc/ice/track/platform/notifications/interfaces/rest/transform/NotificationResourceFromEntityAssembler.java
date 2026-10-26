@@ -12,9 +12,10 @@ public final class NotificationResourceFromEntityAssembler {
   public static NotificationResource toResourceFromEntity(Notification notification) {
     return new NotificationResource(
         notification.getId(),
-        notification.getEquipmentId().equipmentId(),
-        notification.getDeviceId().deviceId(),
-        notification.getSourceAlertId().alertId(),
+        notification.getRecipientUserId(),
+        notification.getEquipmentId() == null ? null : notification.getEquipmentId().equipmentId(),
+        notification.getDeviceId() == null ? null : notification.getDeviceId().deviceId(),
+        notification.getSourceAlertId() == null ? null : notification.getSourceAlertId().alertId(),
         notification.getMessage(),
         notification.getType().name(),
         notification.getSeverity().name(),
