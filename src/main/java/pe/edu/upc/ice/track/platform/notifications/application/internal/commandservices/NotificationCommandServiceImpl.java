@@ -6,6 +6,7 @@ import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notif
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.CreateNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.DismissNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationAsReadCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.events.NotificationCreatedEvent;
 import pe.edu.upc.ice.track.platform.notifications.domain.repositories.NotificationRepository;
 
 import java.util.Optional;
@@ -22,7 +23,17 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
   @Override
   public Notification handle(CreateNotificationCommand command) {
     var notification = new Notification(command);
-    return notificationRepository.save(notification);
+    var saved = notificationRepository.save(notification);
+    // Consumed asynchronously by NotificationCreatedEventHandler (push delivery).
+    eventPublisher.publishEvent(new NotificationCreatedEvent(
+        saved.getId(),
+        saved.getRecipientUserId(),
+        saved.getMessage(),
+        saved.getType(),
+        saved.getSeverity(),
+        saved.getEquipmentId() == null ? null : saved.getEquipmentId().equipmentId(),
+        saved.getSourceAlertId() == null ? null : saved.getSourceAlertId().alertId()));
+    return saved;
   }
 
   @Override
