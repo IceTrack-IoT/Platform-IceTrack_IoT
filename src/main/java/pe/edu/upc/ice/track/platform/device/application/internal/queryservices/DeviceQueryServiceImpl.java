@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.device.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
+import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.ExternalOwnerService;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.assetmanagement.ExternalAssetManagementService;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.credentials.DeviceCredentialService;
 import pe.edu.upc.ice.track.platform.device.application.queryservices.DeviceQueryService;
@@ -19,26 +20,32 @@ public class DeviceQueryServiceImpl implements DeviceQueryService {
 
   private final DeviceRepository deviceRepository;
   private final ExternalAssetManagementService externalAssetManagementService;
+  private final ExternalOwnerService externalOwnerService;
   private final DeviceCredentialService deviceCredentialService;
 
   public DeviceQueryServiceImpl(
       DeviceRepository deviceRepository,
       ExternalAssetManagementService externalAssetManagementService,
+      ExternalOwnerService externalOwnerService,
       DeviceCredentialService deviceCredentialService) {
     this.deviceRepository = deviceRepository;
     this.externalAssetManagementService = externalAssetManagementService;
+    this.externalOwnerService = externalOwnerService;
     this.deviceCredentialService = deviceCredentialService;
   }
 
   @Override
   public Optional<Device> handle(GetDeviceByIdQuery query) {
     return deviceRepository.findById(query.deviceId())
-        .filter(device -> query.ownerId() == null || isOwnedBy(device, query.ownerId()));
+        .filter(device -> externalOwnerService.fetchOwnerIdByUsername(query.username())
+            .filter(ownerId -> isOwnedBy(device, ownerId))
+            .isPresent());
   }
 
   @Override
   public List<Device> handle(GetDevicesByEquipmentQuery query) {
-    if (!externalAssetManagementService.existsEquipmentForOwner(query.equipmentId(), query.ownerId())) {
+    var ownerId = externalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
+    if (!externalAssetManagementService.existsEquipmentForOwner(query.equipmentId(), ownerId)) {
       return List.of();
     }
     return deviceRepository.findByEquipmentId(query.equipmentId());
