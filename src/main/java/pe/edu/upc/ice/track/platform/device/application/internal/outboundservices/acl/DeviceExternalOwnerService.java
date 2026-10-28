@@ -15,7 +15,7 @@ import java.util.Optional;
  * Device Management never depends on another context's domain model, repositories or services.</p>
  */
 @Service
-public class ExternalOwnerService {
+public class DeviceExternalOwnerService {
 
   private static final long NO_USER = 0L;
   private static final long NO_OWNER = 0L;
@@ -23,7 +23,7 @@ public class ExternalOwnerService {
   private final IamContextFacade iamContextFacade;
   private final ProfilesContextFacade profilesContextFacade;
 
-  public ExternalOwnerService(
+  public DeviceExternalOwnerService(
       IamContextFacade iamContextFacade,
       ProfilesContextFacade profilesContextFacade) {
     this.iamContextFacade = iamContextFacade;

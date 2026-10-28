@@ -10,8 +10,8 @@ import jakarta.validation.constraints.Positive;
 @Schema(
     name = "UpdateAlertPolicyRequest",
     description = "Request payload to create or update an alert policy, global or per-equipment",
-    example = "{\"equipmentId\": 1, \"sustainedExcursionMinutes\": 2, "
-        + "\"hysteresisMarginCelsius\": 0.5, \"missedSyncWindowsForOffline\": 3}"
+    example = "{\"equipment_id\": 1, \"sustained_excursion_minutes\": 2, "
+        + "\"hysteresis_margin_celsius\": 0.5, \"missed_sync_windows_for_offline\": 3}"
 )
 public record UpdateAlertPolicyResource(
     @Schema(description = "Identifier of the equipment this policy applies to; "

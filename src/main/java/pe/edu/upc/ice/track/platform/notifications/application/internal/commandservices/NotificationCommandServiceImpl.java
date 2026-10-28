@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.notifications.application.internal.commandservices;
 
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import pe.edu.upc.ice.track.platform.notifications.application.commandservices.NotificationCommandService;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.CreateNotificationCommand;
@@ -15,16 +16,18 @@ import java.util.Optional;
 public class NotificationCommandServiceImpl implements NotificationCommandService {
 
   private final NotificationRepository notificationRepository;
+  private final ApplicationEventPublisher eventPublisher;
 
-  public NotificationCommandServiceImpl(NotificationRepository notificationRepository) {
+  public NotificationCommandServiceImpl(NotificationRepository notificationRepository,
+                                        ApplicationEventPublisher eventPublisher) {
     this.notificationRepository = notificationRepository;
+    this.eventPublisher=eventPublisher;
   }
 
   @Override
   public Notification handle(CreateNotificationCommand command) {
     var notification = new Notification(command);
     var saved = notificationRepository.save(notification);
-    // Consumed asynchronously by NotificationCreatedEventHandler (push delivery).
     eventPublisher.publishEvent(new NotificationCreatedEvent(
         saved.getId(),
         saved.getRecipientUserId(),

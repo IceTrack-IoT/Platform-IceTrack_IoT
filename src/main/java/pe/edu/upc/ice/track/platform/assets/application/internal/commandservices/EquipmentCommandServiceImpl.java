@@ -6,7 +6,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.EquipmentCommandService;
-import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.ExternalOwnerService;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
@@ -24,7 +24,7 @@ import pe.edu.upc.ice.track.platform.shared.application.result.Result;
  *
  * <p>Ownership is resolved through the site, never through a column on the unit: a unit belongs to
  * whoever owns the site it is installed at. Every command therefore starts by resolving the
- * caller's username to an owner through the {@link ExternalOwnerService} ACL, then loading the site
+ * caller's username to an owner through the {@link AssetsExternalOwnerService} ACL, then loading the site
  * and confirming it belongs to that owner, which is what makes the "one unit, one owner" rule
  * impossible to bypass. An account that holds no owner profile is answered with
  * {@code ACCESS_DENIED}.</p>
@@ -46,22 +46,22 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
 
   private final EquipmentRepository equipmentRepository;
   private final SiteRepository siteRepository;
-  private final ExternalOwnerService externalOwnerService;
+  private final AssetsExternalOwnerService assetsExternalOwnerService;
 
   /**
    * Constructor
    *
    * @param equipmentRepository  The {@link EquipmentRepository} instance
    * @param siteRepository       The {@link SiteRepository} instance
-   * @param externalOwnerService The {@link ExternalOwnerService} instance
+   * @param assetsExternalOwnerService The {@link AssetsExternalOwnerService} instance
    */
   public EquipmentCommandServiceImpl(
       EquipmentRepository equipmentRepository,
       SiteRepository siteRepository,
-      ExternalOwnerService externalOwnerService) {
+      AssetsExternalOwnerService assetsExternalOwnerService) {
     this.equipmentRepository = equipmentRepository;
     this.siteRepository = siteRepository;
-    this.externalOwnerService = externalOwnerService;
+    this.assetsExternalOwnerService = assetsExternalOwnerService;
   }
 
   // inherited javadoc
@@ -183,7 +183,7 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
    * @return the owner identifier, or a 403 failure when the caller holds no owner profile
    */
   private Result<Long, ApplicationError> resolveOwnerId(String username) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(username);
+    var ownerId = assetsExternalOwnerService.fetchOwnerIdByUsername(username);
     return ownerId.<Result<Long, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(noOwnerProfile()));
   }
 

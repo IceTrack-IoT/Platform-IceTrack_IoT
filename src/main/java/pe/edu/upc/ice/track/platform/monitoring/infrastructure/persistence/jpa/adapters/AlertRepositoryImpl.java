@@ -1,5 +1,6 @@
 package pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.adapters;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Repository;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.Alert;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertStatus;
@@ -18,16 +19,22 @@ import java.util.Optional;
 public class AlertRepositoryImpl implements AlertRepository {
 
   private final AlertPersistenceRepository persistenceRepository;
+  private final ApplicationEventPublisher eventPublisher;
 
-  public AlertRepositoryImpl(AlertPersistenceRepository persistenceRepository) {
+  public AlertRepositoryImpl(AlertPersistenceRepository persistenceRepository,
+                             ApplicationEventPublisher eventPublisher) {
     this.persistenceRepository = persistenceRepository;
+    this.eventPublisher = eventPublisher;
   }
 
   @Override
   public Alert save(Alert alert) {
     var entity = AlertPersistenceAssembler.toPersistenceEntityFromDomain(alert);
     var saved = persistenceRepository.save(entity);
-    return AlertPersistenceAssembler.toDomainFromPersistenceEntity(saved);
+    var savedAlert = AlertPersistenceAssembler.toDomainFromPersistenceEntity(saved);
+    alert.domainEvents().forEach(eventPublisher::publishEvent);
+    alert.clearDomainEvents();
+    return savedAlert;
   }
 
   @Override

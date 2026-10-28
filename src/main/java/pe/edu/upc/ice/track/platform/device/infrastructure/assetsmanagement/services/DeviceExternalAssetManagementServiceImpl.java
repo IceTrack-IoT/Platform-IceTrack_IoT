@@ -6,11 +6,11 @@ import pe.edu.upc.ice.track.platform.device.application.internal.outboundservice
 
 /** ACL adapter from Device Management to the published Assets Management facade. */
 @Service
-public class ExternalAssetManagementServiceImpl implements ExternalAssetManagementService {
+public class DeviceExternalAssetManagementServiceImpl implements ExternalAssetManagementService {
 
   private final AssetContextFacade assetContextFacade;
 
-  public ExternalAssetManagementServiceImpl(AssetContextFacade assetContextFacade) {
+  public DeviceExternalAssetManagementServiceImpl(AssetContextFacade assetContextFacade) {
     this.assetContextFacade = assetContextFacade;
   }
 

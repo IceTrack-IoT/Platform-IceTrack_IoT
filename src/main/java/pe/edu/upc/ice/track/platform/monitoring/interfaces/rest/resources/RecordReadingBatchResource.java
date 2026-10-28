@@ -12,10 +12,10 @@ import java.util.UUID;
 @Schema(
     name = "RecordReadingBatchRequest",
     description = "Request payload for an aggregated reading batch forwarded by the Edge API",
-    example = "{\"readingUid\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\", \"equipmentId\": 1, "
-        + "\"deviceId\": 7, \"minTemperature\": -18.4, \"maxTemperature\": -17.1, "
-        + "\"avgTemperature\": -17.8, \"humidity\": 62.0, \"sampleCount\": 12, "
-        + "\"recordedAt\": \"2026-09-29T08:30:00\"}"
+    example = "{\"reading_uid\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\", \"equipment_id\": 1, "
+        + "\"device_id\": 7, \"min_temperature\": -18.4, \"max_temperature\": -17.1, "
+        + "\"avg_temperature\": -17.8, \"humidity\": 62.0, \"sample_count\": 12, "
+        + "\"recorded_at\": \"2026-09-29T08:30:00\"}"
 )
 public record RecordReadingBatchResource(
     @NotNull(message = "{validation.not-blank}")

@@ -4,7 +4,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.device.application.commandservices.DeviceCommandService;
-import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.ExternalOwnerService;
+import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.DeviceExternalOwnerService;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.assetmanagement.ExternalAssetManagementService;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.credentials.DeviceCredentialService;
 import pe.edu.upc.ice.track.platform.device.application.results.DeviceCredentialResult;
@@ -27,17 +27,17 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
 
   private final DeviceRepository deviceRepository;
   private final ExternalAssetManagementService externalAssetManagementService;
-  private final ExternalOwnerService externalOwnerService;
+  private final DeviceExternalOwnerService deviceExternalOwnerService;
   private final DeviceCredentialService deviceCredentialService;
 
   public DeviceCommandServiceImpl(
       DeviceRepository deviceRepository,
       ExternalAssetManagementService externalAssetManagementService,
-      ExternalOwnerService externalOwnerService,
+      DeviceExternalOwnerService deviceExternalOwnerService,
       DeviceCredentialService deviceCredentialService) {
     this.deviceRepository = deviceRepository;
     this.externalAssetManagementService = externalAssetManagementService;
-    this.externalOwnerService = externalOwnerService;
+    this.deviceExternalOwnerService = deviceExternalOwnerService;
     this.deviceCredentialService = deviceCredentialService;
   }
 
@@ -126,7 +126,7 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
 
   /** Resolves the caller username to the owner profile it represents. */
   private Result<Long, ApplicationError> resolveOwnerId(String username) {
-    return externalOwnerService.fetchOwnerIdByUsername(username)
+    return deviceExternalOwnerService.fetchOwnerIdByUsername(username)
         .<Result<Long, ApplicationError>>map(Result::success)
         .orElseGet(() -> Result.failure(ApplicationError.accessDenied(
             "The authenticated account has no owner profile, so it owns no device")));

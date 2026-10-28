@@ -29,7 +29,7 @@ import java.util.Optional;
  * endpoint - and it is the caller's job to decide which status code reports it.</p>
  */
 @Service
-public class ExternalOwnerService {
+public class AssetsExternalOwnerService {
 
   /**
    * Sentinel the IAM facade returns when no account matches a username.
@@ -50,7 +50,7 @@ public class ExternalOwnerService {
    * @param iamContextFacade      the inbound ACL facade of the IAM bounded context
    * @param profilesContextFacade the inbound ACL facade of the profiles bounded context
    */
-  public ExternalOwnerService(
+  public AssetsExternalOwnerService(
       IamContextFacade iamContextFacade,
       ProfilesContextFacade profilesContextFacade) {
     this.iamContextFacade = iamContextFacade;

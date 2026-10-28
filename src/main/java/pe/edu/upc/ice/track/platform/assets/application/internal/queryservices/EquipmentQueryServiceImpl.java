@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.assets.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.ExternalOwnerService;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
@@ -20,7 +20,7 @@ import java.util.Optional;
  * Application service that resolves equipment read queries.
  *
  * <p>Every query names its caller by username, which is resolved to an owner through the
- * {@link ExternalOwnerService} ACL before anything is read, so a query only ever sees that owner's
+ * {@link AssetsExternalOwnerService} ACL before anything is read, so a query only ever sees that owner's
  * units. A caller that holds no owner profile sees no unit at all.</p>
  *
  * <p>Fetching a single unit and listing the units of a site are also open to a technician, who
@@ -41,22 +41,22 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
 
   private final EquipmentRepository equipmentRepository;
   private final SiteRepository siteRepository;
-  private final ExternalOwnerService externalOwnerService;
+  private final AssetsExternalOwnerService assetsExternalOwnerService;
 
   /**
    * Creates the query service with its dependencies.
    *
    * @param equipmentRepository  equipment repository port
    * @param siteRepository       site repository port, used to resolve the owner of a unit's site
-   * @param externalOwnerService outbound ACL service, used to resolve the caller to its owner
+   * @param assetsExternalOwnerService outbound ACL service, used to resolve the caller to its owner
    */
   public EquipmentQueryServiceImpl(
       EquipmentRepository equipmentRepository,
       SiteRepository siteRepository,
-      ExternalOwnerService externalOwnerService) {
+      AssetsExternalOwnerService assetsExternalOwnerService) {
     this.equipmentRepository = equipmentRepository;
     this.siteRepository = siteRepository;
-    this.externalOwnerService = externalOwnerService;
+    this.assetsExternalOwnerService = assetsExternalOwnerService;
   }
 
   // inherited javadoc
@@ -66,7 +66,7 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
     if (query.callerRole() == CallerRole.TECHNICIAN) {
       return equipmentRepository.findById(query.equipmentId());
     }
-    return externalOwnerService.fetchOwnerIdByUsername(query.username())
+    return assetsExternalOwnerService.fetchOwnerIdByUsername(query.username())
         .flatMap(ownerId -> equipmentRepository.findById(query.equipmentId())
             .filter(equipment -> isOwnedBy(equipment, ownerId)));
   }
@@ -78,7 +78,7 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
     if (query.callerRole() == CallerRole.TECHNICIAN) {
       return equipmentRepository.findBySiteId(query.siteId());
     }
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
+    var ownerId = assetsExternalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
     if (ownerId == null || !isSiteOwnedBy(query.siteId(), ownerId)) {
       return List.of();
     }
@@ -102,7 +102,7 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
   @Override
   @Transactional(readOnly = true)
   public EquipmentPage handle(GetEquipmentByOwnerQuery query) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
+    var ownerId = assetsExternalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
     if (ownerId == null) {
       return query.isPaged()
           ? new EquipmentPage(List.of(), query.page(), query.size(), 0)

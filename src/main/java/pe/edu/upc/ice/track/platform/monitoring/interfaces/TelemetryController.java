@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -73,7 +74,7 @@ public class TelemetryController {
       @ApiResponse(responseCode = "204", description = "Duplicate delivery, reading already recorded"),
       @ApiResponse(responseCode = "400", description = "Invalid input data")
   })
-  public ResponseEntity<SensorReadingResource> recordReading(@RequestBody RecordReadingBatchResource resource) {
+  public ResponseEntity<SensorReadingResource> recordReading(@Valid @RequestBody RecordReadingBatchResource resource) {
     var command = RecordReadingBatchCommandFromResourceAssembler.toCommandFromResource(resource);
     return sensorReadingCommandService.handle(command)
         .map(reading -> ResponseEntity.ok(SensorReadingResourceFromEntityAssembler.toResourceFromEntity(reading)))

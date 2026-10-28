@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.assets.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.ExternalOwnerService;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.SiteQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSiteByIdQuery;
@@ -18,7 +18,7 @@ import java.util.Optional;
  *
  * <p>Read only, so it joins no transaction beyond a read-only one and never loads a site the
  * requesting owner may not see. Every query names its caller by username, which is resolved to an
- * owner through the {@link ExternalOwnerService} ACL; a caller that holds no owner profile sees no
+ * owner through the {@link AssetsExternalOwnerService} ACL; a caller that holds no owner profile sees no
  * site at all. The one exception is fetching a single site as a technician, which is not scoped by
  * ownership because a technician is sent to sites of any owner.</p>
  */
@@ -26,24 +26,24 @@ import java.util.Optional;
 public class SiteQueryServiceImpl implements SiteQueryService {
 
   private final SiteRepository siteRepository;
-  private final ExternalOwnerService externalOwnerService;
+  private final AssetsExternalOwnerService assetsExternalOwnerService;
 
   /**
    * Creates the query service with its dependencies.
    *
    * @param siteRepository       site repository port
-   * @param externalOwnerService outbound ACL service, used to resolve the caller to its owner
+   * @param assetsExternalOwnerService outbound ACL service, used to resolve the caller to its owner
    */
-  public SiteQueryServiceImpl(SiteRepository siteRepository, ExternalOwnerService externalOwnerService) {
+  public SiteQueryServiceImpl(SiteRepository siteRepository, AssetsExternalOwnerService assetsExternalOwnerService) {
     this.siteRepository = siteRepository;
-    this.externalOwnerService = externalOwnerService;
+    this.assetsExternalOwnerService = assetsExternalOwnerService;
   }
 
   // inherited javadoc
   @Override
   @Transactional(readOnly = true)
   public List<Site> handle(GetSitesByOwnerQuery query) {
-    return externalOwnerService.fetchOwnerIdByUsername(query.username())
+    return assetsExternalOwnerService.fetchOwnerIdByUsername(query.username())
         .map(siteRepository::findByOwnerId)
         .orElse(List.of());
   }
@@ -61,7 +61,7 @@ public class SiteQueryServiceImpl implements SiteQueryService {
     if (query.callerRole() == CallerRole.TECHNICIAN) {
       return siteRepository.findById(query.siteId());
     }
-    return externalOwnerService.fetchOwnerIdByUsername(query.username())
+    return assetsExternalOwnerService.fetchOwnerIdByUsername(query.username())
         .flatMap(ownerId -> siteRepository.findById(query.siteId())
             .filter(site -> site.belongsTo(ownerId)));
   }

@@ -5,7 +5,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.SiteCommandService;
-import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.ExternalOwnerService;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterSiteCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateSiteAddressCommand;
@@ -25,7 +25,7 @@ import pe.edu.upc.ice.track.platform.shared.application.result.Result;
  * persistence identity, which only exists after the insert.</p>
  *
  * <p>Every command names its caller by username, never by owner: the owner is resolved here
- * through the {@link ExternalOwnerService} ACL, so a client cannot act as an owner it does not
+ * through the {@link AssetsExternalOwnerService} ACL, so a client cannot act as an owner it does not
  * hold. An account that holds no owner profile is answered with {@code ACCESS_DENIED}.</p>
  *
  * <p>No method here calls the geocoding provider, directly or indirectly. Registering a site or
@@ -47,17 +47,17 @@ public class SiteCommandServiceImpl implements SiteCommandService {
   private static final String SITE_RESOURCE = "Site";
 
   private final SiteRepository siteRepository;
-  private final ExternalOwnerService externalOwnerService;
+  private final AssetsExternalOwnerService assetsExternalOwnerService;
 
   /**
    * Constructor
    *
    * @param siteRepository       The {@link SiteRepository} instance
-   * @param externalOwnerService The {@link ExternalOwnerService} instance
+   * @param assetsExternalOwnerService The {@link AssetsExternalOwnerService} instance
    */
-  public SiteCommandServiceImpl(SiteRepository siteRepository, ExternalOwnerService externalOwnerService) {
+  public SiteCommandServiceImpl(SiteRepository siteRepository, AssetsExternalOwnerService assetsExternalOwnerService) {
     this.siteRepository = siteRepository;
-    this.externalOwnerService = externalOwnerService;
+    this.assetsExternalOwnerService = assetsExternalOwnerService;
   }
 
   // inherited javadoc
@@ -137,7 +137,7 @@ public class SiteCommandServiceImpl implements SiteCommandService {
    * @return the owner identifier, or a 403 failure when the caller holds no owner profile
    */
   private Result<Long, ApplicationError> resolveOwnerId(String username) {
-    var ownerId = externalOwnerService.fetchOwnerIdByUsername(username);
+    var ownerId = assetsExternalOwnerService.fetchOwnerIdByUsername(username);
     return ownerId.<Result<Long, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(noOwnerProfile()));
   }
 
