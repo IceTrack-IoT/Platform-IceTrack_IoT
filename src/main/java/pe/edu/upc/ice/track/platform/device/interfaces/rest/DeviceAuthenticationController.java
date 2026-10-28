@@ -1,5 +1,6 @@
 package pe.edu.upc.ice.track.platform.device.interfaces.rest;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -18,6 +19,7 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorRespo
 /** Internal HTTP adapter used by an Edge gateway to validate one device credential. */
 @RestController
 @RequestMapping(value = "/internal/v1/devices", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Device Authentication", description = "Internal Edge authentication endpoints for IoT devices")
 public class DeviceAuthenticationController {
   private final DeviceContextFacade deviceContextFacade;
 

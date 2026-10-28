@@ -14,7 +14,7 @@ import java.util.Optional;
  * and Profiles exist. It uses only their published ACL facades and exchanges primitive values, so
  * Device Management never depends on another context's domain model, repositories or services.</p>
  */
-@Service
+@Service("deviceExternalOwnerService")
 public class ExternalOwnerService {
 
   private static final long NO_USER = 0L;
