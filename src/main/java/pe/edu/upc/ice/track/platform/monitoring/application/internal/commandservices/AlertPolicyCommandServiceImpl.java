@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.monitoring.application.commandservices.AlertPolicyCommandService;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.AlertPolicy;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.UpdateAlertPolicyCommand;
-import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertPolicyRepository;
 
 /**

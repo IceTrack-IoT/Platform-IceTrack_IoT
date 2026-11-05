@@ -17,7 +17,7 @@ import pe.edu.upc.ice.track.platform.monitoring.interfaces.events.AlertRaisedInt
  * <p>Other bounded contexts must subscribe to {@link AlertRaisedIntegrationEvent} (from
  * {@code monitoring.interfaces.events}), never to the internal {@link AlertRaisedEvent}.</p>
  */
-@Service("monitoringAlertRaisedEventHandler")
+@Service
 public class AlertRaisedEventHandler {
 
   private final ApplicationEventPublisher eventPublisher;

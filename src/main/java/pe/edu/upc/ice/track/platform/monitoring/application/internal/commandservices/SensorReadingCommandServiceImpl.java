@@ -11,7 +11,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.RecordRead
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.queries.GetAlertPolicyByEquipmentQuery;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertSeverity;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
-import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Temperature;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertRepository;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadingRepository;

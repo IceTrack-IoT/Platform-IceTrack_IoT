@@ -1,7 +1,7 @@
 package pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.assemblers;
 
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.AlertPolicy;
-import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.entities.AlertPolicyPersistenceEntity;
 
 /** Bidirectional mapper between {@link AlertPolicy} and {@link AlertPolicyPersistenceEntity}. */

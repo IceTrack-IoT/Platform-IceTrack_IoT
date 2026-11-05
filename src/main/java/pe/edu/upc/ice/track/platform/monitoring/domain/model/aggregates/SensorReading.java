@@ -1,7 +1,7 @@
 package pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates;
 
 import lombok.Getter;
-import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Humidity;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Temperature;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
