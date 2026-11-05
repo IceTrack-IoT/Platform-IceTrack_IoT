@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.notifications.infrastructure.persistence.j
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.*;
 import pe.edu.upc.ice.track.platform.notifications.infrastructure.persistence.jpa.entities.NotificationPersistenceEntity;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 
 /**
  * Bidirectional mapper between {@link Notification} and {@link NotificationPersistenceEntity}.

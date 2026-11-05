@@ -4,6 +4,7 @@ import lombok.Getter;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.CreateNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.*;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 
 import java.time.LocalDateTime;
 import java.util.Objects;

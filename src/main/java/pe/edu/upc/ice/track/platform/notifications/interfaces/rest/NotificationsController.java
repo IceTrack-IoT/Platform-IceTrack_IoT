@@ -27,7 +27,7 @@ import java.util.List;
  * REST controller for notification listing, detail and read/dismiss transitions.
  *
  * <p>There is no creation endpoint: a notification is never created from a direct HTTP
- * request, only from an {@code AlertRaisedEventHandler} (or a future equivalent) reacting to
+ * request, only from an {@code AlertRaisedEventListener} (or a future equivalent) reacting to
  * an integration event from another bounded context.</p>
  *
  * <p>NOTE: {@code recipientUserId} is taken as a request parameter pending JWT wiring, the same

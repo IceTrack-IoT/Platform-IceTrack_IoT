@@ -4,6 +4,7 @@ import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notif
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.CreateNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.DismissNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationAsReadCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyAlertRaisedCommand;
 
 import java.util.Optional;
 
@@ -16,6 +17,13 @@ public interface NotificationCommandService {
    * @return The created notification with its generated identifier.
    */
   Notification handle(CreateNotificationCommand command);
+
+  /**
+   *  Notifies the owner of a unit that an alert was raised on it.
+   * @param command The command describing the raised alert
+   * @return The created notification, or empty when no owner could be resolved for the unit
+   */
+  Optional<Notification> handle(NotifyAlertRaisedCommand command);
 
   /**
    *  Marks a notification as read and updates its state in the system.

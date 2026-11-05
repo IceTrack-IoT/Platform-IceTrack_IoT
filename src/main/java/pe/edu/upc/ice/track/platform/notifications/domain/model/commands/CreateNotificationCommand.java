@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.notifications.domain.model.commands;
 
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.*;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 
 /**
  * Command to create a new notification for a recipient.
