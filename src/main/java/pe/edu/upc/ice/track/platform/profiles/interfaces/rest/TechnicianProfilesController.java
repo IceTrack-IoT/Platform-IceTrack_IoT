@@ -30,6 +30,7 @@ import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateTe
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.TechnicianProfileResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.UpdateTechnicianCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
@@ -165,7 +166,7 @@ public class TechnicianProfilesController {
    * @return A {@link TechnicianProfileResource} resource for the updated technician
    */
   @PutMapping(value = "/{technicianId}", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('TECHNICIAN_ROLE') and @profileAccessEvaluator.isTechnicianSelf(#technicianId, authentication)")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "') and @profileAccessEvaluator.isTechnicianSelf(#technicianId, authentication)")
   @Operation(
       summary = "Update a technician",
       description = "Replaces the name, contact details, speciality and certification number of the caller's own "

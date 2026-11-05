@@ -30,6 +30,7 @@ import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateOw
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.OwnerProfileResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.UpdateOwnerCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
@@ -163,7 +164,7 @@ public class OwnerProfilesController {
    * @return An {@link OwnerProfileResource} resource for the updated owner
    */
   @PutMapping(value = "/{ownerId}", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @profileAccessEvaluator.isOwnerSelf(#ownerId, authentication)")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "') and @profileAccessEvaluator.isOwnerSelf(#ownerId, authentication)")
   @Operation(
       summary = "Update an owner",
       description = "Replaces the name, contact details and RUC of the caller's own owner profile. "
