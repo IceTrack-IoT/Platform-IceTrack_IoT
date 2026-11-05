@@ -12,7 +12,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCo
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateEquipmentCommand;
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.CallerRole;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.TemperatureThreshold;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;

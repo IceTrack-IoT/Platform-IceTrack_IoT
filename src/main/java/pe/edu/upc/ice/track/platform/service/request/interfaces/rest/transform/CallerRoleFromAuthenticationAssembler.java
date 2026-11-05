@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.CallerRole;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 
 /**
  * Assembler that converts the authorities of an {@link Authentication} into a {@link CallerRole}.

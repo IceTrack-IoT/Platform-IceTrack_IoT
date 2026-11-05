@@ -1,6 +1,6 @@
 package pe.edu.upc.ice.track.platform.assets.domain.model.commands;
 
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.CallerRole;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 
 /**

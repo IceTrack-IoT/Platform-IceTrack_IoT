@@ -6,11 +6,11 @@ import pe.edu.upc.ice.track.platform.service.request.application.internal.outbou
 import pe.edu.upc.ice.track.platform.service.request.application.queryservices.ReviewQueryService;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.Review;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetReviewByServiceRequestIdQuery;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ReviewRepository;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 
 import java.util.Optional;
 

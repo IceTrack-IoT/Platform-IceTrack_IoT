@@ -1,4 +1,4 @@
-package pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects;
+package pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects;
 
 /**
  * The capacity in which an authenticated caller acts on this context.

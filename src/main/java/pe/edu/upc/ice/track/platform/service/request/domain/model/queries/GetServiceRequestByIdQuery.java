@@ -1,6 +1,6 @@
 package pe.edu.upc.ice.track.platform.service.request.domain.model.queries;
 
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.CallerRole;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 
 /**
  * Query to fetch a single service request, with its status history.

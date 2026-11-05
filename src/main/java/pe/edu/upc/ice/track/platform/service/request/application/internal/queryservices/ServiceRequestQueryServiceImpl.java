@@ -9,7 +9,6 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.Ser
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestByIdQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListEquipmentInterventionsQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListServiceRequestsQuery;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
@@ -17,6 +16,7 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.S
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ServiceRequestRepository;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 
 import java.util.List;
 import java.util.Optional;

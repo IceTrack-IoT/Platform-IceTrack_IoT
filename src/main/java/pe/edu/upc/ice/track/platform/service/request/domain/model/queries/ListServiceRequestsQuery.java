@@ -1,7 +1,7 @@
 package pe.edu.upc.ice.track.platform.service.request.domain.model.queries;
 
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 
 import java.util.Set;
 

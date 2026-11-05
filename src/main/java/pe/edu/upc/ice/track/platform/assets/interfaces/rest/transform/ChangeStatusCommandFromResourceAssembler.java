@@ -1,7 +1,7 @@
 package pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform;
 
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCommand;
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.CallerRole;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ChangeStatusResource;
 
 /**

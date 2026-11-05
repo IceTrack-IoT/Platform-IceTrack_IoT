@@ -7,7 +7,7 @@ import pe.edu.upc.ice.track.platform.assets.application.queryservices.SiteQueryS
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSiteByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSitesByOwnerQuery;
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.CallerRole;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 
 import java.util.List;
