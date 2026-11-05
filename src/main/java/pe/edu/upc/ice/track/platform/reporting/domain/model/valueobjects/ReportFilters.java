@@ -1,6 +1,9 @@
 package pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects;
 
 
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.SiteId;
+
 import java.util.Objects;
 
 /**

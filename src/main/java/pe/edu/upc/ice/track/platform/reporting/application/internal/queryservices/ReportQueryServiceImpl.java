@@ -8,7 +8,7 @@ import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportByI
 import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportDownloadLinkQuery;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportsByUserQuery;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportDownloadLink;
-import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.UserId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 import pe.edu.upc.ice.track.platform.reporting.domain.repositories.ReportRepository;
 import org.springframework.beans.factory.annotation.Value;
 

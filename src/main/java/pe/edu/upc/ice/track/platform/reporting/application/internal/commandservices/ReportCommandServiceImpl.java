@@ -9,6 +9,9 @@ import pe.edu.upc.ice.track.platform.reporting.application.internal.strategies.R
 import pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates.Report;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.commands.RequestReportCommand;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.*;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.SiteId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 import pe.edu.upc.ice.track.platform.reporting.domain.repositories.ReportRepository;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;

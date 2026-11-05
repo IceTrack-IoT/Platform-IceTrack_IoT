@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates;
 import lombok.Getter;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.*;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 
 
 import java.time.LocalDate;

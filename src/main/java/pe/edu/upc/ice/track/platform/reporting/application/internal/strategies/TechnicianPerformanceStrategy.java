@@ -6,8 +6,10 @@ import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.DateRan
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.KpiValue;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportFilters;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Realizes {@link ReportGenerationStrategy} for
@@ -18,11 +20,9 @@ import java.util.Objects;
  * to know which technician to measure. Reports how many service requests the technician
  * completed within the window and their average rating across their whole history.</p>
  *
- * <p><strong>Pending dependency.</strong> Both underlying calls on
- * {@code ExternalServiceRequestsServiceForReporting} throw
- * {@link UnsupportedOperationException} until the Service Request and Feedback Management
- * context is built (see that port's Javadoc). This strategy is otherwise fully wired and will
- * work unmodified once that dependency exists.</p>
+ * <p>A technician who has never been reviewed has no rating rather than a rating of zero, so the
+ * "Average rating" KPI is left out of the report in that case instead of being reported as
+ * {@code 0}.</p>
  */
 @Service("TECHNICIAN_PERFORMANCE")
 public class TechnicianPerformanceStrategy implements ReportGenerationStrategy {
@@ -42,10 +42,11 @@ public class TechnicianPerformanceStrategy implements ReportGenerationStrategy {
 
     long completedCount = serviceRequestsService.countCompletedServiceRequestsByTechnicianInRange(
         technicianId, range.from(), range.to());
-    double averageRating = serviceRequestsService.fetchAverageRatingByTechnician(technicianId);
+    Optional<Double> averageRating = serviceRequestsService.fetchAverageRatingByTechnician(technicianId);
 
-    return List.of(
-        new KpiValue("Completed service requests", (double) completedCount, "count"),
-        new KpiValue("Average rating", averageRating, "stars"));
+    List<KpiValue> kpis = new ArrayList<>();
+    kpis.add(new KpiValue("Completed service requests", (double) completedCount, "count"));
+    averageRating.ifPresent(rating -> kpis.add(new KpiValue("Average rating", rating, "stars")));
+    return kpis;
   }
 }

@@ -1,20 +1,29 @@
 package pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.monitoring;
 
+import org.springframework.stereotype.Service;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.acl.MonitoringContextFacade;
+
 import java.time.LocalDateTime;
 
 /**
- * Outbound port (of the Anti-Corruption Layer between {@code reporting} and {@code monitoring})
+ * Outbound service (of the Anti-Corruption Layer between {@code reporting} and {@code monitoring})
  * through which {@code EquipmentUptimeStrategy} and {@code TemperatureExcursionStrategy} read
  * alert history.
  *
- * <p>The reporting application layer depends on this port and on nothing else: it never sees a
- * Monitoring aggregate, repository or command, and {@code alertType} is passed as the plain enum
+ * <p>This is the only class in {@code reporting} that knows a {@code monitoring} context exists.
+ * It talks to it exclusively through {@link MonitoringContextFacade}: no Monitoring aggregate,
+ * repository or command is reachable from here, and {@code alertType} is passed as the plain enum
  * name ({@code "DEVICE_OFFLINE"} or {@code "TEMPERATURE_EXCURSION"}) rather than as the
- * monitoring-owned {@code AlertType} type. The adapter implementing it, in
- * {@code reporting.infrastructure.monitoring.services}, is the only class in {@code reporting}
- * allowed to know that a {@code monitoring} context exists.</p>
+ * monitoring-owned {@code AlertType} type.</p>
  */
-public interface ExternalMonitoringServiceForReporting {
+@Service
+public class ExternalMonitoringServiceForReporting {
+
+  private final MonitoringContextFacade monitoringContextFacade;
+
+  public ExternalMonitoringServiceForReporting(MonitoringContextFacade monitoringContextFacade) {
+    this.monitoringContextFacade = monitoringContextFacade;
+  }
 
   /**
    * @param equipmentId identifier of the unit; required
@@ -23,7 +32,10 @@ public interface ExternalMonitoringServiceForReporting {
    * @param to          inclusive end of the window
    * @return the number of alerts of that type opened for the unit within the window
    */
-  long countAlertsByEquipmentAndTypeInRange(Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to);
+  public long countAlertsByEquipmentAndTypeInRange(
+      Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
+    return monitoringContextFacade.countAlertsByEquipmentAndTypeInRange(equipmentId, alertType, from, to);
+  }
 
   /**
    * @param equipmentId identifier of the unit; required
@@ -34,6 +46,9 @@ public interface ExternalMonitoringServiceForReporting {
    *         started before {@code from} or is still open past {@code to} only contributes the
    *         portion that overlaps the window
    */
-  double fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
-      Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to);
+  public double fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
+      Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
+    return monitoringContextFacade.fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
+        equipmentId, alertType, from, to);
+  }
 }

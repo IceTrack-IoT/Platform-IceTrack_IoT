@@ -3,6 +3,9 @@ package pe.edu.upc.ice.track.platform.reporting.infrastructure.persistence.jpa.a
 import pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates.Report;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.*;
 import pe.edu.upc.ice.track.platform.reporting.infrastructure.persistence.jpa.entities.ReportPersistenceEntity;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.SiteId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 
 /**
  * Converts between {@link Report} and {@link ReportPersistenceEntity}.

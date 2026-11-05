@@ -1,22 +1,34 @@
 package pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.assets;
 
+import org.springframework.stereotype.Service;
+import pe.edu.upc.ice.track.platform.assets.interfaces.acl.AssetContextFacade;
+
 import java.util.List;
 
 /**
- * Outbound port (of the Anti-Corruption Layer between {@code reporting} and {@code assets})
- * through which {@code MaintenanceComplianceStrategy} discovers which units belong to a site.
+ * Outbound service (of the Anti-Corruption Layer between {@code reporting} and {@code assets})
+ * through which the reporting strategies discover which units belong to a site.
  *
- * <p>The reporting application layer depends on this port and on nothing else: it never sees an
- * Assets aggregate, repository or command. The adapter implementing it, in
- * {@code reporting.infrastructure.assets.services}, is the only class in {@code reporting}
- * allowed to know that an {@code assets} context exists.</p>
+ * <p>This is the only class in {@code reporting} that knows an {@code assets} context exists. It
+ * talks to it exclusively through {@link AssetContextFacade}: no Assets aggregate, repository or
+ * command is reachable from here. The facade resolves a site's units whatever their owner: it
+ * performs no ownership check.</p>
  */
-public interface ExternalAssetsServiceForReporting {
+@Service
+public class ExternalAssetsServiceForReporting {
+
+  private final AssetContextFacade assetContextFacade;
+
+  public ExternalAssetsServiceForReporting(AssetContextFacade assetContextFacade) {
+    this.assetContextFacade = assetContextFacade;
+  }
 
   /**
    * @param siteId identifier of the site; required
    * @return the identifiers of every unit installed at that site, empty when the site has none
    *         or does not exist
    */
-  List<Long> fetchEquipmentIdsBySite(Long siteId);
+  public List<Long> fetchEquipmentIdsBySite(Long siteId) {
+    return assetContextFacade.fetchEquipmentIdsBySite(siteId);
+  }
 }
