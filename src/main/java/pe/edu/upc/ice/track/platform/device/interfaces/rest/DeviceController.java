@@ -1,5 +1,6 @@
 package pe.edu.upc.ice.track.platform.device.interfaces.rest;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -36,6 +37,7 @@ import java.util.List;
 /** REST API for provisioning and managing the IoT boards of an owner. */
 @RestController
 @RequestMapping(value = "/api/v1/devices", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Devices", description = "IoT device registration and lifecycle management endpoints")
 public class DeviceController {
   private final DeviceCommandService deviceCommandService;
   private final DeviceQueryService deviceQueryService;
