@@ -70,6 +70,13 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Architecture rules (src/test/.../architecture/ArchitectureTest). 1.5.x reads Java 26 class files. -->
+		<dependency>
+			<groupId>com.tngtech.archunit</groupId>
+			<artifactId>archunit</artifactId>
+			<version>1.5.1</version>
+			<scope>test</scope>
+		</dependency>
 		<!-- https://mvnrepository.com/artifact/io.jsonwebtoken/jjwt-api -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
