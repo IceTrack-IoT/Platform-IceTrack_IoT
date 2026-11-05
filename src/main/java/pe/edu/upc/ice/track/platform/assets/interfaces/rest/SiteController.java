@@ -33,7 +33,8 @@ import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterSi
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.SiteResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateSiteAddressResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateSiteResource;
-import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.EquipmentResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.RegisterSiteCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.SiteResourceFromEntityAssembler;
@@ -99,7 +100,7 @@ public class SiteController {
    * @return The registered {@link SiteResource}, with 201 Created
    */
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Register a site",
       description = "Registers a new site for the authenticated owner. The owner is taken from the "
@@ -132,7 +133,7 @@ public class SiteController {
    * @return The {@link SiteResource} list, with 200 OK
    */
   @GetMapping
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "List my sites",
       description = "Lists every site belonging to the authenticated owner, with its name, address, "
@@ -162,7 +163,7 @@ public class SiteController {
    * @return The {@link SiteResource}, or 404 when it is not reachable by the caller
    */
   @GetMapping("/{siteId}")
-  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Get a site by ID",
       description = "Retrieves a site by its unique identifier. Owners can only read their own sites; "
@@ -201,7 +202,7 @@ public class SiteController {
    * @return The {@link EquipmentResource} list, or 404 when the site is not reachable by the caller
    */
   @GetMapping("/{siteId}/equipments")
-  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "List the equipment of a site",
       description = "Lists the equipment installed at a site. Owners can only list their own sites; "
@@ -242,7 +243,7 @@ public class SiteController {
    * @return The updated {@link SiteResource}, with 200 OK
    */
   @PutMapping(value = "/{siteId}", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Update a site",
       description = "Replaces the name, address, contact name and contact phone number of one of the "
@@ -283,7 +284,7 @@ public class SiteController {
    * @return The updated {@link SiteResource}, with 200 OK and {@code geocoding_status} PENDING
    */
   @PutMapping(value = "/{siteId}/address", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Change the address of a site",
       description = "Replaces the address of one of the authenticated owner's sites and answers immediately "

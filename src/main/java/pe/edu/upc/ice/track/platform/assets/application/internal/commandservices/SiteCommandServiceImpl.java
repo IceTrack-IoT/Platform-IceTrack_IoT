@@ -11,7 +11,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterSiteCo
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateSiteAddressCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateSiteInfoCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Address;
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Phone;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.SiteContactPhone;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
@@ -72,7 +72,7 @@ public class SiteCommandServiceImpl implements SiteCommandService {
             command.name(),
             new Address(command.address()),
             command.contactName(),
-            new Phone(command.phone()));
+            new SiteContactPhone(command.phone()));
         var savedSite = siteRepository.save(site);
         log.info("Registered site {} for owner {}", savedSite.getSiteId(), ownerId);
         return Result.success(savedSite);
@@ -94,7 +94,7 @@ public class SiteCommandServiceImpl implements SiteCommandService {
             command.name(),
             new Address(command.address()),
             command.contactName(),
-            new Phone(command.phone()));
+            new SiteContactPhone(command.phone()));
         var savedSite = siteRepository.save(site);
         log.info("Updated site {}", savedSite.getSiteId());
         return Result.success(savedSite);

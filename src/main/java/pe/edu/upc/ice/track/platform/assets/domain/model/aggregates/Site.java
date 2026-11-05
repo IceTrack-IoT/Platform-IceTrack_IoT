@@ -6,7 +6,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.events.SiteCreatedEvent
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Address;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeoLocation;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingStatus;
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Phone;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.SiteContactPhone;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
 
 import java.util.Objects;
@@ -66,7 +66,7 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
   private String name;
   private Address address;
   private String contactName;
-  private Phone phone;
+  private SiteContactPhone phone;
   private Integer equipmentCount;
   private GeocodingStatus geocodingStatus;
   private GeoLocation location;
@@ -85,7 +85,7 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
    * @param phone       the contact phone number; required
    * @throws IllegalArgumentException when a value violates a domain invariant
    */
-  public Site(Long siteId, Long ownerId, String name, Address address, String contactName, Phone phone) {
+  public Site(Long siteId, Long ownerId, String name, Address address, String contactName, SiteContactPhone phone) {
     this(siteId, ownerId, null, name, address, contactName, phone, 0, GeocodingStatus.PENDING, null);
   }
 
@@ -106,7 +106,7 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
    * @throws IllegalArgumentException when a value violates a domain invariant
    */
   public Site(Long siteId, Long ownerId, Long version, String name, Address address, String contactName,
-              Phone phone, Integer equipmentCount, GeocodingStatus geocodingStatus, GeoLocation location) {
+              SiteContactPhone phone, Integer equipmentCount, GeocodingStatus geocodingStatus, GeoLocation location) {
     this.siteId = siteId;
     this.ownerId = Objects.requireNonNull(ownerId, "ownerId must not be null");
     this.version = version;
@@ -134,7 +134,7 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
    * @param phone       the new contact phone number; required
    * @throws IllegalArgumentException when a value violates a domain invariant
    */
-  public void updateInfo(String name, Address address, String contactName, Phone phone) {
+  public void updateInfo(String name, Address address, String contactName, SiteContactPhone phone) {
     var validatedName = validatedName(name);
     var validatedAddress = Objects.requireNonNull(address, "address must not be null");
     var validatedContactName = validatedContactName(contactName);

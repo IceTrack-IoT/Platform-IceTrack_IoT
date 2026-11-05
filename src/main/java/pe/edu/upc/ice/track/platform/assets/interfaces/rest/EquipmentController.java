@@ -34,7 +34,8 @@ import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentT
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterEquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.StatusEquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateEquipmentResource;
-import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ChangeStatusCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ChangeThresholdCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.EquipmentResourceFromEntityAssembler;
@@ -96,7 +97,7 @@ public class EquipmentController {
    * @return The registered {@link EquipmentResource}, with 201 Created
    */
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Register an equipment",
       description = "Registers a refrigeration unit at a site of the authenticated owner. The unit "
@@ -137,7 +138,7 @@ public class EquipmentController {
    * @return A plain {@link EquipmentResource} array, or a page wrapper when paging was requested
    */
   @GetMapping
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "List my equipment",
       description = "Lists the equipment of the authenticated owner showing at least name, type, uid "
@@ -200,7 +201,7 @@ public class EquipmentController {
    * @return The {@link EquipmentResource}, or 404 when it is not reachable by the caller
    */
   @GetMapping("/{equipmentId}")
-  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Get an equipment by ID",
       description = "Retrieves the full detail of an equipment unit. Owners can only read their "
@@ -240,7 +241,7 @@ public class EquipmentController {
    * @return The updated {@link EquipmentResource}, or 404 when it is not reachable by the caller
    */
   @PutMapping(value = "/{equipmentId}", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Update an equipment",
       description = "Replaces the name, type and preventive maintenance interval of one of the "
@@ -280,7 +281,7 @@ public class EquipmentController {
    * @return The updated {@link EquipmentResource}, or the failure status of the change
    */
   @PutMapping(value = "/{equipmentId}/threshold", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Change the temperature threshold",
       description = "Replaces the acceptable temperature band of one of the authenticated owner's "
@@ -320,7 +321,7 @@ public class EquipmentController {
    * @return The updated {@link EquipmentResource}, or 409 for a transition the matrix forbids
    */
   @PutMapping(value = "/{equipmentId}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Change the equipment status",
       description = "Moves an equipment unit to a new lifecycle status. Owners can only move their "

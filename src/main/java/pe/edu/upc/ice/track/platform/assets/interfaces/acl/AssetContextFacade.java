@@ -8,6 +8,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -16,8 +17,8 @@ import java.util.Optional;
  * <p>This class <em>is</em> the published contract of the Anti-Corruption Layer of the
  * {@code assets} context, and it is upstream: nothing here calls another context, so Monitoring
  * and Alerting or Device Management can ask about equipment without this context needing them in
- * return. Every parameter and return type is a primitive, a boxed primitive or a
- * {@link String} - no {@code Site} or
+ * return. Every parameter and return type is a primitive, a boxed primitive, a primitive array or
+ * a {@link String} - no {@code Site} or
  * {@code Equipment} aggregate, value object, command, repository or JPA entity appears in its
  * signature. Callers depend on this class alone and must never reach into
  * {@code assets.domain.*}, {@code assets.application.*} or {@code assets.infrastructure.*}.</p>
@@ -57,7 +58,8 @@ public class AssetContextFacade {
    * {@code Optional<Double>} even though a threshold has two bounds. The signature is kept
    * verbatim and resolves to the <em>maximum</em> bound, because a single scalar is what an alarm
    * rule needs to raise a "too warm" alert, and because changing it would silently change the
-   * meaning for every existing caller.</p>
+   * meaning for every existing caller. Callers that need both bounds use
+   * {@link #getEquipmentThresholdRange(Long)} instead.</p>
    *
    * @param equipmentId identifier of the equipment
    * @return the maximum acceptable temperature in Celsius, or empty when the unit does not exist
@@ -65,6 +67,26 @@ public class AssetContextFacade {
   @Transactional(readOnly = true)
   public Optional<Double> getEquipmentThreshold(Long equipmentId) {
     return findAnyEquipment(equipmentId).map(equipment -> equipment.getTemperatureThreshold().maxCelsius());
+  }
+
+  /**
+   * Returns the full temperature band a unit must stay within, in Celsius.
+   *
+   * <p>Monitoring and Alerting calls this to evaluate a reading against both bounds of the unit's
+   * configured threshold. The band is returned as a primitive {@code double[]} so that the
+   * {@code TemperatureThreshold} value object never leaves this context. Both bounds are
+   * guaranteed non-null and ordered by that value object's invariant, so unboxing them here
+   * cannot fail.</p>
+   *
+   * @param equipmentId identifier of the equipment
+   * @return the threshold as {@code [minCelsius, maxCelsius]}, or empty when the identifier is
+   *         {@code null} or the unit does not exist
+   */
+  @Transactional(readOnly = true)
+  public Optional<double[]> getEquipmentThresholdRange(Long equipmentId) {
+    return findAnyEquipment(equipmentId)
+        .map(Equipment::getTemperatureThreshold)
+        .map(threshold -> new double[] {threshold.minCelsius(), threshold.maxCelsius()});
   }
 
   /**
@@ -112,6 +134,25 @@ public class AssetContextFacade {
   @Transactional(readOnly = true)
   public Optional<Long> getSiteIdByEquipment(Long equipmentId) {
     return findAnyEquipment(equipmentId).map(Equipment::getSiteId);
+  }
+
+  /**
+   * Returns the identifiers of every unit installed at a site, whatever its owner.
+   *
+   * <p>Reporting calls this to resolve the units a site-scoped report covers.</p>
+   *
+   * @param siteId identifier of the site
+   * @return the unit identifiers, empty when the identifier is {@code null}, the site has no units
+   *         or does not exist
+   */
+  @Transactional(readOnly = true)
+  public List<Long> fetchEquipmentIdsBySite(Long siteId) {
+    if (siteId == null) {
+      return List.of();
+    }
+    return equipmentRepository.findBySiteId(siteId).stream()
+        .map(Equipment::getEquipmentId)
+        .toList();
   }
 
   /**

@@ -13,7 +13,7 @@ import lombok.Setter;
 import org.hibernate.annotations.ColumnDefault;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Address;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingStatus;
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Phone;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.SiteContactPhone;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.converters.AddressPersistenceConverter;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.converters.PhonePersistenceConverter;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
@@ -68,7 +68,7 @@ public class SitePersistenceEntity extends AuditableAbstractPersistenceEntity {
 
   @Convert(converter = PhonePersistenceConverter.class)
   @Column(name = "phone", nullable = false, length = 20)
-  private Phone phone;
+  private SiteContactPhone phone;
 
   @ColumnDefault("0")
   @Column(name = "equipment_count", nullable = false)
