@@ -7,7 +7,13 @@ import java.time.LocalDateTime;
 /**
  * Resource for an alert.
  */
-@Schema(name = "AlertResponse", description = "A thermal excursion or device-silence alert")
+@Schema(
+    name = "AlertResponse",
+    description = "A thermal excursion or device-silence alert",
+    example = "{\"id\": 301, \"equipment_id\": 1, \"type\": \"TEMPERATURE_EXCURSION\", \"severity\": \"WARNING\", "
+        + "\"status\": \"OPEN\", \"peak_temperature\": -12.5, \"opened_at\": \"2026-09-29T08:32:00\", "
+        + "\"resolved_at\": null}"
+)
 public record AlertResource(
     @Schema(description = "Alert unique identifier", example = "301")
     Long id,

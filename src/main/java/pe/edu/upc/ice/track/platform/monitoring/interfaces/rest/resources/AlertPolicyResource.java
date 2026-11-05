@@ -5,7 +5,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /**
  * Resource for an alert policy.
  */
-@Schema(name = "AlertPolicyResponse", description = "The alert policy applicable to an equipment")
+@Schema(
+    name = "AlertPolicyResponse",
+    description = "The alert policy applicable to an equipment",
+    example = "{\"id\": 11, \"equipment_id\": 1, \"sustained_excursion_minutes\": 2, "
+        + "\"hysteresis_margin_celsius\": 0.5, \"missed_sync_windows_for_offline\": 3, \"active\": true}"
+)
 public record AlertPolicyResource(
     @Schema(description = "Policy unique identifier", example = "11")
     Long id,

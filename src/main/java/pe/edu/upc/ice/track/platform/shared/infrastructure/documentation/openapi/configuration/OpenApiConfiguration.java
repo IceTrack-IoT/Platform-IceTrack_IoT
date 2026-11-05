@@ -1,5 +1,10 @@
 package pe.edu.upc.ice.track.platform.shared.infrastructure.documentation.openapi.configuration;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import io.swagger.v3.core.jackson.ModelResolver;
+import io.swagger.v3.core.util.Json;
+import io.swagger.v3.core.util.Json31;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.ExternalDocumentation;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -9,6 +14,7 @@ import io.swagger.v3.oas.models.info.License;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
+import org.springdoc.core.properties.SpringDocConfigProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,6 +37,25 @@ public class OpenApiConfiguration {
   String applicationVersion;
 
   // Methods
+
+  /**
+   * Builds the schema resolver used to generate the OpenAPI components.
+   *
+   * <p>swagger-core introspects resources with its own Jackson 2 mapper, which does not inherit the
+   * platform-wide Jackson 3 {@code SNAKE_CASE} strategy. Registering this resolver keeps the
+   * properties shown in Swagger UI in {@code snake_case}, matching the JSON the API actually
+   * produces, without a per-field {@code @JsonProperty}.</p>
+   *
+   * @param springDocConfigProperties the springdoc configuration, used to keep the OpenAPI version
+   * @return the model resolver configured with the platform naming strategy
+   */
+  @Bean
+  public ModelResolver snakeCaseModelResolver(SpringDocConfigProperties springDocConfigProperties) {
+    boolean openApi31 = springDocConfigProperties.isOpenapi31();
+    ObjectMapper mapper = (openApi31 ? Json31.mapper() : Json.mapper()).copy();
+    mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+    return new ModelResolver(mapper).openapi31(openApi31);
+  }
 
   /**
    * Builds the OpenAPI document used by Swagger UI and client generation tools.

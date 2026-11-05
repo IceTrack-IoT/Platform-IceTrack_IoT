@@ -50,16 +50,16 @@ public record ServiceRequestResource(
     @Schema(description = "When the current technician was assigned", example = "2026-10-23T13:10:00Z", nullable = true)
     String assignedAt,
 
-    @Schema(description = "When the work started", nullable = true)
+    @Schema(description = "When the work started", example = "2026-10-23T14:05:00Z", nullable = true)
     String startedAt,
 
-    @Schema(description = "When the work finished", nullable = true)
+    @Schema(description = "When the work finished", example = "2026-10-23T16:30:00Z", nullable = true)
     String completedAt,
 
-    @Schema(description = "When the owner canceled", nullable = true)
+    @Schema(description = "When the owner canceled", example = "2026-10-23T17:00:00Z", nullable = true)
     String canceledAt,
 
-    @Schema(description = "Why the owner canceled", nullable = true)
+    @Schema(description = "Why the owner canceled", example = "The unit was replaced", nullable = true)
     String cancelReason,
 
     @Schema(description = "Status history, oldest first; the first entry is the creation")

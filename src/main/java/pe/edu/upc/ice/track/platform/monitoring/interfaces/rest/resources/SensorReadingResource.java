@@ -7,7 +7,13 @@ import java.time.LocalDateTime;
 /**
  * Resource for a stored sensor reading.
  */
-@Schema(name = "SensorReadingResponse", description = "A stored aggregated sensor reading")
+@Schema(
+    name = "SensorReadingResponse",
+    description = "A stored aggregated sensor reading",
+    example = "{\"id\": 501, \"equipment_id\": 1, \"device_id\": 7, \"min_temperature\": -18.4, "
+        + "\"max_temperature\": -17.1, \"avg_temperature\": -17.8, \"humidity\": 62.0, "
+        + "\"recorded_at\": \"2026-09-29T08:30:00\"}"
+)
 public record SensorReadingResource(
     @Schema(description = "Reading unique identifier", example = "501")
     Long id,

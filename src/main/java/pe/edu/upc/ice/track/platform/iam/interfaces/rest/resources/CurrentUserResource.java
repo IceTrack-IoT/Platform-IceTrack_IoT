@@ -22,7 +22,7 @@ public record CurrentUserResource(
     @Schema(description = "User email address", example = "john.doe@example.com")
     String email,
 
-    @Schema(description = "User role", example = "[\"OWNER_ROLE\"]")
+    @Schema(description = "User role", example = "OWNER_ROLE", allowableValues = {"OWNER_ROLE", "TECHNICIAN_ROLE"})
     String role,
 
     @Schema(description = "User identity provider", example = "LOCAL", allowableValues = {"LOCAL", "GOOGLE"})
