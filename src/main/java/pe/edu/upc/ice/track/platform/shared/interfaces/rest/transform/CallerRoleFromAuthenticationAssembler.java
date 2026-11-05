@@ -1,15 +1,20 @@
-package pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform;
+package pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 
 /**
  * Assembler that converts the authorities of an {@link Authentication} into a {@link CallerRole}.
+ *
+ * <p>Shared by every bounded context whose controllers hand the caller's role down to a command or
+ * query service, so all contexts interpret the security token the same way.</p>
  */
-public class CallerRoleFromAuthenticationAssembler {
+public final class CallerRoleFromAuthenticationAssembler {
 
-  private static final String TECHNICIAN_AUTHORITY = "TECHNICIAN_ROLE";
+  private CallerRoleFromAuthenticationAssembler() {
+  }
 
   /**
    * Converts the authorities of the authenticated principal into the role it acts in.
@@ -24,7 +29,7 @@ public class CallerRoleFromAuthenticationAssembler {
   public static CallerRole toCallerRoleFromAuthentication(Authentication authentication) {
     var isTechnician = authentication.getAuthorities().stream()
         .map(GrantedAuthority::getAuthority)
-        .anyMatch(TECHNICIAN_AUTHORITY::equals);
+        .anyMatch(RoleAuthorities.ROLE_TECHNICIAN::equals);
     return isTechnician ? CallerRole.TECHNICIAN : CallerRole.OWNER;
   }
 }
