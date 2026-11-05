@@ -28,6 +28,7 @@ import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.RegisterDe
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.transform.DeviceCredentialResourceAssembler;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.transform.DeviceResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.transform.RegisterDeviceCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
@@ -50,7 +51,7 @@ public class DeviceController {
   }
 
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   public ResponseEntity<?> registerDevice(
       @Valid @RequestBody RegisterDeviceResource resource,
       Authentication authentication) {
@@ -62,7 +63,7 @@ public class DeviceController {
   }
 
   @GetMapping("/{deviceId}")
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   public ResponseEntity<?> getDevice(@PathVariable Long deviceId, Authentication authentication) {
     return deviceQueryService.handle(new GetDeviceByIdQuery(deviceId, authentication.getName()))
         .<ResponseEntity<?>>map(device -> ResponseEntity.ok(DeviceResourceFromEntityAssembler.toResourceFromEntity(device)))
@@ -71,7 +72,7 @@ public class DeviceController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   public ResponseEntity<?> getDevicesByEquipment(@RequestParam("equipment_id") Long equipmentId,
                                                   Authentication authentication) {
     List<DeviceResource> resources = deviceQueryService
@@ -82,7 +83,7 @@ public class DeviceController {
   }
 
   @PostMapping("/{deviceId}/unpair")
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   public ResponseEntity<?> unpairDevice(@PathVariable Long deviceId, Authentication authentication) {
     return ResponseEntityAssembler.toResponseEntityFromResult(
         deviceCommandService.handle(new UnpairDeviceCommand(deviceId, authentication.getName())),
@@ -91,7 +92,7 @@ public class DeviceController {
   }
 
   @PostMapping("/{deviceId}/rotate-api-key")
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   public ResponseEntity<?> rotateApiKey(@PathVariable Long deviceId, Authentication authentication) {
     return ResponseEntityAssembler.toResponseEntityFromResult(
         deviceCommandService.handle(new RotateApiKeyCommand(deviceId, authentication.getName())),
@@ -100,7 +101,7 @@ public class DeviceController {
   }
 
   @PutMapping(value = "/{deviceId}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   public ResponseEntity<?> changeStatus(@PathVariable Long deviceId,
                                         @Valid @RequestBody ChangeDeviceStatusResource resource,
                                         Authentication authentication) {

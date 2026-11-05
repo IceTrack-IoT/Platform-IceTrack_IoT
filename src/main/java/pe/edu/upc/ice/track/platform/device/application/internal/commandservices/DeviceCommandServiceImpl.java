@@ -5,7 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.device.application.commandservices.DeviceCommandService;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.DeviceExternalOwnerService;
-import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.assetmanagement.ExternalAssetManagementService;
+import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.assetmanagement.ExternalAssetManagementServiceForDevice;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.credentials.DeviceCredentialService;
 import pe.edu.upc.ice.track.platform.device.application.results.DeviceCredentialResult;
 import pe.edu.upc.ice.track.platform.device.domain.model.aggregates.Device;
@@ -26,13 +26,13 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
   private static final String DEVICE_RESOURCE = "Device";
 
   private final DeviceRepository deviceRepository;
-  private final ExternalAssetManagementService externalAssetManagementService;
+  private final ExternalAssetManagementServiceForDevice externalAssetManagementService;
   private final DeviceExternalOwnerService deviceExternalOwnerService;
   private final DeviceCredentialService deviceCredentialService;
 
   public DeviceCommandServiceImpl(
       DeviceRepository deviceRepository,
-      ExternalAssetManagementService externalAssetManagementService,
+      ExternalAssetManagementServiceForDevice externalAssetManagementService,
       DeviceExternalOwnerService deviceExternalOwnerService,
       DeviceCredentialService deviceCredentialService) {
     this.deviceRepository = deviceRepository;
