@@ -27,6 +27,7 @@ import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.U
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.ReviewResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.SubmitReviewCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.UpdateReviewCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 /**
@@ -62,7 +63,7 @@ public class ReviewsController {
    * @return The submitted {@link ReviewResource}, with 201 Created
    */
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Submit a review",
       description = "Reviews the technician who completed one of the authenticated owner's requests. "
@@ -98,7 +99,7 @@ public class ReviewsController {
    * @return The updated {@link ReviewResource}
    */
   @PutMapping(value = "/{reviewId}", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Update a review",
       description = "Replaces the scores and the comment of one of the authenticated owner's reviews, "

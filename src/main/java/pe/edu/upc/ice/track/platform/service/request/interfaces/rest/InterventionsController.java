@@ -25,6 +25,7 @@ import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.I
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.RegisterInterventionCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 
 /**
@@ -63,7 +64,7 @@ public class InterventionsController {
    *         replay
    */
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Register an intervention",
       description = "Registers the technical report of an IN_PROGRESS request assigned to the "

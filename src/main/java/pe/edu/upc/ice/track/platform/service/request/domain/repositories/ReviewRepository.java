@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.service.request.domain.repositories;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.Review;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ReviewId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 
 import java.util.Optional;
 
@@ -41,6 +42,17 @@ public interface ReviewRepository {
    * @return {@code true} when a review exists for it
    */
   boolean existsByServiceRequestId(ServiceRequestId serviceRequestId);
+
+  /**
+   * Compute the average rating a technician received across every review about them.
+   *
+   * <p>Each review is first reduced to the mean of its three scores, exactly as
+   * {@code ReviewRating.average()} does, and those means are then averaged.</p>
+   *
+   * @param technicianId the technician
+   * @return the average, between 1 and 5, or empty when the technician has never been reviewed
+   */
+  Optional<Double> findAverageRatingByTechnicianId(TechnicianProfileId technicianId);
 
   /**
    * Persist a review, inserting it when it is new and updating it otherwise.

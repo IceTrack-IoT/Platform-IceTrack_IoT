@@ -20,9 +20,10 @@ import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.service.request.application.queryservices.ServiceRequestQueryService;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListEquipmentInterventionsQuery;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.InterventionResource;
-import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.InterventionResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 
 /**
@@ -59,7 +60,7 @@ public class EquipmentInterventionsController {
    *         caller
    */
   @GetMapping
-  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "List the interventions of an equipment",
       description = "Lists the interventions that completed service requests on a unit, most recent "

@@ -10,7 +10,7 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.events.Service
 import pe.edu.upc.ice.track.platform.service.request.domain.model.events.ServiceRequestRejectedEvent;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.events.ServiceStartedEvent;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.events.TechnicianAssignedEvent;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServicePriority;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;

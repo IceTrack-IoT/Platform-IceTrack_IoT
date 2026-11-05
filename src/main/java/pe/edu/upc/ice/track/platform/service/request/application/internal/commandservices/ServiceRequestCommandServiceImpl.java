@@ -14,7 +14,7 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.Creat
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegisterInterventionCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RejectServiceRequestCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.StartServiceRequestCommand;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.InterventionRegistration;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;

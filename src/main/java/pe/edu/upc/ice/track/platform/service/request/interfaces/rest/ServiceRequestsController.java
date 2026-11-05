@@ -40,7 +40,7 @@ import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.S
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServiceStatusResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.StartServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.AssignTechnicianCommandFromResourceAssembler;
-import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.CancelServiceRequestCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.CreateServiceRequestCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.RejectServiceRequestCommandFromResourceAssembler;
@@ -48,6 +48,7 @@ import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.R
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.ServiceRequestResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.StartServiceRequestCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
@@ -108,7 +109,7 @@ public class ServiceRequestsController {
    * @return The created {@link ServiceRequestResource}, with 201 Created
    */
   @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Create a service request",
       description = "Creates a maintenance or repair request for a unit of the authenticated owner. "
@@ -145,7 +146,7 @@ public class ServiceRequestsController {
    * @return A {@link PagedServiceRequestResource}
    */
   @GetMapping
-  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "List my service requests",
       description = "An owner lists the requests it created; a technician lists the requests assigned "
@@ -194,7 +195,7 @@ public class ServiceRequestsController {
    * @return The {@link ServiceRequestResource}, or 404 when it is not reachable by the caller
    */
   @GetMapping("/{serviceRequestId}")
-  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Get a service request by ID",
       description = "Retrieves a request with its full status history. Only its owner and its "
@@ -234,7 +235,7 @@ public class ServiceRequestsController {
    * @return The updated {@link ServiceRequestResource}
    */
   @PutMapping(value = "/{serviceRequestId}/assign", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Assign a technician",
       description = "Assigns a technician to a PENDING or ACCEPTED request, replacing the current one "
@@ -273,7 +274,7 @@ public class ServiceRequestsController {
    * @return The updated {@link ServiceRequestResource}
    */
   @PutMapping("/{serviceRequestId}/accept")
-  @PreAuthorize("hasAuthority('TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Accept a service request",
       description = "Accepts a PENDING request assigned to the authenticated technician.",
@@ -308,7 +309,7 @@ public class ServiceRequestsController {
    * @return The updated {@link ServiceRequestResource}
    */
   @PutMapping(value = "/{serviceRequestId}/reject", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Reject a service request",
       description = "Rejects a PENDING request assigned to the authenticated technician. The request "
@@ -348,7 +349,7 @@ public class ServiceRequestsController {
    * @return The updated {@link ServiceRequestResource}
    */
   @PutMapping("/{serviceRequestId}/start")
-  @PreAuthorize("hasAuthority('TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Start a service request",
       description = "Moves an ACCEPTED request assigned to the authenticated technician to IN_PROGRESS. "
@@ -389,7 +390,7 @@ public class ServiceRequestsController {
    * @return The updated {@link ServiceRequestResource}
    */
   @PutMapping(value = "/{serviceRequestId}/cancel", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Cancel a service request",
       description = "Cancels a PENDING or ACCEPTED request of the authenticated owner. A request whose "
@@ -428,7 +429,7 @@ public class ServiceRequestsController {
    * @return The {@link ReviewResource}, or 404 when there is none the caller may read
    */
   @GetMapping("/{serviceRequestId}/review")
-  @PreAuthorize("hasAnyAuthority('OWNER_ROLE', 'TECHNICIAN_ROLE')")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Get the review of a service request",
       description = "Retrieves the review of a request. Only the owner who wrote it and the technician "

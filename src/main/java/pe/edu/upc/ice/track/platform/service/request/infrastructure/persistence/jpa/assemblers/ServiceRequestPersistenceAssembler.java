@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.Intervention;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.StatusTransition;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;

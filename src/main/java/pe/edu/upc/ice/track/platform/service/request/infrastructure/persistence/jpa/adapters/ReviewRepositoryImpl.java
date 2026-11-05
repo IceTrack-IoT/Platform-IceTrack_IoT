@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.Review;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ReviewId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ReviewRepository;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.assemblers.ReviewPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.ReviewPersistenceEntity;
@@ -24,6 +25,12 @@ import java.util.Optional;
  */
 @Repository
 public class ReviewRepositoryImpl implements ReviewRepository {
+
+  /**
+   * Number of criteria a review scores - communication, efficacy and performance - which is what
+   * {@code ReviewRating.average()} divides by.
+   */
+  private static final double RATING_CRITERIA_COUNT = 3.0;
 
   private final ReviewPersistenceRepository reviewPersistenceRepository;
   private final ApplicationEventPublisher eventPublisher;
@@ -65,6 +72,24 @@ public class ReviewRepositoryImpl implements ReviewRepository {
   public boolean existsByServiceRequestId(ServiceRequestId serviceRequestId) {
     return serviceRequestId != null
         && reviewPersistenceRepository.existsByServiceRequestId(serviceRequestId.serviceRequestId());
+  }
+
+  // inherited javadoc
+  @Override
+  public Optional<Double> findAverageRatingByTechnicianId(TechnicianProfileId technicianId) {
+    if (technicianId == null) {
+      return Optional.empty();
+    }
+    var reviews = reviewPersistenceRepository.findScoresByTechnicianId(technicianId.technicianProfileId());
+    if (reviews.isEmpty()) {
+      return Optional.empty();
+    }
+    // The mean of the per-review means equals the sum of every score over (reviews x criteria),
+    // which keeps the accumulation exact in integers until the single final division.
+    long scoreTotal = reviews.stream()
+        .mapToLong(review -> (long) review.getCommunication() + review.getEfficacy() + review.getPerformance())
+        .sum();
+    return Optional.of(scoreTotal / (reviews.size() * RATING_CRITERIA_COUNT));
   }
 
   /**

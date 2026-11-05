@@ -1,13 +1,15 @@
 package pe.edu.upc.ice.track.platform.service.request.domain.repositories;
 
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestPage;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceType;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -66,6 +68,32 @@ public interface ServiceRequestRepository {
    * @return the completed requests, empty when the unit was never serviced
    */
   List<ServiceRequest> findCompletedByEquipmentId(EquipmentId equipmentId);
+
+  /**
+   * Find the distinct units of a site that have at least one request of a given type completed
+   * within a window.
+   *
+   * <p>Answers identifiers only, not aggregates: the callers aggregate over many requests and need
+   * none of their history or intervention.</p>
+   *
+   * @param siteId the site the requests were raised for; required
+   * @param type   the kind of work that counts; required
+   * @param from   inclusive start of the window, matched against the completion instant; required
+   * @param to     inclusive end of the window; required
+   * @return the matching units, empty when none qualifies
+   */
+  List<EquipmentId> findEquipmentIdsCompletedBySiteIdAndTypeInRange(
+      Long siteId, ServiceType type, Instant from, Instant to);
+
+  /**
+   * Count the requests a technician completed within a window.
+   *
+   * @param technicianId the technician; required
+   * @param from         inclusive start of the window, matched against the completion instant
+   * @param to           inclusive end of the window
+   * @return the number of completed requests, {@code 0} when there are none
+   */
+  long countCompletedByTechnicianIdInRange(TechnicianProfileId technicianId, Instant from, Instant to);
 
   /**
    * Check whether a technician is assigned to some request on a unit in one of the given statuses.

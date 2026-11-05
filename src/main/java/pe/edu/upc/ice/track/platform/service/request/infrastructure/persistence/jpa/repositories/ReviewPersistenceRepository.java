@@ -3,7 +3,9 @@ package pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.ReviewPersistenceEntity;
+import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.projections.ReviewScoresProjection;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -27,4 +29,14 @@ public interface ReviewPersistenceRepository extends JpaRepository<ReviewPersist
    * @return {@code true} when a review exists for it
    */
   boolean existsByServiceRequestId(Long serviceRequestId);
+
+  /**
+   * Finds the scores of every review about a technician. The closed
+   * {@link ReviewScoresProjection} limits the selection to the three score columns; the caller
+   * computes the average from them.
+   *
+   * @param technicianId the technician
+   * @return the scores of each review, empty when the technician has never been reviewed
+   */
+  List<ReviewScoresProjection> findScoresByTechnicianId(Long technicianId);
 }

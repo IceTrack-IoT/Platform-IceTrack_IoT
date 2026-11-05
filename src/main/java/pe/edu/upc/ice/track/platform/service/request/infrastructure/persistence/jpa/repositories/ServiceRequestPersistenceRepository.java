@@ -5,8 +5,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceType;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.ServiceRequestPersistenceEntity;
+import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.projections.EquipmentIdProjection;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -59,6 +62,34 @@ public interface ServiceRequestPersistenceRepository
    */
   boolean existsByEquipmentIdAndTechnicianIdAndStatusIn(
       Long equipmentId, Long technicianId, Collection<ServiceStatus> statuses);
+
+  /**
+   * Projects the distinct units of a site that have a request of a type, in a status, completed
+   * within a window. The closed {@link EquipmentIdProjection} limits the selection to the unit
+   * identifier, so no entity, history or intervention is loaded and {@code Distinct} applies to
+   * the identifiers.
+   *
+   * @param siteId the site
+   * @param type   the kind of work
+   * @param status the status to match
+   * @param from   inclusive start of the window
+   * @param to     inclusive end of the window
+   * @return the matching unit identifiers
+   */
+  List<EquipmentIdProjection> findDistinctEquipmentIdBySiteIdAndTypeAndStatusAndCompletedAtBetween(
+      Long siteId, ServiceType type, ServiceStatus status, Instant from, Instant to);
+
+  /**
+   * Counts the requests of a technician, in a status, completed within a window.
+   *
+   * @param technicianId the technician
+   * @param status       the status to match
+   * @param from         inclusive start of the window
+   * @param to           inclusive end of the window
+   * @return the number of matching rows
+   */
+  long countByTechnicianIdAndStatusAndCompletedAtBetween(
+      Long technicianId, ServiceStatus status, Instant from, Instant to);
 
   /**
    * Tells whether an intervention already carries a client identifier.

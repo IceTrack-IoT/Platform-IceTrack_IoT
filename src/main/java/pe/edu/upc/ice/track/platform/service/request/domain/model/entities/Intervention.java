@@ -1,7 +1,7 @@
 package pe.edu.upc.ice.track.platform.service.request.domain.model.entities;
 
 import lombok.Getter;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 
 import java.time.Duration;

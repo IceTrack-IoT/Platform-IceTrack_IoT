@@ -8,18 +8,21 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestPage;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceType;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ServiceRequestRepository;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.assemblers.ServiceRequestPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.ServiceRequestPersistenceEntity;
+import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.projections.EquipmentIdProjection;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.repositories.ServiceRequestPersistenceRepository;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.specifications.ServiceRequestPersistenceSpecifications;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -112,6 +115,35 @@ public class ServiceRequestRepositoryImpl implements ServiceRequestRepository {
         .stream()
         .map(ServiceRequestPersistenceAssembler::toDomainFromPersistence)
         .toList();
+  }
+
+  // inherited javadoc
+  @Override
+  public List<EquipmentId> findEquipmentIdsCompletedBySiteIdAndTypeInRange(
+      Long siteId, ServiceType type, Instant from, Instant to) {
+    if (siteId == null || type == null || from == null || to == null) {
+      return List.of();
+    }
+    return serviceRequestPersistenceRepository
+        .findDistinctEquipmentIdBySiteIdAndTypeAndStatusAndCompletedAtBetween(
+            siteId, type, ServiceStatus.COMPLETED, from, to)
+        .stream()
+        .map(EquipmentIdProjection::getEquipmentId)
+        // The query is already distinct; repeated here so the contract holds however the
+        // projection is rendered.
+        .distinct()
+        .map(EquipmentId::new)
+        .toList();
+  }
+
+  // inherited javadoc
+  @Override
+  public long countCompletedByTechnicianIdInRange(TechnicianProfileId technicianId, Instant from, Instant to) {
+    if (technicianId == null || from == null || to == null) {
+      return 0L;
+    }
+    return serviceRequestPersistenceRepository.countByTechnicianIdAndStatusAndCompletedAtBetween(
+        technicianId.technicianProfileId(), ServiceStatus.COMPLETED, from, to);
   }
 
   // inherited javadoc
