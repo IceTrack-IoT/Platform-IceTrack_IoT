@@ -60,7 +60,7 @@ public class SitePersistenceEntity extends AuditableAbstractPersistenceEntity {
   private String name;
 
   @Convert(converter = AddressPersistenceConverter.class)
-  @Column(name = "address", nullable = false, length = 50)
+  @Column(name = "address", nullable = false, length = 255)
   private Address address;
 
   @Column(name = "contact_name", nullable = false, length = 30)

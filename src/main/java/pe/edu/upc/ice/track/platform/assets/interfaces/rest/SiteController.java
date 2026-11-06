@@ -112,7 +112,7 @@ public class SiteController {
           responseCode = "201",
           description = "Site registered",
           content = @Content(schema = @Schema(implementation = SiteResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an address longer than 50 characters"),
+      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an address longer than 255 characters"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile")
   })
@@ -296,7 +296,7 @@ public class SiteController {
           responseCode = "200",
           description = "Address changed, geocoding queued",
           content = @Content(schema = @Schema(implementation = SiteResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an address longer than 50 characters"),
+      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an address longer than 255 characters"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
       @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller")

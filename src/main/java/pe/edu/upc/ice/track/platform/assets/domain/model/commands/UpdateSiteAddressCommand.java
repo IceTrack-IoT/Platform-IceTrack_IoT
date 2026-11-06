@@ -11,7 +11,7 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.commands;
  * @param username   username of the authenticated caller; required. Carried in the command, not in
  *                   the payload, and resolved to an owner by the command service, so the ownership
  *                   rule is enforced there rather than trusted to the caller
- * @param newAddress the new address; required, at most 50 characters
+ * @param newAddress the new address; required, at most 255 characters
  */
 public record UpdateSiteAddressCommand(Long siteId, String username, String newAddress) {
 }

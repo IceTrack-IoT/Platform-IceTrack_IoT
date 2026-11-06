@@ -16,8 +16,8 @@ import jakarta.validation.constraints.Size;
     example = "{\"address\": \"Av. Los Pinos 45, Lima\"}")
 public record UpdateSiteAddressResource(
     @NotBlank(message = "{validation.not-blank}")
-    @Size(max = 50, message = "{validation.size.max}")
-    @Schema(description = "New physical address of the site", example = "Av. Los Pinos 45, Lima", maxLength = 50)
+    @Size(max = 255, message = "{validation.size.max}")
+    @Schema(description = "New physical address of the site", example = "Av. Los Pinos 45, Lima", maxLength = 255)
     String address
 ) {
 }

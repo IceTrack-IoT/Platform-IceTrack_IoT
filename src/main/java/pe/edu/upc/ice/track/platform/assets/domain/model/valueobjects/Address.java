@@ -12,14 +12,14 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects;
  * <p>Immutable and self-validating: an address that is blank or too long can never be
  * constructed, so no {@code Site} can ever hold one.</p>
  *
- * @param value the address line; required, not blank, at most 50 characters
+ * @param value the address line; required, not blank, at most 255 characters
  */
 public record Address(String value) {
 
   /**
    * Maximum number of characters an address may hold, matching the {@code address} column width.
    */
-  public static final int MAX_LENGTH = 50;
+  public static final int MAX_LENGTH = 255;
 
   /**
    * Validates and trims the address.

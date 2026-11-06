@@ -9,7 +9,7 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.commands;
  *
  * @param username    username of the authenticated caller; required
  * @param name        the site name; required, at most 30 characters
- * @param address     the physical address of the site; required, at most 50 characters
+ * @param address     the physical address of the site; required, at most 255 characters
  * @param contactName the person reachable on site; required, at most 30 characters
  * @param phone       the contact phone number; required
  */

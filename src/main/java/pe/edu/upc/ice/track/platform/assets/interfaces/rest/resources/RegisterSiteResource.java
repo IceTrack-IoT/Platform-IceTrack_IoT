@@ -21,8 +21,8 @@ public record RegisterSiteResource(
     String name,
 
     @NotBlank(message = "{validation.not-blank}")
-    @Size(max = 50, message = "{validation.size.max}")
-    @Schema(description = "Physical address of the site", example = "Av. Primavera 123, Lima", maxLength = 50)
+    @Size(max = 255, message = "{validation.size.max}")
+    @Schema(description = "Physical address of the site", example = "Av. Primavera 123, Lima", maxLength = 255)
     String address,
 
     @NotBlank(message = "{validation.not-blank}")
