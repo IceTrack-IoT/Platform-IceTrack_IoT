@@ -288,7 +288,8 @@ public class EquipmentController {
       description = "Replaces the acceptable temperature band of one of the authenticated owner's "
           + "units. Both bounds must lie within 0 to 30 °C and the minimum must be strictly below "
           + "the maximum; otherwise the request is rejected with 400, the previous band stays "
-          + "active and no domain event is emitted.",
+          + "active and no domain event is emitted. An accepted band increments config_version, "
+          + "returned in the response, so the unit's edge gateway downloads it on its next poll.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
