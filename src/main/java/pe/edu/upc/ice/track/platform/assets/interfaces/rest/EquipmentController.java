@@ -205,7 +205,8 @@ public class EquipmentController {
   @Operation(
       summary = "Get an equipment by ID",
       description = "Retrieves the full detail of an equipment unit. Owners can only read their "
-          + "own units; technicians can read any unit, since they service units of any owner.",
+          + "own units; technicians can only read units they hold an active service request on "
+          + "(assigned, accepted or in progress). Any other unit answers 404.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -245,7 +246,7 @@ public class EquipmentController {
   @Operation(
       summary = "Update an equipment",
       description = "Replaces the name, type and preventive maintenance interval of one of the "
-          + "authenticated owner's units (US-03). The uid, the site and the threshold are not "
+          + "authenticated owner's units. The uid, the site and the threshold are not "
           + "editable here.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
@@ -321,11 +322,11 @@ public class EquipmentController {
    * @return The updated {@link EquipmentResource}, or 409 for a transition the matrix forbids
    */
   @PutMapping(value = "/{equipmentId}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Change the equipment status",
-      description = "Moves an equipment unit to a new lifecycle status. Owners can only move their "
-          + "own units; technicians can move any unit they service in the field. "
+      description = "Moves one of the caller's own equipment units to a new lifecycle status. "
+          + "Owner only: technicians cannot change a unit's status directly. "
           + "Allowed transitions: ACTIVE to DESACTIVATE, MAINTENANCE or REPAIR; DESACTIVATE to ACTIVE "
           + "or REPAIR; MAINTENANCE to ACTIVE, DESACTIVATE or REPAIR; REPAIR to ACTIVE or DESACTIVATE. "
           + "Maintenance is only entered from ACTIVE. A forbidden transition is rejected with 409.",
@@ -337,7 +338,7 @@ public class EquipmentController {
           content = @Content(schema = @Schema(implementation = EquipmentResource.class))),
       @ApiResponse(responseCode = "400", description = "Invalid input data"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician, or is an owner without an owner profile"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner, or is an owner without an owner profile"),
       @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller"),
       @ApiResponse(responseCode = "409", description = "The requested status transition is not allowed")
   })
@@ -348,10 +349,7 @@ public class EquipmentController {
       @Valid @RequestBody ChangeStatusResource resource,
       Authentication authentication) {
     var command = ChangeStatusCommandFromResourceAssembler.toCommandFromResource(
-        equipmentId,
-        authentication.getName(),
-        CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication),
-        resource);
+        equipmentId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
         EquipmentResourceFromEntityAssembler::toResourceFromEntity,

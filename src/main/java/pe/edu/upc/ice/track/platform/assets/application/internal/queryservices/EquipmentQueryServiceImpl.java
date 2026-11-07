@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.assets.application.internal.queryservices;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalOwnerService;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalServiceRequestService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
@@ -23,9 +24,11 @@ import java.util.Optional;
  * {@link AssetsExternalOwnerService} ACL before anything is read, so a query only ever sees that owner's
  * units. A caller that holds no owner profile sees no unit at all.</p>
  *
- * <p>Fetching a single unit and listing the units of a site are also open to a technician, who
- * services units of any owner: for a caller acting as one, neither is scoped by ownership. The
- * owner's listing is never opened to a technician.</p>
+ * <p>Fetching a single unit and listing the units of a site are also open to a technician, scoped
+ * by its work rather than by ownership: a technician only sees the units it holds an active
+ * assignment on, checked through the {@link AssetsExternalServiceRequestService} ACL. Any other unit
+ * is answered as absent, exactly as a foreign unit is for an owner. The owner's listing is never
+ * opened to a technician.</p>
  */
 @Service
 public class EquipmentQueryServiceImpl implements EquipmentQueryService {
@@ -42,6 +45,7 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
   private final EquipmentRepository equipmentRepository;
   private final SiteRepository siteRepository;
   private final AssetsExternalOwnerService assetsExternalOwnerService;
+  private final AssetsExternalServiceRequestService assetsExternalServiceRequestService;
 
   /**
    * Creates the query service with its dependencies.
@@ -49,14 +53,18 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
    * @param equipmentRepository  equipment repository port
    * @param siteRepository       site repository port, used to resolve the owner of a unit's site
    * @param assetsExternalOwnerService outbound ACL service, used to resolve the caller to its owner
+   * @param assetsExternalServiceRequestService outbound ACL service, used to check a technician's
+   *                                            active assignments
    */
   public EquipmentQueryServiceImpl(
       EquipmentRepository equipmentRepository,
       SiteRepository siteRepository,
-      AssetsExternalOwnerService assetsExternalOwnerService) {
+      AssetsExternalOwnerService assetsExternalOwnerService,
+      AssetsExternalServiceRequestService assetsExternalServiceRequestService) {
     this.equipmentRepository = equipmentRepository;
     this.siteRepository = siteRepository;
     this.assetsExternalOwnerService = assetsExternalOwnerService;
+    this.assetsExternalServiceRequestService = assetsExternalServiceRequestService;
   }
 
   // inherited javadoc
@@ -64,6 +72,9 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
   @Transactional(readOnly = true)
   public Optional<Equipment> handle(GetEquipmentByIdQuery query) {
     if (query.callerRole() == CallerRole.TECHNICIAN) {
+      if (!assetsExternalServiceRequestService.isTechnicianAssignedToEquipment(query.username(), query.equipmentId())) {
+        return Optional.empty();
+      }
       return equipmentRepository.findById(query.equipmentId());
     }
     return assetsExternalOwnerService.fetchOwnerIdByUsername(query.username())
@@ -76,7 +87,14 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
   @Transactional(readOnly = true)
   public List<Equipment> handle(GetEquipmentBySiteQuery query) {
     if (query.callerRole() == CallerRole.TECHNICIAN) {
-      return equipmentRepository.findBySiteId(query.siteId());
+      // Only the units of the site the technician is actively working on, never the whole site.
+      if (!assetsExternalServiceRequestService.isTechnicianAssignedToSite(query.username(), query.siteId())) {
+        return List.of();
+      }
+      return equipmentRepository.findBySiteId(query.siteId()).stream()
+          .filter(equipment -> assetsExternalServiceRequestService
+              .isTechnicianAssignedToEquipment(query.username(), equipment.getEquipmentId()))
+          .toList();
     }
     var ownerId = assetsExternalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
     if (ownerId == null || !isSiteOwnedBy(query.siteId(), ownerId)) {

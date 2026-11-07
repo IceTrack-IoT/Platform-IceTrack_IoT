@@ -12,7 +12,6 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCo
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateEquipmentCommand;
-import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.TemperatureThreshold;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
@@ -29,9 +28,9 @@ import pe.edu.upc.ice.track.platform.shared.application.result.Result;
  * impossible to bypass. An account that holds no owner profile is answered with
  * {@code ACCESS_DENIED}.</p>
  *
- * <p>The single exception is a status change by a caller acting as a technician, who services
- * units of any owner and is therefore not scoped by ownership. Registering, updating and changing
- * the threshold of a unit carry no role at all and are always owner-scoped.</p>
+ * <p>Every command, the status change included, is owner-scoped. A technician never changes a
+ * unit's operational status directly: maintenance is driven by service requests and maintenance
+ * windows, not by a freestanding write that could reach any tenant's unit.</p>
  *
  * <p>A caller that asks for a unit it does not own is told the unit does not exist rather than
  * that it belongs to somebody else: the alternative would turn this endpoint into an oracle for
@@ -154,12 +153,7 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(ChangeStatusCommand command) {
-    // A technician changes the status of the units it services in the field, whatever their
-    // owner, so this is the one write not scoped by ownership.
-    var reachable = command.callerRole() == CallerRole.TECHNICIAN
-        ? existingEquipment(command.equipmentId())
-        : reachableEquipment(command.equipmentId(), command.username());
-    return reachable.flatMap(equipment -> {
+    return reachableEquipment(command.equipmentId(), command.username()).flatMap(equipment -> {
       try {
         equipment.changeStatus(command.newStatus());
         var savedEquipment = equipmentRepository.save(equipment);
@@ -202,17 +196,6 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
           .filter(candidate -> isSiteOwnedBy(candidate.getSiteId(), ownerId));
       return equipment.<Result<Equipment, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(notReachableEquipment(equipmentId)));
     });
-  }
-
-  /**
-   * Loads a unit whatever its owner, for the one write a technician may perform.
-   *
-   * @param equipmentId the unit identifier
-   * @return the unit, or a 404 failure when it does not exist
-   */
-  private Result<Equipment, ApplicationError> existingEquipment(Long equipmentId) {
-    var equipment = equipmentRepository.findById(equipmentId);
-    return equipment.<Result<Equipment, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(notReachableEquipment(equipmentId)));
   }
 
   /**

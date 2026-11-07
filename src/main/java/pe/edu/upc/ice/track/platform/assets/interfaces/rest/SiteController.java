@@ -45,7 +45,7 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorRespo
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 /**
- * REST controller exposing the sites of an owner (US-20).
+ * REST controller exposing the sites of an owner.
  *
  * <p>Every endpoint acts on the authenticated caller: the controller only hands the principal's
  * username to the command and query services, which resolve it to an owner and apply the
@@ -167,7 +167,8 @@ public class SiteController {
   @Operation(
       summary = "Get a site by ID",
       description = "Retrieves a site by its unique identifier. Owners can only read their own sites; "
-          + "technicians can read any site, so they can reach the equipment they service.",
+          + "technicians can only read sites where they hold an active service request. "
+          + "Any other site answers 404.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -206,7 +207,7 @@ public class SiteController {
   @Operation(
       summary = "List the equipment of a site",
       description = "Lists the equipment installed at a site. Owners can only list their own sites; "
-          + "technicians can list any site they inspect.",
+          + "technicians only see the units of the site they hold an active service request on.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(

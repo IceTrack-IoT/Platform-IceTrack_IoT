@@ -27,7 +27,7 @@ import java.util.Objects;
  * because moving a site to another owner would silently transfer every equipment installed in it,
  * along with their thresholds and maintenance history.</p>
  *
- * <p><strong>Geocoding (US-20, TS-17).</strong> The address is what the owner types; the
+ * <p><strong>Geocoding.</strong> The address is what the owner types; the
  * coordinates are derived from it, later and elsewhere. A site is therefore always saved first,
  * with {@link GeocodingStatus#PENDING} and no location, and an external lookup settles it
  * afterward through {@link #markLocationResolved}, {@link #markLocationNotFound} or

@@ -126,6 +126,24 @@ public class AssetContextFacade {
   }
 
   /**
+   * Tells whether a site exists and belongs to a given owner.
+   *
+   * <p>Reporting calls this before computing a site-scoped report, so an owner can never report on
+   * somebody else's site.</p>
+   *
+   * @param siteId  identifier of the site
+   * @param ownerId identifier of the owner expected to own it
+   * @return {@code true} only when the site exists and belongs to that owner
+   */
+  @Transactional(readOnly = true)
+  public boolean existsSiteForOwner(Long siteId, Long ownerId) {
+    if (siteId == null || ownerId == null) {
+      return false;
+    }
+    return siteRepository.findById(siteId).filter(site -> site.belongsTo(ownerId)).isPresent();
+  }
+
+  /**
    * Returns the site a unit is installed at.
    *
    * @param equipmentId identifier of the equipment

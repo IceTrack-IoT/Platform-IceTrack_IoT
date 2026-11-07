@@ -17,8 +17,7 @@ import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Internal application-layer handler that locates a site's address once it has been saved (US-20,
- * TS-17).
+ * Internal application-layer handler that locates a site's address once it has been saved.
  *
  * <p>Three properties keep the owner's request independent of the geocoding provider:</p>
  * <ul>
