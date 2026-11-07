@@ -51,7 +51,11 @@ public class ExternalProfilesServiceForMonitoring {
         .filter(ExternalProfilesServiceForMonitoring::isFound);
   }
 
-  private Optional<Long> fetchUserIdByUsername(String username) {
+  /**
+   * @param username username of the authenticated account
+   * @return the IAM identifier of the account, or empty when it does not exist
+   */
+  public Optional<Long> fetchUserIdByUsername(String username) {
     if (username == null || username.isBlank()) {
       return Optional.empty();
     }

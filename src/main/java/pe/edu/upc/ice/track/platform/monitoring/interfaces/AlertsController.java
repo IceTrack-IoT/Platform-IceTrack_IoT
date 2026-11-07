@@ -8,6 +8,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,9 +23,12 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.ResolveAle
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.queries.GetAlertByIdQuery;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.queries.GetOpenAlertsByEquipmentQuery;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.AlertResource;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.DismissAlertResource;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.transform.AlertResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 import java.util.List;
 
@@ -31,8 +36,9 @@ import java.util.List;
  * REST controller for alert listing, detail and lifecycle transitions.
  *
  * <p>Every endpoint is scoped to the authenticated caller. Reads are open to the owner of the unit
- * and to a technician actively assigned to it; lifecycle transitions are owner-only. An alert the
- * caller may not reach answers 404, exactly like a missing one.</p>
+ * and to a technician actively assigned to it; lifecycle transitions are owner-only and record the
+ * caller as their actor. An alert the caller may not reach answers 404, exactly like a missing
+ * one; a transition its status forbids answers 409.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/alerts", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -125,7 +131,7 @@ public class AlertsController {
   /**
    * Acknowledge an open alert
    * @param alertId The alert unique identifier
-   * @param authentication The authenticated principal
+   * @param authentication The authenticated principal, recorded as the acknowledging user
    * @return The updated {@link AlertResource}, now in ACKNOWLEDGED status
    */
   @PutMapping("/{alertId}/acknowledge")
@@ -133,7 +139,8 @@ public class AlertsController {
   @Operation(
       summary = "Acknowledge an alert",
       description = "Transitions an OPEN alert of one of the caller's units to ACKNOWLEDGED, "
-          + "signaling that the owner has seen it without yet resolving the underlying condition.",
+          + "signaling that the owner has seen it without yet resolving the underlying condition. "
+          + "The caller and the instant are recorded as acknowledged_by and acknowledged_at.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
@@ -144,30 +151,40 @@ public class AlertsController {
       ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not an owner"),
-      @ApiResponse(responseCode = "404", description = "No such alert is reachable by the caller")
+      @ApiResponse(
+          responseCode = "404",
+          description = "ALERT_NOT_FOUND - no such alert is reachable by the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "409",
+          description = "INVALID_STATUS_TRANSITION - the alert is not OPEN",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      )
   })
-  public ResponseEntity<AlertResource> acknowledgeAlert(
+  public ResponseEntity<?> acknowledgeAlert(
       @PathVariable
       @Parameter(description = "Alert unique identifier", example = "1", required = true)
       Long alertId,
       Authentication authentication) {
-    return alertCommandService.handle(new AcknowledgeAlertCommand(alertId, authentication.getName()))
-        .map(alert -> ResponseEntity.ok(AlertResourceFromEntityAssembler.toResourceFromEntity(alert)))
-        .orElse(ResponseEntity.notFound().build());
+    var result = alertCommandService.handle(new AcknowledgeAlertCommand(alertId, authentication.getName()));
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        result, AlertResourceFromEntityAssembler::toResourceFromEntity, HttpStatus.OK);
   }
 
   /**
    * Resolve an alert
    * @param alertId The alert unique identifier
-   * @param authentication The authenticated principal
+   * @param authentication The authenticated principal, recorded as the resolving user
    * @return The updated {@link AlertResource}, now in RESOLVED status
    */
   @PutMapping("/{alertId}/resolve")
   @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Resolve an alert",
-      description = "Closes an alert of one of the caller's units once the underlying condition has "
-          + "stopped applying, recording the moment of resolution.",
+      description = "Closes an OPEN or ACKNOWLEDGED alert of one of the caller's units once the underlying "
+          + "condition has been corrected. The caller and the instant are recorded as resolved_by and "
+          + "resolved_at, and total_duration_seconds becomes available.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
@@ -178,30 +195,43 @@ public class AlertsController {
       ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not an owner"),
-      @ApiResponse(responseCode = "404", description = "No such alert is reachable by the caller")
+      @ApiResponse(
+          responseCode = "404",
+          description = "ALERT_NOT_FOUND - no such alert is reachable by the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "409",
+          description = "INVALID_STATUS_TRANSITION - the alert is already RESOLVED or DISMISSED",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      )
   })
-  public ResponseEntity<AlertResource> resolveAlert(
+  public ResponseEntity<?> resolveAlert(
       @PathVariable
       @Parameter(description = "Alert unique identifier", example = "1", required = true)
       Long alertId,
       Authentication authentication) {
-    return alertCommandService.handle(new ResolveAlertCommand(alertId, authentication.getName()))
-        .map(alert -> ResponseEntity.ok(AlertResourceFromEntityAssembler.toResourceFromEntity(alert)))
-        .orElse(ResponseEntity.notFound().build());
+    var result = alertCommandService.handle(new ResolveAlertCommand(alertId, authentication.getName()));
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        result, AlertResourceFromEntityAssembler::toResourceFromEntity, HttpStatus.OK);
   }
 
   /**
    * Dismiss an alert
    * @param alertId The alert unique identifier
-   * @param authentication The authenticated principal
+   * @param resource The justification for the dismissal
+   * @param authentication The authenticated principal, recorded as the dismissing user
    * @return The updated {@link AlertResource}, now in DISMISSED status
    */
-  @PutMapping("/{alertId}/dismiss")
+  @PutMapping(value = "/{alertId}/dismiss", consumes = MediaType.APPLICATION_JSON_VALUE)
   @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Dismiss an alert",
-      description = "Closes an alert of one of the caller's units as not actionable, without "
-          + "asserting that the underlying condition was resolved.",
+      description = "Closes an OPEN or ACKNOWLEDGED alert of one of the caller's units as a false alarm, such "
+          + "as a planned defrost cycle, without asserting that the underlying condition was resolved. A "
+          + "non-blank reason is mandatory; evidence is optional. The caller, the instant and the reason are "
+          + "recorded as dismissed_by, dismissed_at and dismiss_reason. Dismissed alerts are excluded from "
+          + "thermal excursion reports.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
@@ -210,17 +240,33 @@ public class AlertsController {
           description = "Alert dismissed",
           content = @Content(schema = @Schema(implementation = AlertResource.class))
       ),
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - the body is missing, the reason is blank, or a field is too long",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not an owner"),
-      @ApiResponse(responseCode = "404", description = "No such alert is reachable by the caller")
+      @ApiResponse(
+          responseCode = "404",
+          description = "ALERT_NOT_FOUND - no such alert is reachable by the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "409",
+          description = "INVALID_STATUS_TRANSITION - the alert is already RESOLVED or DISMISSED",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      )
   })
-  public ResponseEntity<AlertResource> dismissAlert(
+  public ResponseEntity<?> dismissAlert(
       @PathVariable
       @Parameter(description = "Alert unique identifier", example = "1", required = true)
       Long alertId,
+      @Valid @RequestBody DismissAlertResource resource,
       Authentication authentication) {
-    return alertCommandService.handle(new DismissAlertCommand(alertId, authentication.getName()))
-        .map(alert -> ResponseEntity.ok(AlertResourceFromEntityAssembler.toResourceFromEntity(alert)))
-        .orElse(ResponseEntity.notFound().build());
+    var command = new DismissAlertCommand(alertId, authentication.getName(), resource.reason(), resource.evidence());
+    var result = alertCommandService.handle(command);
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        result, AlertResourceFromEntityAssembler::toResourceFromEntity, HttpStatus.OK);
   }
 }

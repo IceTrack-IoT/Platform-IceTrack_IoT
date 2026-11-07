@@ -15,9 +15,26 @@ public final class AlertResourceFromEntityAssembler {
   }
 
   public static AlertResource toResourceFromEntity(Alert alert) {
+    var totalDuration = alert.totalDuration();
     return new AlertResource(
-        alert.getId(), alert.getEquipmentId(), alert.getType().name(),
-        alert.getSeverity().name(), alert.getStatus().name(), alert.getPeakTemperature().celsius(),
-        alert.getOpenedAt(), alert.getResolvedAt());
+        alert.getId(),
+        alert.getEquipmentId(),
+        alert.getType().name(),
+        alert.getSeverity().name(),
+        alert.getStatus().name(),
+        alert.getTriggeringReadingId(),
+        alert.getTriggeringTemperature().celsius(),
+        alert.getTriggeringRecordedAt(),
+        alert.getPeakTemperature().celsius(),
+        alert.getOpenedAt(),
+        alert.getAcknowledgedBy(),
+        alert.getAcknowledgedAt(),
+        alert.getResolvedBy(),
+        alert.getResolvedAt(),
+        alert.getDismissedBy(),
+        alert.getDismissedAt(),
+        alert.getDismissReason(),
+        alert.getDismissEvidence(),
+        totalDuration == null ? null : totalDuration.toSeconds());
   }
 }

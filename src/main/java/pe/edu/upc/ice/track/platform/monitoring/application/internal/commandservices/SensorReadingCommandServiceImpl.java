@@ -126,23 +126,27 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
           return AlertPolicy.platformDefault();
         });
 
-    var outOfRange = reading.getMaxTemperature().isAbove(maxThreshold)
-        || reading.getMinTemperature().isBelow(minThreshold);
+    var aboveMaximum = reading.getMaxTemperature().isAbove(maxThreshold);
+    var outOfRange = aboveMaximum || reading.getMinTemperature().isBelow(minThreshold);
 
     var existingAlert = alertRepository.findOpenAlertByEquipmentIdAndType(
         reading.getEquipmentId().equipmentId(), AlertType.TEMPERATURE_EXCURSION);
 
     if (outOfRange && existingAlert.isEmpty()) {
+      // A thermal excursion puts the stored inventory at risk, so it is always CRITICAL. The
+      // triggering value is the bound that was crossed: the batch maximum above the range, the
+      // batch minimum below it.
+      var triggeringTemperature = aboveMaximum ? reading.getMaxTemperature() : reading.getMinTemperature();
       var alert = new Alert(
-          reading.getEquipmentId().equipmentId(), AlertType.TEMPERATURE_EXCURSION, AlertSeverity.WARNING,
-          reading.getId(), reading.getMaxTemperature().celsius(),
-          Duration.ofMinutes(policy.getSustainedExcursionMinutes()));
+          reading.getEquipmentId().equipmentId(), AlertType.TEMPERATURE_EXCURSION, AlertSeverity.CRITICAL,
+          reading.getId(), triggeringTemperature.celsius(), reading.getRecordedAt(),
+          triggeringTemperature.celsius(), Duration.ofMinutes(policy.getSustainedExcursionMinutes()));
       var savedAlert = alertRepository.save(alert);
       savedAlert.onRaised();
       alertRepository.save(savedAlert);
     } else if (!outOfRange && existingAlert.isPresent()) {
       var alert = existingAlert.get();
-      alert.resolve();
+      alert.resolveAutomatically();
       alertRepository.save(alert);
     }
   }

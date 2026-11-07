@@ -54,6 +54,16 @@ public class AlertPersistenceEntity {
    */
   private Long triggeringReadingId;
   /**
+   *  The out-of-range value of the triggering reading, in Celsius. Null for a DEVICE_OFFLINE alert
+   *  and for alerts raised before this snapshot was recorded.
+   */
+  private Double triggeringTemperature;
+  /**
+   *  When the triggering reading was recorded. Null for a DEVICE_OFFLINE alert and for alerts
+   *  raised before this snapshot was recorded.
+   */
+  private LocalDateTime triggeringRecordedAt;
+  /**
    *  The peak temperature observed during the excursion, in Celsius. This field is null for a DEVICE_OFFLINE alert.
    */
   private Double peakTemperature;
@@ -68,5 +78,30 @@ public class AlertPersistenceEntity {
   @Column(nullable = false)
   private LocalDateTime openedAt;
 
+  /**
+   *  IAM identifier of the user who acknowledged the alert.
+   */
+  private Long acknowledgedByUserId;
+
+  private LocalDateTime acknowledgedAt;
+
+  /**
+   *  IAM identifier of the user who resolved the alert; null when it was resolved automatically.
+   */
+  private Long resolvedByUserId;
+
   private LocalDateTime resolvedAt;
+
+  /**
+   *  IAM identifier of the user who dismissed the alert.
+   */
+  private Long dismissedByUserId;
+
+  private LocalDateTime dismissedAt;
+
+  @Column(length = 500)
+  private String dismissReason;
+
+  @Column(length = 1000)
+  private String dismissEvidence;
 }

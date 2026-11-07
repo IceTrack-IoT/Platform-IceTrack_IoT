@@ -59,15 +59,20 @@ public class AlertRepositoryImpl implements AlertRepository {
         .map(AlertPersistenceAssembler::toDomainFromPersistenceEntity);
   }
 
+  // Dismissed alerts were judged false alarms, so they never count toward excursion reports.
   @Override
   public long countByEquipmentIdAndTypeInRange(Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to) {
-    return persistenceRepository.findByEquipmentIdAndTypeAndOpenedAtBetween(equipmentId, type.name(), from, to).size();
+    return persistenceRepository.findByEquipmentIdAndTypeAndOpenedAtBetween(equipmentId, type.name(), from, to).stream()
+        .filter(a -> !AlertStatus.DISMISSED.name().equals(a.getStatus()))
+        .count();
   }
 
+  // Dismissed alerts were judged false alarms, so they never count toward excursion reports.
   @Override
   public double totalDurationHoursByEquipmentIdAndTypeInRange(Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to) {
     return persistenceRepository
         .findByEquipmentIdAndTypeAndOpenedAtBetween(equipmentId, type.name(), from, to).stream()
+        .filter(a -> !AlertStatus.DISMISSED.name().equals(a.getStatus()))
         .mapToDouble(a -> {
           var start = a.getOpenedAt().isBefore(from) ? from : a.getOpenedAt();
           var end = (a.getResolvedAt() == null || a.getResolvedAt().isAfter(to)) ? to : a.getResolvedAt();

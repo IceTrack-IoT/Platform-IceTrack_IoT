@@ -4,30 +4,42 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.Alert;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.AcknowledgeAlertCommand;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.DismissAlertCommand;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.ResolveAlertCommand;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
-import java.util.Optional;
-
-/** Application service handling write operations on {@link Alert}. */
+/**
+ * Application service handling write operations on {@link Alert}.
+ *
+ * <p>Every transition records the authenticated caller as its actor. Failures are:</p>
+ * <ul>
+ *   <li>{@code ALERT_NOT_FOUND} - the alert does not exist, or the caller does not own its unit;</li>
+ *   <li>{@code INVALID_STATUS_TRANSITION} - the alert's current status does not allow the transition;</li>
+ *   <li>{@code VALIDATION_ERROR} - a dismissal reason or evidence is rejected.</li>
+ * </ul>
+ */
 public interface AlertCommandService {
 
   /**
-   *  Handles the command to acknowledge an alert.
+   * Handles the command to acknowledge an OPEN alert.
+   *
    * @param command the command containing the alert identifier and the user acknowledging it
-   * @return  an Optional containing the updated Alert if the operation was successful, or an empty Optional if the alert was not found or could not be acknowledged.
+   * @return the updated alert, or the reason it could not be acknowledged
    */
-  Optional<Alert> handle(AcknowledgeAlertCommand command);
+  Result<Alert, ApplicationError> handle(AcknowledgeAlertCommand command);
 
   /**
-   *  Handles the command to resolve an alert.
+   * Handles the command to resolve an OPEN or ACKNOWLEDGED alert.
+   *
    * @param command the command containing the alert identifier and the user resolving it
-   * @return  an Optional containing the updated Alert if the operation was successful, or an empty Optional if the alert was not found or could not be resolved.
+   * @return the updated alert, or the reason it could not be resolved
    */
-  Optional<Alert> handle(ResolveAlertCommand command);
+  Result<Alert, ApplicationError> handle(ResolveAlertCommand command);
 
   /**
-   *  Handles the command to dismiss an alert.
-   * @param command the command containing the alert identifier and the user dismissing it
-   * @return  an Optional containing the updated Alert if the operation was successful, or an empty Optional if the alert was not found or could not be dismissed.
+   * Handles the command to dismiss an OPEN or ACKNOWLEDGED alert.
+   *
+   * @param command the command containing the alert identifier, the user dismissing it and why
+   * @return the updated alert, or the reason it could not be dismissed
    */
-  Optional<Alert> handle(DismissAlertCommand command);
+  Result<Alert, ApplicationError> handle(DismissAlertCommand command);
 }
