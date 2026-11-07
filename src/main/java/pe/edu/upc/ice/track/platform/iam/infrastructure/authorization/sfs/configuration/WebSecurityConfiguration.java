@@ -36,7 +36,13 @@ import java.util.List;
  * {@code NimbusJwtDecoder} that validates incoming <em>Google</em> id_tokens at the token
  * exchange endpoint; no {@code spring.security.oauth2.resourceserver.*} property is declared, so
  * Spring Boot's resource-server auto-configuration stays inactive and this filter chain remains
- * the single authority on request authorization.
+ * the single authority on user request authorization.
+ * </p>
+ * <p>
+ * This chain has no security matcher and is therefore evaluated last. The edge routes the IoT
+ * boards call ({@code POST /api/v1/telemetry}, {@code POST /api/v1/telemetry/events} and
+ * {@code /api/v1/devices/me/**}) are claimed first by the device API key chain of the Device
+ * Management context, so they never reach the bearer token filter.
  * </p>
  */
 @Configuration
@@ -52,12 +58,16 @@ public class WebSecurityConfiguration {
   private final AuthenticationEntryPoint unauthorizedRequestHandler;
 
   /**
-   * This method creates the Bearer Authorization Request Filter.
+   * Creates the Bearer Authorization Request Filter.
+   *
+   * <p>Deliberately not a {@code @Bean}: Spring Boot registers every {@code Filter} bean as a
+   * servlet filter too, so a bean would also run outside the security chain, edge routes
+   * included.</p>
+   *
    * @return The Bearer Authorization Request Filter
    * @see BearerAuthorizationRequestFilter
    */
-  @Bean
-  public BearerAuthorizationRequestFilter authorizationRequestFilter() {
+  private BearerAuthorizationRequestFilter authorizationRequestFilter() {
     return new BearerAuthorizationRequestFilter(tokenService, userDetailsService);
   }
 

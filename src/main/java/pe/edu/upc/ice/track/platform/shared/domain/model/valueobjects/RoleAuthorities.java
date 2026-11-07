@@ -19,4 +19,10 @@ public final class RoleAuthorities {
 
   /** Authority granted to an account that services equipment in the field. */
   public static final String ROLE_TECHNICIAN = "TECHNICIAN_ROLE";
+
+  /**
+   * Authority granted to a paired IoT board authenticated by its API key on the edge routes. No
+   * user account ever holds it, and the user (JWT) filter chain never grants it.
+   */
+  public static final String ROLE_DEVICE = "DEVICE_ROLE";
 }

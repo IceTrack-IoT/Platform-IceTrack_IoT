@@ -26,6 +26,9 @@ import java.util.List;
  */
 @Configuration
 public class OpenApiConfiguration {
+  /** Name of the security scheme edge endpoints reference through {@code @SecurityRequirement}. */
+  public static final String DEVICE_API_KEY_SCHEME = "deviceApiKey";
+
   // Properties
   @Value("${spring.application.name}")
   String applicationName;
@@ -93,7 +96,7 @@ public class OpenApiConfiguration {
             .description("Production Environment")
     ));
 
-    // Add a security scheme
+    // Security schemes: user JWT for the application API, device API key for the edge routes
     final String securitySchemeName = "bearerAuth";
 
     openApi.addSecurityItem(new SecurityRequirement()
@@ -105,7 +108,14 @@ public class OpenApiConfiguration {
                     .type(SecurityScheme.Type.HTTP)
                     .scheme("bearer")
                     .bearerFormat("JWT")
-                    .description("JWT Bearer token for API authentication")));
+                    .description("JWT Bearer token for API authentication"))
+            .addSecuritySchemes(DEVICE_API_KEY_SCHEME,
+                new SecurityScheme()
+                    .type(SecurityScheme.Type.APIKEY)
+                    .in(SecurityScheme.In.HEADER)
+                    .name("X-API-Key")
+                    .description("Device API key (it_dev_...) issued when the device is paired; "
+                        + "required on the edge routes, which accept no user JWT")));
 
     return openApi;
   }
