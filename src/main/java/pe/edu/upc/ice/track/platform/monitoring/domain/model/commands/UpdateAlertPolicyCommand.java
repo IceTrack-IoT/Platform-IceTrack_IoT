@@ -5,7 +5,10 @@ package pe.edu.upc.ice.track.platform.monitoring.domain.model.commands;
  *
  * <p>The platform-wide default policy is not reachable through this command: it is seeded from
  * configuration at startup ({@link SeedDefaultAlertPolicyCommand}), so no tenant can change the
- * thresholds every other tenant is evaluated against.</p>
+ * detection settings every other tenant is evaluated with.</p>
+ *
+ * <p>A policy carries no temperature band: a unit's thresholds are owned by Assets Management
+ * and changed only through its own threshold endpoint.</p>
  *
  * @param equipmentId                  identifier of the equipment this policy applies to; required
  * @param username                     username of the authenticated caller, who must own the

@@ -26,7 +26,7 @@ public record AlertPolicyResource(
         example = "1.0")
     Double hysteresisMarginCelsius,
 
-    @Schema(description = "Number of missed synchronisation windows before a device is considered offline",
+    @Schema(description = "Number of missed synchronization windows before a device is considered offline",
         example = "3")
     Integer missedSyncWindowsForOffline,
 

@@ -36,7 +36,7 @@ public record UpdateAlertPolicyResource(
 
     @NotNull(message = "{validation.not-blank}")
     @Positive
-    @Schema(description = "Number of missed synchronisation windows before a device is considered offline",
+    @Schema(description = "Number of missed synchronization windows before a device is considered offline",
         example = "3")
     Integer missedSyncWindowsForOffline
 ) {
