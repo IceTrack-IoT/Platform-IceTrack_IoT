@@ -22,6 +22,7 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - [User authentication](#user-authentication)
 - [Alerts and notifications](#alerts-and-notifications)
 - [Edge devices](#edge-devices)
+- [Edge configuration, events and grants](#edge-configuration-events-and-grants)
 - [Run locally with Docker](#run-locally-with-docker)
 - [Access](#access)
 - [Useful commands](#useful-commands)
@@ -37,6 +38,7 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - **Immutable roles** — every account is `OWNER_ROLE` or `TECHNICIAN_ROLE`, chosen once at registration, and gets its `OwnerProfile` / `TechnicianProfile` in the same transaction
 - **IAM + Profiles** bounded contexts (`/api/v1/authentication`, `/api/v1/users`, `/api/v1/roles`, `/api/v1/profiles/owners`, `/api/v1/profiles/technicians`)
 - **Edge device authentication** — IoT boards call the edge routes (`POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`, `/api/v1/devices/me/**`) with an `X-API-Key` header and no user JWT; see [Edge devices](#edge-devices)
+- **Edge configuration and grants** — gateways poll `GET /api/v1/devices/me/config` (ETag / `304`) for thresholds, alert policy and technician edge grants; excursion events open and resolve alerts; see [Edge configuration, events and grants](#edge-configuration-events-and-grants)
 - **OpenAPI first** — springdoc-openapi 3.1.1 with Swagger UI
 - **Postgres persistence** — Spring Data JPA/Hibernate with custom snake-case + pluralized naming strategy
 - **Docker-first dev loop** — multi-stage build, Compose healthchecks, dev/prod overlays
@@ -90,6 +92,7 @@ Defaults come from `src/main/resources/application.properties`:
 | `GOOGLE_CLIENT_ID` | `google-client-id` | Google OIDC client ID for `id_token` validation |
 | `SIGN_IN_RATE_LIMIT_MAX_FAILURES` | `5` | `401` answers a client address or an account may collect within one window before sign-in answers `429` |
 | `SIGN_IN_RATE_LIMIT_WINDOW_MINUTES` | `5` | Length of the sign-in throttling window |
+| `EDGE_GRANT_TTL_HOURS` | `24` | Lifetime of the edge grant issued when a technician accepts a service request |
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.
 
@@ -128,7 +131,7 @@ All endpoints live under `/api/v1/authentication`. Errors use the standard `{cod
 
 The actor is always the authenticated caller (IAM user id). `reason` is mandatory, at most 500 characters; `evidence` is optional, at most 1000. A missing or blank reason answers `400 VALIDATION_ERROR`. A transition the status forbids answers `409 INVALID_STATUS_TRANSITION`; an alert the caller does not own answers `404 ALERT_NOT_FOUND`. An alert resolved automatically, because readings returned within range, has `resolved_by: null`. Dismissed alerts are excluded from the thermal excursion report figures.
 
-Thermal excursion alerts are raised with severity `CRITICAL`. Every alert response also carries the triggering reading (`triggering_reading_id`, `triggering_temperature`, `triggering_recorded_at`: the batch maximum when above range, the minimum when below) and `total_duration_seconds` once closed.
+Thermal excursion alerts are opened only by the edge gateway's `THERMAL_EXCURSION_DETECTED` event (see [Edge configuration, events and grants](#edge-configuration-events-and-grants)), with severity `CRITICAL`, never by a single reading batch. Every alert response also carries the triggering reading (`triggering_reading_id`, `triggering_temperature`, `triggering_recorded_at`) and `total_duration_seconds` once closed.
 
 **Notifications** (`/api/v1/notifications`, the recipient is always the authenticated caller):
 
@@ -144,7 +147,7 @@ Two separate security filter chains guard the API:
 | Edge | `POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`, `/api/v1/devices/me/**` | `X-API-Key: it_dev_<64 hex>` only; a user JWT is not accepted |
 | User | everything else | `Authorization: Bearer <JWT>` |
 
-Only `POST /api/v1/telemetry` has a controller today; the other two edge routes are already claimed by the edge chain so their future endpoints are key-protected from the start. A missing, unknown, revoked or malformed key answers `401`. The key identifies the device and its equipment, so telemetry is stored under the identifiers the key is paired with. `equipment_id` / `device_id` in the body are optional and, when sent, must match (`403` otherwise). There is no device authentication endpoint.
+The edge endpoints are `POST /api/v1/telemetry`, `POST /api/v1/telemetry/events` and `GET /api/v1/devices/me/config`. A missing, unknown, revoked or malformed key answers `401`. The key identifies the device and its equipment, so telemetry is stored under the identifiers the key is paired with. `equipment_id` / `device_id` in the body are optional and, when sent, must match (`403` otherwise). There is no device authentication endpoint.
 
 **Device lifecycle** (`/api/v1/devices`, owner JWT):
 
@@ -182,6 +185,37 @@ Any of the following is rejected with `400` "Invalid reading payload" and nothin
 - `MAINTENANCE` → `ACTIVE` / `REPAIR` / `DEACTIVATED`
 - `REPAIR` → `ACTIVE` / `DEACTIVATED`
 - `DEACTIVATED` → `ACTIVE`
+
+## Edge configuration, events and grants
+
+**Configuration version.** Every equipment has a `config_version` (returned in `EquipmentResponse`), starting at `1`. It goes up by one, atomically, whenever anything the gateway enforces changes:
+
+- the threshold (`PUT /api/v1/assets/equipments/{id}/threshold`, whose response already carries the new version);
+- the unit's alert policy;
+- an edge grant of one of its service requests being issued or revoked.
+
+**Configuration poll** (`GET /api/v1/devices/me/config`, `X-API-Key`): returns `config_version`, `min_celsius`, `max_celsius`, `sustained_excursion_minutes`, `hysteresis_margin_celsius`, `missed_sync_windows_for_offline` and `grants` (`sha256`, `technician_id`, `service_request_id`, `expires_at`) for the unit the key is paired with. The `ETag` header is `"<config_version>"`; sending it back in `If-None-Match` answers `304` with an empty body while nothing changed. `404` when the paired unit no longer exists.
+
+**Edge grants** (`it_grt_` + 64 hex characters; only the SHA-256 digest is stored):
+
+| Event | Effect |
+|---|---|
+| Technician accepts (`PUT /api/v1/service-requests/{id}/accept`) | A grant is issued; the response carries `edge_grant.token`, shown only there |
+| Owner reassigns, owner cancels, technician completes the intervention | The request's grants are revoked |
+| Technician regenerates (`POST /api/v1/service-requests/{id}/edge-grant`) | Previous grant revoked, a new one issued and returned once. Assigned technician only (`403` otherwise), request `ACCEPTED` or `IN_PROGRESS` (`409` otherwise) |
+
+Grants expire after `EDGE_GRANT_TTL_HOURS`. Every issuance and revocation moves the unit's `config_version`, so the gateway learns about it on its next poll.
+
+**Edge events** (`POST /api/v1/telemetry/events`, `X-API-Key`), idempotent by `event_uid`:
+
+| `type` | Result | Status |
+|---|---|---|
+| `THERMAL_EXCURSION_DETECTED` (requires `temperature_celsius`) | Opens a `CRITICAL` alert dated at `occurred_at`; `reading_uid`, when sent and stored for this unit, becomes the triggering reading | `201` `ALERT_OPENED` |
+| `THERMAL_EXCURSION_DETECTED` while an alert is `OPEN` or `ACKNOWLEDGED` | Nothing opened | `200` `ALERT_ALREADY_ACTIVE` |
+| `THERMAL_EXCURSION_NORMALIZED` (optional `peak_temperature_celsius`) | Resolves the active alert, recording peak and total duration | `200` `ALERT_RESOLVED` |
+| `THERMAL_EXCURSION_NORMALIZED` with no active alert | Nothing changes | `200` `NO_ACTIVE_ALERT` |
+
+A resent `event_uid` answers `200` with the stored outcome; one already used by another device answers `409`. Reading batches no longer open alerts. They only resolve the active one as a fallback for a lost normalization event, and only once every batch of the last `sustained_excursion_minutes` (at least one per minute, all recorded after the excursion began) lies back within range by `hysteresis_margin_celsius` on the breached side.
 
 ## Run locally with Docker
 
