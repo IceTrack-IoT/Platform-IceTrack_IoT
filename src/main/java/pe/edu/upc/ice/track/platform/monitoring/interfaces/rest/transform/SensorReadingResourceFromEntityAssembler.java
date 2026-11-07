@@ -25,6 +25,6 @@ public final class SensorReadingResourceFromEntityAssembler {
         reading.getRawAvgTemperature().celsius(),
         reading.getHumidity().percentage(), reading.getSampleCount(),
         environment.lightLevelMax(), environment.doorOpenSeconds(), environment.presenceDetected(),
-        reading.getRecordedAt(), reading.getAppliedConfigVersion());
+        reading.getRecordedAt(), reading.getAppliedConfigVersion(), reading.isUnderMaintenance());
   }
 }

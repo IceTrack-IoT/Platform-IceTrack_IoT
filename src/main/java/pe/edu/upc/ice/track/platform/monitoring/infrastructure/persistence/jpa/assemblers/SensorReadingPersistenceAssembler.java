@@ -37,6 +37,7 @@ public final class SensorReadingPersistenceAssembler {
     entity.setRecordedAt(reading.getRecordedAt());
     entity.setReceivedAt(reading.getReceivedAt());
     entity.setAppliedConfigVersion(reading.getAppliedConfigVersion());
+    entity.setUnderMaintenance(reading.isUnderMaintenance());
     return entity;
   }
 
@@ -47,7 +48,7 @@ public final class SensorReadingPersistenceAssembler {
         entity.getRawMinTemperature(), entity.getRawMaxTemperature(), entity.getRawAvgTemperature(),
         entity.getHumidity(), entity.getSampleCount(),
         new EnvironmentObservation(entity.getLightLevelMax(), entity.getDoorOpenSeconds(), entity.getPresenceDetected()),
-        entity.getRecordedAt(), entity.getReceivedAt(), entity.getAppliedConfigVersion());
+        entity.getRecordedAt(), entity.getReceivedAt(), entity.getAppliedConfigVersion(), entity.isUnderMaintenance());
     reading.assignId(entity.getId());
     return reading;
   }

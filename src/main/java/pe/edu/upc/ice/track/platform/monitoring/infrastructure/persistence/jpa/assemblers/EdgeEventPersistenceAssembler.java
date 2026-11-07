@@ -21,6 +21,7 @@ public final class EdgeEventPersistenceAssembler {
     entity.setPeakTemperatureCelsius(event.getPeakTemperatureCelsius());
     entity.setResult(event.getResult());
     entity.setAlertId(event.getAlertId());
+    entity.setMaintenanceWindowId(event.getMaintenanceWindowId());
     return entity;
   }
 
@@ -35,6 +36,7 @@ public final class EdgeEventPersistenceAssembler {
         entity.getTemperatureCelsius(),
         entity.getPeakTemperatureCelsius(),
         entity.getResult(),
-        entity.getAlertId());
+        entity.getAlertId(),
+        entity.getMaintenanceWindowId());
   }
 }

@@ -1,4 +1,4 @@
-package pe.edu.upc.ice.track.platform.monitoring.interfaces;
+package pe.edu.upc.ice.track.platform.monitoring.interfaces.rest;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;

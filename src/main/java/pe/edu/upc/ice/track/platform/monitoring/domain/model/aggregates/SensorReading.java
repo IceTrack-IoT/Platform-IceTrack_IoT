@@ -76,6 +76,12 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
   private final Long appliedConfigVersion;
 
   /**
+   * Whether a maintenance window covered {@code recordedAt}. Such a reading is stored and shown like
+   * any other, but it never changes an alert: the unit was being worked on.
+   */
+  private final boolean underMaintenance;
+
+  /**
    * Reconstitutes a stored reading. Raw temperatures, the applied configuration version and every
    * environment value may be {@code null} on rows stored before they were tracked.
    */
@@ -83,7 +89,8 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
                        Double minTemperature, Double maxTemperature, Double avgTemperature,
                        Double rawMinTemperature, Double rawMaxTemperature, Double rawAvgTemperature,
                        Double humidity, Integer sampleCount, EnvironmentObservation environment,
-                       LocalDateTime recordedAt, LocalDateTime receivedAt, Long appliedConfigVersion) {
+                       LocalDateTime recordedAt, LocalDateTime receivedAt, Long appliedConfigVersion,
+                       boolean underMaintenance) {
     this.readingUid = Objects.requireNonNull(readingUid, "readingUid must not be null");
     this.equipmentId = Objects.requireNonNull(equipmentId, "equipmentId must not be null");
     this.deviceId = Objects.requireNonNull(deviceId, "deviceId must not be null");
@@ -99,14 +106,16 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
     this.recordedAt = Objects.requireNonNull(recordedAt, "recordedAt must not be null");
     this.receivedAt = receivedAt == null ? LocalDateTime.now() : receivedAt;
     this.appliedConfigVersion = appliedConfigVersion;
+    this.underMaintenance = underMaintenance;
   }
 
   /**
    * Creates a newly received batch, enforcing the physical bounds of the sensor and the
    * consistency of its calibration.
    *
-   * @param environment what the light and PIR sensors observed; {@code null} when neither
-   *                    reported
+   * @param environment      what the light and PIR sensors observed; {@code null} when neither
+   *                         reported
+   * @param underMaintenance whether a maintenance window of the unit covers {@code recordedAt}
    * @throws NullPointerException     when a required value is missing
    * @throws IllegalArgumentException when a rule listed on this class is broken
    */
@@ -114,7 +123,7 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
                                      Double minTemperature, Double maxTemperature, Double avgTemperature,
                                      Double rawMinTemperature, Double rawMaxTemperature, Double rawAvgTemperature,
                                      Double humidity, Integer sampleCount, EnvironmentObservation environment,
-                                     LocalDateTime recordedAt, Long appliedConfigVersion) {
+                                     LocalDateTime recordedAt, Long appliedConfigVersion, boolean underMaintenance) {
     requireRawInSensorRange("rawMinTemperature", rawMinTemperature);
     requireRawInSensorRange("rawMaxTemperature", rawMaxTemperature);
     requireRawInSensorRange("rawAvgTemperature", rawAvgTemperature);
@@ -141,7 +150,7 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
     return new SensorReading(readingUid, equipmentId, deviceId,
         minTemperature, maxTemperature, avgTemperature,
         rawMinTemperature, rawMaxTemperature, rawAvgTemperature,
-        humidity, sampleCount, environment, recordedAt, LocalDateTime.now(), appliedConfigVersion);
+        humidity, sampleCount, environment, recordedAt, LocalDateTime.now(), appliedConfigVersion, underMaintenance);
   }
 
   public void assignId(Long id) {

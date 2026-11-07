@@ -27,14 +27,16 @@ import java.time.Duration;
  *
  * <p>Edge events are what open thermal excursion alerts: the gateway evaluates every reading
  * locally and only reports an excursion once it has lasted the policy's sustained duration, so the
- * cloud no longer opens alerts from single reading batches.</p>
+ * cloud no longer opens alerts from single reading batches. They also open, promote and close the
+ * unit's maintenance windows, through {@link MaintenanceWindowEventProcessor}; a detection dated
+ * inside a window opens no alert.</p>
  *
  * <p>Idempotency works like reading ingestion. An event whose {@code eventUid} is already recorded
  * is answered as a duplicate and nothing is processed. Two concurrent deliveries of the same event
  * can both pass that check; the unique index on {@code event_uid} rejects the second insert, its
- * transaction - alert change included - is rolled back, and it is answered as a duplicate too. That
- * is why the work runs in a {@link TransactionTemplate}: the violation must be caught after the
- * rollback, outside the transaction.</p>
+ * transaction - alert or window change included - is rolled back, and it is answered as a duplicate
+ * too. That is why the work runs in a {@link TransactionTemplate}: the violation must be caught after
+ * the rollback, outside the transaction.</p>
  */
 @Service
 @Slf4j
@@ -44,6 +46,7 @@ public class EdgeEventCommandServiceImpl implements EdgeEventCommandService {
   private final AlertRepository alertRepository;
   private final AlertPolicyRepository alertPolicyRepository;
   private final SensorReadingRepository sensorReadingRepository;
+  private final MaintenanceWindowEventProcessor maintenanceWindowEventProcessor;
   private final TransactionTemplate transactionTemplate;
 
   public EdgeEventCommandServiceImpl(
@@ -51,11 +54,13 @@ public class EdgeEventCommandServiceImpl implements EdgeEventCommandService {
       AlertRepository alertRepository,
       AlertPolicyRepository alertPolicyRepository,
       SensorReadingRepository sensorReadingRepository,
+      MaintenanceWindowEventProcessor maintenanceWindowEventProcessor,
       PlatformTransactionManager transactionManager) {
     this.edgeEventRepository = edgeEventRepository;
     this.alertRepository = alertRepository;
     this.alertPolicyRepository = alertPolicyRepository;
     this.sensorReadingRepository = sensorReadingRepository;
+    this.maintenanceWindowEventProcessor = maintenanceWindowEventProcessor;
     this.transactionTemplate = new TransactionTemplate(transactionManager);
   }
 
@@ -80,13 +85,48 @@ public class EdgeEventCommandServiceImpl implements EdgeEventCommandService {
   }
 
   /**
-   * Applies the event to the unit's active excursion alert and records it, in the caller's
-   * transaction.
+   * Applies the event to the unit's active excursion alert or maintenance window and records it, in
+   * the caller's transaction.
    *
    * @param command the event
    * @return the stored record of the event
    */
   private EdgeEvent process(RecordEdgeEventCommand command) {
+    return switch (command.type()) {
+      case THERMAL_EXCURSION_DETECTED, THERMAL_EXCURSION_NORMALIZED -> processExcursion(command);
+      case MAINTENANCE_WINDOW_STARTED -> storeWindowEvent(command, maintenanceWindowEventProcessor.start(command));
+      case MAINTENANCE_WINDOW_ENDED -> storeWindowEvent(command, maintenanceWindowEventProcessor.end(command));
+    };
+  }
+
+  /**
+   * Records a maintenance window event with what it did to the unit's window.
+   *
+   * @param command the event
+   * @param outcome what the window processing did
+   * @return the stored record of the event
+   */
+  private EdgeEvent storeWindowEvent(RecordEdgeEventCommand command, MaintenanceWindowEventProcessor.Outcome outcome) {
+    return store(command, outcome.result(), null, outcome.maintenanceWindowId());
+  }
+
+  /**
+   * Applies an excursion event to the unit's active excursion alert.
+   *
+   * <p>A detection dated inside a maintenance window - even one delivered late from the gateway's
+   * offline buffer - opens nothing: the unit was being worked on, so the excursion is expected. The
+   * active alert, if any, is left exactly as it was.</p>
+   *
+   * @param command the excursion event
+   * @return the stored record of the event
+   */
+  private EdgeEvent processExcursion(RecordEdgeEventCommand command) {
+    if (command.type() == EdgeEventType.THERMAL_EXCURSION_DETECTED) {
+      var coveringWindow = maintenanceWindowEventProcessor.findCovering(command.equipmentId(), command.occurredAt());
+      if (coveringWindow.isPresent()) {
+        return store(command, EdgeEventResult.SUPPRESSED_BY_MAINTENANCE, null, coveringWindow.get().getId());
+      }
+    }
     var activeAlert = alertRepository.findOpenAlertByEquipmentIdAndType(
         command.equipmentId(), AlertType.TEMPERATURE_EXCURSION);
     EdgeEventResult result;
@@ -109,11 +149,26 @@ public class EdgeEventCommandServiceImpl implements EdgeEventCommandService {
       result = EdgeEventResult.NO_ACTIVE_ALERT;
       alertId = null;
     }
+    return store(command, result, alertId, null);
+  }
+
+  /**
+   * Stores the record of a processed event.
+   *
+   * @param command             the event
+   * @param result              what processing did
+   * @param alertId             the alert concerned, or {@code null}
+   * @param maintenanceWindowId the maintenance window concerned, or {@code null}
+   * @return the stored record
+   */
+  private EdgeEvent store(RecordEdgeEventCommand command, EdgeEventResult result, Long alertId,
+                          Long maintenanceWindowId) {
     var stored = edgeEventRepository.save(new EdgeEvent(
         null, command.eventUid(), command.deviceId(), command.equipmentId(), command.type(), command.occurredAt(),
-        command.temperatureCelsius(), command.peakTemperatureCelsius(), result, alertId));
-    log.info("Edge event {} ({}) from device {} on equipment {}: {} alert {}",
-        stored.getEventUid(), stored.getType(), stored.getDeviceId(), stored.getEquipmentId(), result, alertId);
+        command.temperatureCelsius(), command.peakTemperatureCelsius(), result, alertId, maintenanceWindowId));
+    log.info("Edge event {} ({}) from device {} on equipment {}: {} (alert {}, maintenance window {})",
+        stored.getEventUid(), stored.getType(), stored.getDeviceId(), stored.getEquipmentId(), result, alertId,
+        maintenanceWindowId);
     return stored;
   }
 

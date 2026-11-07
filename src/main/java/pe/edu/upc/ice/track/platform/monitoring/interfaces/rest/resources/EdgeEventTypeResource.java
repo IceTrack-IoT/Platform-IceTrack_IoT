@@ -10,7 +10,9 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EdgeEv
     example = "THERMAL_EXCURSION_DETECTED")
 public enum EdgeEventTypeResource {
   THERMAL_EXCURSION_DETECTED,
-  THERMAL_EXCURSION_NORMALIZED;
+  THERMAL_EXCURSION_NORMALIZED,
+  MAINTENANCE_WINDOW_STARTED,
+  MAINTENANCE_WINDOW_ENDED;
 
   /**
    * @return the matching {@link EdgeEventType}

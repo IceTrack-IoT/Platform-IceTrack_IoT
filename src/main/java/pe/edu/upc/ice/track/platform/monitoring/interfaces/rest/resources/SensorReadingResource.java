@@ -14,7 +14,8 @@ import java.time.LocalDateTime;
         + "\"device_id\": 7, \"min_temperature\": 3.3, \"max_temperature\": 4.6, \"avg_temperature\": 3.9, "
         + "\"raw_min_temperature\": 3.8, \"raw_max_temperature\": 5.1, \"raw_avg_temperature\": 4.4, "
         + "\"humidity\": 62.0, \"sample_count\": 6, \"light_level_max\": 41.0, \"door_open_seconds\": 12, "
-        + "\"presence_detected\": true, \"recorded_at\": \"2026-09-29T08:30:00\", \"applied_config_version\": 3}"
+        + "\"presence_detected\": true, \"recorded_at\": \"2026-09-29T08:30:00\", \"applied_config_version\": 3, "
+        + "\"under_maintenance\": false}"
 )
 public record SensorReadingResource(
     @Schema(description = "Reading unique identifier", example = "501")
@@ -71,6 +72,10 @@ public record SensorReadingResource(
     LocalDateTime recordedAt,
 
     @Schema(description = "Edge configuration version the gateway was running", example = "3", nullable = true)
-    Long appliedConfigVersion
+    Long appliedConfigVersion,
+
+    @Schema(description = "Whether a maintenance window covered recorded_at; such readings never change an alert",
+        example = "false")
+    boolean underMaintenance
 ) {
 }

@@ -30,7 +30,12 @@ public final class EdgeEventAssembler {
         resource.occurredAt(),
         resource.temperatureCelsius(),
         resource.peakTemperatureCelsius(),
-        resource.readingUid());
+        resource.readingUid(),
+        resource.origin() == null ? null : resource.origin().toDomain(),
+        resource.technicianId(),
+        resource.serviceRequestId(),
+        resource.closureReason() == null ? null : resource.closureReason().toDomain(),
+        resource.startEventUid());
   }
 
   /**
@@ -39,6 +44,7 @@ public final class EdgeEventAssembler {
    */
   public static EdgeEventResource toResourceFromEntity(EdgeEvent event) {
     return new EdgeEventResource(
-        event.getEventUid(), event.getType().name(), event.getOccurredAt(), event.getResult().name(), event.getAlertId());
+        event.getEventUid(), event.getType().name(), event.getOccurredAt(), event.getResult().name(),
+        event.getAlertId(), event.getMaintenanceWindowId());
   }
 }

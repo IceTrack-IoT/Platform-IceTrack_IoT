@@ -4,12 +4,13 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * Resource received from an edge gateway reporting a thermal excursion event.
+ * Resource received from an edge gateway reporting a thermal excursion or maintenance window event.
  *
  * <p>The device and the unit come from the API key; {@code equipment_id} and {@code device_id} are
  * optional and, when sent, must match it.</p>
@@ -32,8 +33,8 @@ public record RecordEdgeEventResource(
     EdgeEventTypeResource type,
 
     @NotNull(message = "{validation.not-null}")
-    @Schema(description = "When the gateway observed the event, by its clock", example = "2026-11-07T08:32:00",
-        requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "When the gateway observed the event, by its clock. For maintenance events, when the "
+        + "window started or ended", example = "2026-11-07T08:32:00", requiredMode = Schema.RequiredMode.REQUIRED)
     LocalDateTime occurredAt,
 
     @DecimalMin(value = "-50.0", message = "{validation.edge-event.temperature}")
@@ -56,6 +57,29 @@ public record RecordEdgeEventResource(
     Long equipmentId,
 
     @Schema(description = "Optional; must match the device the API key belongs to", example = "7", nullable = true)
-    Long deviceId
+    Long deviceId,
+
+    @Schema(description = "How the maintenance window was started; required for MAINTENANCE_WINDOW_STARTED",
+        example = "APP", nullable = true)
+    MaintenanceOriginResource origin,
+
+    @Positive(message = "{validation.positive}")
+    @Schema(description = "Technician the maintenance window belongs to, taken from the edge grant; optional",
+        example = "7", nullable = true)
+    Long technicianId,
+
+    @Positive(message = "{validation.positive}")
+    @Schema(description = "Service request the maintenance window belongs to, taken from the edge grant; optional",
+        example = "42", nullable = true)
+    Long serviceRequestId,
+
+    @Schema(description = "Why the maintenance window ended; required for MAINTENANCE_WINDOW_ENDED",
+        example = "MANUAL_APP", nullable = true)
+    ClosureReasonResource closureReason,
+
+    @Schema(description = "event_uid of the MAINTENANCE_WINDOW_STARTED event that opened the window being ended; "
+        + "optional with MAINTENANCE_WINDOW_ENDED, the unit's active window is ended without it",
+        example = "0b6d1d2e-3c4f-4a5b-8c7d-9e0f1a2b3c4d", nullable = true)
+    UUID startEventUid
 ) {
 }

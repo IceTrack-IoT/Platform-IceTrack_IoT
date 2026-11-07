@@ -19,8 +19,8 @@ import java.util.UUID;
  * JPA persistence entity for a processed {@code EdgeEvent}, mapped to the {@code edge_events} table.
  *
  * <p>The unique index on {@code event_uid} is what settles two concurrent deliveries of the same
- * event: the second insert is rejected and its transaction, alert change included, rolls back.
- * {@code created_at} is when the cloud received the event.</p>
+ * event: the second insert is rejected and its transaction, alert or maintenance window change
+ * included, rolls back. {@code created_at} is when the cloud received the event.</p>
  */
 @Getter
 @Setter
@@ -60,6 +60,9 @@ public class EdgeEventPersistenceEntity extends AuditableAbstractPersistenceEnti
 
   @Column(name = "alert_id")
   private Long alertId;
+
+  @Column(name = "maintenance_window_id")
+  private Long maintenanceWindowId;
 
   public EdgeEventPersistenceEntity() {
   }

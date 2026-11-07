@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -111,4 +112,12 @@ public class SensorReadingPersistenceEntity {
    */
   @Column(name = "applied_config_version")
   private Long appliedConfigVersion;
+
+  /**
+   * Whether a maintenance window covered {@code recordedAt}. The column default lets the schema
+   * update add it to a table that already holds rows, which were all taken outside any window.
+   */
+  @ColumnDefault("false")
+  @Column(name = "under_maintenance", nullable = false)
+  private boolean underMaintenance;
 }

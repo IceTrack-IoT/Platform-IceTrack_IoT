@@ -17,6 +17,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Enviro
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertPolicyRepository;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertRepository;
+import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.MaintenanceWindowRepository;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadingRepository;
 
 import java.time.Duration;
@@ -26,7 +27,8 @@ import java.time.Duration;
  *
  * <p>A batch never opens an alert: thermal excursions are opened by the edge gateway's events on
  * {@code POST /api/v1/telemetry/events}. A batch may only close the active excursion alert, as a
- * hysteresis-aware fallback for a normalization event that never arrives.</p>
+ * hysteresis-aware fallback for a normalization event that never arrives. A batch taken while a
+ * maintenance window covered the unit is flagged {@code underMaintenance} and changes no alert.</p>
  *
  * <p>This is also where threshold evaluation lives: neither IAM nor Profiles introduce a
  * {@code domain.services} package in this codebase for cross-aggregate coordination, so, by the
@@ -55,6 +57,7 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
   private final AlertRepository alertRepository;
   private final AlertPolicyRepository alertPolicyRepository;
   private final ExternalAssetManagementService externalAssetManagementService;
+  private final MaintenanceWindowRepository maintenanceWindowRepository;
   private final TransactionTemplate transactionTemplate;
 
   public SensorReadingCommandServiceImpl(
@@ -62,11 +65,13 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
       AlertRepository alertRepository,
       AlertPolicyRepository alertPolicyRepository,
       ExternalAssetManagementService externalAssetManagementService,
+      MaintenanceWindowRepository maintenanceWindowRepository,
       PlatformTransactionManager transactionManager) {
     this.sensorReadingRepository = sensorReadingRepository;
     this.alertRepository = alertRepository;
     this.alertPolicyRepository = alertPolicyRepository;
     this.externalAssetManagementService = externalAssetManagementService;
+    this.maintenanceWindowRepository = maintenanceWindowRepository;
     this.transactionTemplate = new TransactionTemplate(transactionManager);
   }
 
@@ -79,6 +84,12 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
       return new ReadingIngestionOutcome.Duplicate(existing.get());
     }
 
+    // Judged by when the batch was taken, so a batch delivered late from the gateway's offline buffer
+    // is still recognized as taken during maintenance.
+    var underMaintenance = command.equipmentId() != null && command.recordedAt() != null
+        && maintenanceWindowRepository.findCovering(
+            command.equipmentId(), EdgeTimestamps.toInstant(command.recordedAt())).isPresent();
+
     // Validated before any write: a batch outside the sensor's physical range is never stored.
     var reading = SensorReading.record(
         command.readingUid(), new EquipmentId(command.equipmentId()), command.deviceId(),
@@ -86,7 +97,7 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
         command.rawMinTemperature(), command.rawMaxTemperature(), command.rawAvgTemperature(),
         command.humidity(), command.sampleCount(),
         new EnvironmentObservation(command.lightLevelMax(), command.doorOpenSeconds(), command.presenceDetected()),
-        command.recordedAt(), command.appliedConfigVersion());
+        command.recordedAt(), command.appliedConfigVersion(), underMaintenance);
 
     try {
       return transactionTemplate.execute(status -> {
@@ -116,10 +127,19 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
    * arrives. That resolution is hysteresis-aware, exactly like the gateway's: see
    * {@link #hasRecovered}.</p>
    *
+   * <p>A batch taken during a maintenance window is not evaluated at all: the unit was being worked
+   * on, so its temperatures say nothing about the excursion, and the active alert stays as it
+   * was.</p>
+   *
    * @param reading the reading that was just stored
    */
   private void evaluateThreshold(SensorReading reading) {
     var equipmentId = reading.getEquipmentId().equipmentId();
+    if (reading.isUnderMaintenance()) {
+      log.debug("Reading {} of equipment {} was taken during maintenance; not evaluated",
+          reading.getReadingUid(), equipmentId);
+      return;
+    }
     var activeAlert = alertRepository.findOpenAlertByEquipmentIdAndType(equipmentId, AlertType.TEMPERATURE_EXCURSION);
     if (activeAlert.isEmpty()) {
       return;
@@ -173,8 +193,11 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
     if (excursionStart != null && !windowStart.isAfter(excursionStart)) {
       return false;
     }
+    // Batches taken during maintenance are left out: they neither prove nor disprove a recovery.
     var window = sensorReadingRepository.findByEquipmentIdAndRecordedAtBetween(
-        latest.getEquipmentId().equipmentId(), windowStart, windowEnd);
+            latest.getEquipmentId().equipmentId(), windowStart, windowEnd).stream()
+        .filter(candidate -> !candidate.isUnderMaintenance())
+        .toList();
     if (window.size() < Math.max(1, sustainedMinutes)) {
       return false;
     }
