@@ -98,4 +98,23 @@ public interface EquipmentRepository {
    *         when it was new
    */
   Equipment save(Equipment equipment);
+
+  /**
+   * Increments the edge configuration version of a unit, atomically.
+   *
+   * <p>The only way the version changes. Concurrent increments are serialized by the database, so
+   * each one yields a distinct version, and {@link #save} never writes the column back.</p>
+   *
+   * @param equipmentId the unit identifier
+   * @return the new version, or empty when the unit does not exist
+   */
+  Optional<Integer> incrementConfigVersion(Long equipmentId);
+
+  /**
+   * Reads the current edge configuration version of a unit.
+   *
+   * @param equipmentId the unit identifier
+   * @return the version, or empty when the unit does not exist
+   */
+  Optional<Integer> findConfigVersion(Long equipmentId);
 }

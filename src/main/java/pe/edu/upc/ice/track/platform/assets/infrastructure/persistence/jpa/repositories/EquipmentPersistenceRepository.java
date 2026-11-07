@@ -18,6 +18,11 @@ import java.util.Optional;
  * identifier: portable across Hibernate versions and index-friendly, since {@code sites} is probed
  * through its owner index and the equipment table is then filtered on {@code site_id}, rather than
  * being driven by a cross join whose plan depends on the optimizer.</p>
+ *
+ * <p>The edge configuration version is incremented by a Criteria API bulk statement, run through
+ * {@link JpaSpecificationExecutor#update} with the specification built by
+ * {@code EquipmentPersistenceSpecifications#incrementConfigVersion}. {@code EquipmentRepositoryImpl}
+ * flushes pending writes before it and clears the persistence context afterward.</p>
  */
 @Repository
 public interface EquipmentPersistenceRepository

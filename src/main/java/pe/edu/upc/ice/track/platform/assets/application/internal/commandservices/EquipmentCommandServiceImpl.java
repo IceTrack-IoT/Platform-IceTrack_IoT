@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.EquipmentCommandService;
 import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.BumpConfigVersionCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterEquipmentCommand;
@@ -17,6 +18,8 @@ import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentReposit
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
+
+import java.util.Optional;
 
 /**
  * Equipment Command Service Implementation.
@@ -138,15 +141,33 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
         // modified, so the domain event it registers is never raised for a rejected threshold.
         equipment.changeThreshold(new TemperatureThreshold(command.minCelsius(), command.maxCelsius()));
         var savedEquipment = equipmentRepository.save(equipment);
-        log.info("Changed threshold of equipment {} to [{}, {}]C",
-            savedEquipment.getEquipmentId(), command.minCelsius(), command.maxCelsius());
-        return Result.success(savedEquipment);
+        // The edge gateway picks the new band up on its next configuration poll, which it only
+        // downloads when the version moved.
+        var configVersion = equipmentRepository.incrementConfigVersion(savedEquipment.getEquipmentId());
+        log.info("Changed threshold of equipment {} to [{}, {}]C; edge configuration version {}",
+            savedEquipment.getEquipmentId(), command.minCelsius(), command.maxCelsius(), configVersion.orElse(null));
+        return Result.success(equipmentRepository.findById(savedEquipment.getEquipmentId()).orElse(savedEquipment));
       } catch (IllegalArgumentException e) {
         return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
       } catch (Exception e) {
         return Result.failure(ApplicationError.unexpected("Equipment threshold update", e.getMessage()));
       }
     });
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public Optional<Integer> handle(BumpConfigVersionCommand command) {
+    var configVersion = equipmentRepository.incrementConfigVersion(command.equipmentId());
+    if (configVersion.isPresent()) {
+      log.info("Edge configuration of equipment {} is now version {} ({})",
+          command.equipmentId(), configVersion.get(), command.reason());
+    } else {
+      log.warn("Edge configuration of equipment {} not bumped ({}): no such equipment",
+          command.equipmentId(), command.reason());
+    }
+    return configVersion;
   }
 
   // inherited javadoc

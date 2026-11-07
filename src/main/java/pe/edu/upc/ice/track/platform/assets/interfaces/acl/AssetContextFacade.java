@@ -90,6 +90,22 @@ public class AssetContextFacade {
   }
 
   /**
+   * Returns the version of the configuration a unit's edge gateway must enforce.
+   *
+   * <p>Device Management uses it as the ETag of the gateway's configuration poll. It is read
+   * straight from the table rather than from a cached aggregate, so it always reflects the latest
+   * committed increment.</p>
+   *
+   * @param equipmentId identifier of the equipment
+   * @return the configuration version, or empty when the identifier is {@code null} or the unit
+   *         does not exist
+   */
+  @Transactional(readOnly = true)
+  public Optional<Integer> getEquipmentConfigVersion(Long equipmentId) {
+    return equipmentRepository.findConfigVersion(equipmentId);
+  }
+
+  /**
    * Returns the identifier of the owner a unit belongs to, resolved through the unit's site.
    *
    * <p>Notifications calls this to decide who must be told about an alert raised for a unit.</p>

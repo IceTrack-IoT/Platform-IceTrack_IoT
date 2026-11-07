@@ -13,7 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(
     name = "EquipmentResponse",
     description = "Equipment information response",
-    example = "{\"id\": 10, \"site_id\": 1, \"uid\": \"ESP32-0001\", \"name\": \"Refrigerador 1\", \"equipment_type\": \"REFRIGERATOR\", \"status\": \"ACTIVE\", \"online\": true, \"min_celsius\": 2.0, \"max_celsius\": 8.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30\", \"last_known_temperature\": 4.5}")
+    example = "{\"id\": 10, \"site_id\": 1, \"uid\": \"ESP32-0001\", \"name\": \"Refrigerador 1\", \"equipment_type\": \"REFRIGERATOR\", \"status\": \"ACTIVE\", \"online\": true, \"min_celsius\": 2.0, \"max_celsius\": 8.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30\", \"last_known_temperature\": 4.5, \"config_version\": 3}")
 public record EquipmentResource(
     @Schema(description = "Equipment unique identifier", example = "10")
     Long id,
@@ -55,6 +55,12 @@ public record EquipmentResource(
         description = "Last temperature known for this unit, in Celsius; null when the unit has not reported yet",
         example = "4.5",
         nullable = true)
-    Double lastKnownTemperature
+    Double lastKnownTemperature,
+
+    @Schema(
+        description = "Version of the configuration the unit's edge gateway enforces; incremented whenever "
+            + "the threshold, the alert policy or the technician grants of the unit change",
+        example = "3")
+    Integer configVersion
 ) {
 }

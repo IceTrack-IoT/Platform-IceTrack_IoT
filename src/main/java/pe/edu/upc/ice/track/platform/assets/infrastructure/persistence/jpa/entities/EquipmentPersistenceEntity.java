@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.Check;
+import org.hibernate.annotations.ColumnDefault;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
@@ -112,6 +113,19 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
    */
   @Column(name = "last_known_temperature")
   private Double lastKnownTemperature;
+
+  /**
+   * Version of the edge configuration of the unit, the ETag of the gateway's configuration poll.
+   *
+   * <p>Written on insert only ({@code updatable = false}): saving the aggregate never rewrites it,
+   * so a save based on a copy read before a concurrent increment cannot roll the version back.
+   * Every increment is a single {@code UPDATE ... SET config_version = config_version + 1}
+   * issued by the repository adapter. The column default lets the schema update add it to a table
+   * that already holds rows.</p>
+   */
+  @ColumnDefault("1")
+  @Column(name = "config_version", nullable = false, updatable = false)
+  private Integer configVersion;
 
   public EquipmentPersistenceEntity() {
   }

@@ -2,17 +2,20 @@ package pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.spec
 
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.domain.UpdateSpecification;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entities.EquipmentPersistenceEntity;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entities.SitePersistenceEntity;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Locale;
 import java.util.Objects;
 
 /**
- * Criteria API specifications over {@link EquipmentPersistenceEntity}.
+ * Criteria API specifications over {@link EquipmentPersistenceEntity}: the owner listing query and
+ * the bulk update that increments the edge configuration version.
  *
  * <p>The listing filters are optional and combine freely, so the {@code WHERE} clause is assembled
  * from the filters actually supplied instead of being written once with a
@@ -36,6 +39,9 @@ public final class EquipmentPersistenceSpecifications {
   private static final String EQUIPMENT_UID = "equipmentUid";
   private static final String SITE_IDENTIFIER = "id";
   private static final String SITE_OWNER_PROFILES_ID = "ownerProfilesId";
+  private static final String IDENTIFIER = "id";
+  private static final String CONFIG_VERSION = "configVersion";
+  private static final String UPDATED_AT = "updatedAt";
 
   private EquipmentPersistenceSpecifications() {
   }
@@ -87,6 +93,28 @@ public final class EquipmentPersistenceSpecifications {
             criteriaBuilder.like(criteriaBuilder.lower(root.<String>get(EQUIPMENT_UID)), searchPattern, LIKE_ESCAPE)));
       }
       return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
+    };
+  }
+
+  /**
+   * Increments the edge configuration version of one unit.
+   *
+   * <p>A single {@code UPDATE ... SET config_version = config_version + 1} rather than a
+   * load-modify-save: the row lock it takes serializes concurrent increments, so each one yields a
+   * distinct version. The auditing listener does not run for a bulk statement, which is why it also
+   * sets {@code updatedAt} itself.</p>
+   *
+   * @param equipmentId the unit identifier; required
+   * @param updatedAt   the modification timestamp to record; required
+   * @return the update, affecting one row at most
+   */
+  public static UpdateSpecification<EquipmentPersistenceEntity> incrementConfigVersion(Long equipmentId, Date updatedAt) {
+    Objects.requireNonNull(equipmentId, "equipmentId must not be null");
+    Objects.requireNonNull(updatedAt, "updatedAt must not be null");
+    return (root, update, criteriaBuilder) -> {
+      update.set(root.<Integer>get(CONFIG_VERSION), criteriaBuilder.sum(root.<Integer>get(CONFIG_VERSION), 1));
+      update.set(root.<Date>get(UPDATED_AT), updatedAt);
+      return criteriaBuilder.equal(root.get(IDENTIFIER), equipmentId);
     };
   }
 

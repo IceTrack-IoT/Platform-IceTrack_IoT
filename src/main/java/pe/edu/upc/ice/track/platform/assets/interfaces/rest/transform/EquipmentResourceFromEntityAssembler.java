@@ -35,7 +35,8 @@ public class EquipmentResourceFromEntityAssembler {
         threshold.maxCelsius(),
         entity.getReminderIntervalDays(),
         toIsoString(entity.getLastReadingAt()),
-        entity.getLastKnownTemperature());
+        entity.getLastKnownTemperature(),
+        entity.getConfigVersion());
   }
 
   /**

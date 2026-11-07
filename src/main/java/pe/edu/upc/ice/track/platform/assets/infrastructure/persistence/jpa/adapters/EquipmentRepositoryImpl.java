@@ -1,18 +1,22 @@
 package pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.adapters;
 
+import jakarta.persistence.EntityManager;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentPage;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.assemblers.EquipmentPersistenceAssembler;
+import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entities.EquipmentPersistenceEntity;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.repositories.EquipmentPersistenceRepository;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.specifications.EquipmentPersistenceSpecifications;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,17 +38,23 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
 
   private final EquipmentPersistenceRepository equipmentPersistenceRepository;
   private final ApplicationEventPublisher eventPublisher;
+  private final EntityManager entityManager;
 
   /**
    * Constructor
    *
    * @param equipmentPersistenceRepository the Spring Data repository
    * @param eventPublisher                 the Spring event publisher used to dispatch domain events
+   * @param entityManager                  the persistence context, flushed and cleared around the
+   *                                       configuration version increment
    */
   public EquipmentRepositoryImpl(
-      EquipmentPersistenceRepository equipmentPersistenceRepository, ApplicationEventPublisher eventPublisher) {
+      EquipmentPersistenceRepository equipmentPersistenceRepository,
+      ApplicationEventPublisher eventPublisher,
+      EntityManager entityManager) {
     this.equipmentPersistenceRepository = equipmentPersistenceRepository;
     this.eventPublisher = eventPublisher;
+    this.entityManager = entityManager;
   }
 
   // inherited javadoc
@@ -151,6 +161,43 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
       publishPendingEvents(savedEquipment);
     }
     return savedEquipment;
+  }
+
+  /**
+   * Increments the edge configuration version with a single Criteria API bulk statement, built by
+   * {@link EquipmentPersistenceSpecifications#incrementConfigVersion}.
+   *
+   * <p>Pending writes are flushed first, so the statement runs after them, and the persistence
+   * context is cleared afterward, so a unit read again in the same transaction carries the new
+   * version instead of the copy cached before the statement.</p>
+   *
+   * @param equipmentId the unit identifier
+   * @return the new version, or empty when the unit does not exist
+   */
+  @Override
+  @Transactional
+  public Optional<Integer> incrementConfigVersion(Long equipmentId) {
+    if (equipmentId == null) {
+      return Optional.empty();
+    }
+    var increment = EquipmentPersistenceSpecifications.incrementConfigVersion(equipmentId, new Date());
+    entityManager.flush();
+    long updated;
+    try {
+      updated = equipmentPersistenceRepository.update(increment);
+    } finally {
+      entityManager.clear();
+    }
+    return updated == 0 ? Optional.empty() : findConfigVersion(equipmentId);
+  }
+
+  // inherited javadoc
+  @Override
+  public Optional<Integer> findConfigVersion(Long equipmentId) {
+    if (equipmentId == null) {
+      return Optional.empty();
+    }
+    return equipmentPersistenceRepository.findById(equipmentId).map(EquipmentPersistenceEntity::getConfigVersion);
   }
 
   /**

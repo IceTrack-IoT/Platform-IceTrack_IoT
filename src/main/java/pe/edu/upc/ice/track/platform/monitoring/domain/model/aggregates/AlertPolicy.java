@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates;
 
 import lombok.Getter;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.events.AlertPolicyUpdatedEvent;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Temperature;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
@@ -69,11 +70,26 @@ public class AlertPolicy extends AbstractDomainAggregateRoot<AlertPolicy> {
     this.id = id;
   }
 
+  /**
+   * Replaces the settings of this policy.
+   *
+   * <p>For a policy bound to a unit, registers an {@link AlertPolicyUpdatedEvent}: the unit's edge
+   * gateway enforces these settings and must download them again. The platform default is not
+   * writable over REST and is bound to no unit, so it registers nothing.</p>
+   *
+   * @param sustainedExcursionMinutes   minutes an excursion must last before it is raised
+   * @param hysteresisMarginCelsius     margin the temperature must recover by before an excursion closes
+   * @param missedSyncWindowsForOffline missed synchronization windows before a device counts as offline
+   */
   public void updatePolicy(Integer sustainedExcursionMinutes, Double hysteresisMarginCelsius,
                             Integer missedSyncWindowsForOffline) {
     this.sustainedExcursionMinutes = sustainedExcursionMinutes;
     this.hysteresisMargin = new Temperature(hysteresisMarginCelsius);
     this.missedSyncWindowsForOffline = missedSyncWindowsForOffline;
+    if (!isPlatformDefault()) {
+      registerDomainEvent(new AlertPolicyUpdatedEvent(
+          equipmentId.equipmentId(), sustainedExcursionMinutes, hysteresisMarginCelsius, missedSyncWindowsForOffline));
+    }
   }
 
   public void deactivate() {

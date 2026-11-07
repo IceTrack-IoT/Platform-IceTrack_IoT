@@ -1,12 +1,15 @@
 package pe.edu.upc.ice.track.platform.assets.application.commandservices;
 
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.BumpConfigVersionCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateEquipmentCommand;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
+
+import java.util.Optional;
 
 /**
  * Application service handling write operations on {@link Equipment}.
@@ -43,14 +46,23 @@ public interface EquipmentCommandService {
    *
    * <p>A band whose minimum is not strictly below its maximum is rejected before the aggregate
    * is touched, so no {@code TemperatureThresholdUpdatedEvent} is registered for a threshold
-   * that was never applied.</p>
+   * that was never applied. An accepted band increments the unit's edge configuration version.</p>
    *
    * @param command The {@link ChangeThresholdCommand} Command
-   * @return A {@link Result} containing the updated {@link Equipment} on success, or an
-   *         {@link ApplicationError} when the unit is missing, belongs to another owner, or the
-   *         band is inverted
+   * @return A {@link Result} containing the updated {@link Equipment}, carrying its incremented
+   *         configuration version, on success, or an {@link ApplicationError} when the unit is
+   *         missing, belongs to another owner, or the band is inverted
    */
   Result<Equipment, ApplicationError> handle(ChangeThresholdCommand command);
+
+  /**
+   * Increment the edge configuration version of a unit, because its alert policy or its
+   * technician grants changed.
+   *
+   * @param command The {@link BumpConfigVersionCommand} Command
+   * @return the new version, or empty when the unit does not exist
+   */
+  Optional<Integer> handle(BumpConfigVersionCommand command);
 
   /**
    * Move a unit to a new operational status, when the transition is part of the matrix carried

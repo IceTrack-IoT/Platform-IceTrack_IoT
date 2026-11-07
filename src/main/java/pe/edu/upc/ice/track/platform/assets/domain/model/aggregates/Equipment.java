@@ -28,11 +28,23 @@ import java.util.Objects;
  * not ingest readings: the Monitoring and Alerting context writes them when it evaluates a
  * reading, which is why they are only reachable through {@link #recordReading}.</p>
  *
+ * <p>{@code configVersion} numbers the configuration the unit's edge gateway must enforce:
+ * thresholds, alert policy and technician grants. It starts at {@value #INITIAL_CONFIG_VERSION}
+ * and only ever grows, one step per change of any of those inputs. The gateway uses it as the ETag
+ * of its configuration poll. The aggregate only reads it: every increment is a single atomic
+ * statement issued by the repository, so concurrent changes coming from different contexts can
+ * never collapse into one version.</p>
+ *
  * <p>No JPA or persistence annotation is present here - the mapping lives exclusively in
  * {@code EquipmentPersistenceEntity}.</p>
  */
 @Getter
 public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
+
+  /**
+   * Configuration version of a unit that was just registered.
+   */
+  public static final int INITIAL_CONFIG_VERSION = 1;
 
   /**
    * Maximum number of characters the unit's own identifier may hold.
@@ -61,6 +73,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   private Integer reminderIntervalDays;
   private LocalDateTime lastReadingAt;
   private Double lastKnownTemperature;
+  private final Integer configVersion;
 
   /**
    * Registers a new equipment unit at a site.
@@ -91,6 +104,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     this.reminderIntervalDays = validatedReminderIntervalDays(reminderIntervalDays);
     this.status = StatusEquipment.ACTIVE;
     this.online = false;
+    this.configVersion = INITIAL_CONFIG_VERSION;
   }
 
   /**
@@ -108,10 +122,13 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * @param reminderIntervalDays  the preventive maintenance interval in days
    * @param lastReadingAt         when the last reading was received, may be {@code null}
    * @param lastKnownTemperature  the last temperature known, may be {@code null}
+   * @param configVersion         the version of the edge configuration; {@code null} is read as
+   *                              {@value #INITIAL_CONFIG_VERSION}
    */
   public Equipment(Long equipmentId, Long siteId, String uid, String name, EquipmentType equipmentType,
                    StatusEquipment status, boolean online, TemperatureThreshold temperatureThreshold,
-                   Integer reminderIntervalDays, LocalDateTime lastReadingAt, Double lastKnownTemperature) {
+                   Integer reminderIntervalDays, LocalDateTime lastReadingAt, Double lastKnownTemperature,
+                   Integer configVersion) {
     this.equipmentId = equipmentId;
     this.siteId = Objects.requireNonNull(siteId, "siteId must not be null");
     this.uid = validatedUid(uid);
@@ -124,6 +141,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     this.online = online;
     this.lastReadingAt = lastReadingAt;
     this.lastKnownTemperature = lastKnownTemperature;
+    this.configVersion = configVersion == null ? INITIAL_CONFIG_VERSION : configVersion;
   }
 
   /**
@@ -150,7 +168,8 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    *
    * <p>Constructing the {@link TemperatureThreshold} is what enforces the 0 to 30 °C bounds and
    * {@code minCelsius < maxCelsius}, so an invalid band never reaches the aggregate and no event is
-   * registered.</p>
+   * registered. The application layer increments {@code configVersion} once the new band is
+   * persisted.</p>
    *
    * @param temperatureThreshold the new acceptable temperature band; required
    */
