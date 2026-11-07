@@ -6,10 +6,13 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import pe.edu.upc.ice.track.platform.monitoring.application.commandservices.SensorReadingCommandService;
 import pe.edu.upc.ice.track.platform.monitoring.application.queryservices.SensorReadingQueryService;
@@ -18,6 +21,8 @@ import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.Record
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.SensorReadingResource;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.transform.RecordReadingBatchCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.transform.SensorReadingResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -82,24 +87,31 @@ public class TelemetryController {
   }
 
   /**
-   * Get the reading history of an equipment within a date range
+   * Get the reading history of equipment within a date range
    * @param equipmentId The equipment unique identifier
    * @param from Inclusive start of the range
    * @param to Inclusive end of the range
-   * @return A list of {@link SensorReadingResource} resources recorded within the range
+   * @param authentication The authenticated principal
+   * @return A list of {@link SensorReadingResource} resources recorded within the range, or 404
+   *         when the caller may not read the equipment
    */
   @GetMapping("/equipment/{equipmentId}")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Get reading history by equipment",
       description = "Retrieves the sensor readings recorded for an equipment within the given "
-          + "date range, used by Reporting & Análisis to compute temperature-trend KPIs."
+          + "date range. Owners read their own units; technicians read units they hold an "
+          + "active service request on. Any other unit answers 404.",
+      security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
           description = "Readings found",
           content = @Content(schema = @Schema(implementation = SensorReadingResource.class))
-      )
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller")
   })
   public ResponseEntity<List<SensorReadingResource>> getReadingsByEquipment(
       @PathVariable
@@ -110,11 +122,14 @@ public class TelemetryController {
       LocalDateTime from,
       @RequestParam
       @Parameter(description = "Inclusive end of the date range", required = true)
-      LocalDateTime to) {
-    var readings = sensorReadingQueryService.handle(new GetReadingsByEquipmentQuery(equipmentId, from, to));
-    var resources = readings.stream()
-        .map(SensorReadingResourceFromEntityAssembler::toResourceFromEntity)
-        .toList();
-    return ResponseEntity.ok(resources);
+      LocalDateTime to,
+      Authentication authentication) {
+    var query = new GetReadingsByEquipmentQuery(equipmentId, from, to, authentication.getName(),
+        CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication));
+    return sensorReadingQueryService.handle(query)
+        .map(readings -> ResponseEntity.ok(readings.stream()
+            .map(SensorReadingResourceFromEntityAssembler::toResourceFromEntity)
+            .toList()))
+        .orElse(ResponseEntity.notFound().build());
   }
 }

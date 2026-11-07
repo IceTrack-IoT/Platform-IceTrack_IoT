@@ -39,4 +39,13 @@ public class ExternalAssetManagementService {
     }
     return assetContextFacade.getEquipmentThresholdRange(equipmentId);
   }
+
+  /**
+   * @param equipmentId identifier of the equipment
+   * @param ownerId     identifier of the owner profile expected to own it
+   * @return {@code true} only when the unit exists and its site belongs to that owner
+   */
+  public boolean isEquipmentOwnedBy(Long equipmentId, Long ownerId) {
+    return assetContextFacade.existsEquipmentForOwner(equipmentId, ownerId);
+  }
 }

@@ -27,4 +27,15 @@ public interface AlertPolicyRepository {
 
   /** @return the platform-wide default policy, i.e. the one with a {@code null} equipmentId. */
   Optional<AlertPolicy> findDefaultPolicy();
+
+  /**
+   * Resolves the policy that applies to an equipment.
+   *
+   * @param equipmentId the identifier of the equipment
+   * @return the equipment-specific policy, falling back to the platform-wide default; empty only
+   *         when neither exists
+   */
+  default Optional<AlertPolicy> findApplicableTo(Long equipmentId) {
+    return findByEquipmentId(equipmentId).or(this::findDefaultPolicy);
+  }
 }

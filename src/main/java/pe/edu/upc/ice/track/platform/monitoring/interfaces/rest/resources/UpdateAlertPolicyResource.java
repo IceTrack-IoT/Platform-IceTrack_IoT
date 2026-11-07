@@ -1,6 +1,8 @@
 package pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
@@ -9,14 +11,15 @@ import jakarta.validation.constraints.Positive;
  */
 @Schema(
     name = "UpdateAlertPolicyRequest",
-    description = "Request payload to create or update an alert policy, global or per-equipment",
+    description = "Request payload to create or update the alert policy of one of the caller's units",
     example = "{\"equipment_id\": 1, \"sustained_excursion_minutes\": 2, "
-        + "\"hysteresis_margin_celsius\": 0.5, \"missed_sync_windows_for_offline\": 3}"
+        + "\"hysteresis_margin_celsius\": 1.0, \"missed_sync_windows_for_offline\": 3}"
 )
 public record UpdateAlertPolicyResource(
-    @Schema(description = "Identifier of the equipment this policy applies to; "
-        + "omit to target the platform-wide default policy", example = "1",
-        requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+    @NotNull(message = "{validation.not-blank}")
+    @Schema(description = "Identifier of one of the caller's units this policy applies to. "
+        + "The platform-wide default policy is managed by configuration and cannot be changed here.",
+        example = "1")
     Long equipmentId,
 
     @NotNull(message = "{validation.not-blank}")
@@ -25,8 +28,10 @@ public record UpdateAlertPolicyResource(
     Integer sustainedExcursionMinutes,
 
     @NotNull(message = "{validation.not-blank}")
-    @Schema(description = "Margin, in Celsius, a reading must re-enter range by before the alert closes",
-        example = "0.5")
+    @DecimalMin("1.0")
+    @DecimalMax("5.0")
+    @Schema(description = "Margin, in Celsius, a reading must re-enter range by before the alert closes; "
+        + "at least 1.0, the resolution of the DHT11 sensor", example = "1.0")
     Double hysteresisMarginCelsius,
 
     @NotNull(message = "{validation.not-blank}")

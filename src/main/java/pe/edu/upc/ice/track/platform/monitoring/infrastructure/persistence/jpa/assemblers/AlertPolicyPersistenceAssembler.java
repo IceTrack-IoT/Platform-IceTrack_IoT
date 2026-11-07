@@ -13,7 +13,7 @@ public final class AlertPolicyPersistenceAssembler {
   public static AlertPolicyPersistenceEntity toPersistenceEntityFromDomain(AlertPolicy policy) {
     var entity = new AlertPolicyPersistenceEntity();
     entity.setId(policy.getId());
-    entity.setEquipmentId(policy.getEquipmentId().equipmentId());
+    entity.setEquipmentId(policy.isPlatformDefault() ? null : policy.getEquipmentId().equipmentId());
     entity.setSustainedExcursionMinutes(policy.getSustainedExcursionMinutes());
     entity.setHysteresisMarginCelsius(policy.getHysteresisMargin().celsius());
     entity.setMissedSyncWindowsForOffline(policy.getMissedSyncWindowsForOffline());
@@ -23,7 +23,7 @@ public final class AlertPolicyPersistenceAssembler {
 
   public static AlertPolicy toDomainFromPersistenceEntity(AlertPolicyPersistenceEntity entity) {
     var policy = new AlertPolicy(
-        new EquipmentId(entity.getEquipmentId()),
+        entity.getEquipmentId() == null ? null : new EquipmentId(entity.getEquipmentId()),
         entity.getSustainedExcursionMinutes(),
         entity.getHysteresisMarginCelsius(), entity.getMissedSyncWindowsForOffline());
     policy.assignId(entity.getId());

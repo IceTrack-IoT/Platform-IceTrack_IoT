@@ -1,13 +1,12 @@
 package pe.edu.upc.ice.track.platform.monitoring.interfaces.acl;
 
 import org.springframework.stereotype.Service;
-import pe.edu.upc.ice.track.platform.monitoring.application.queryservices.AlertQueryService;
-import pe.edu.upc.ice.track.platform.monitoring.domain.model.queries.GetOpenAlertsByEquipmentQuery;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertStatus;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertRepository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * ACL facade that exposes Monitoring and Alerting capabilities to other bounded contexts.
@@ -17,17 +16,21 @@ import java.time.LocalDateTime;
  * translated into calls against the monitoring application layer, and the results back into
  * primitives before returning. Consumed synchronously by Reporting &amp; Análisis; consumed
  * asynchronously, via {@code AlertRaisedIntegrationEvent}, by Notifications.</p>
+ *
+ * <p>Reads go straight to the repositories rather than through the query services: those are
+ * scoped to an authenticated caller, while a cross-context caller asks about a unit it already
+ * resolved on its own terms.</p>
  */
 @Service
 public class MonitoringContextFacade {
 
   private static final long NO_ALERT = 0L;
 
-  private final AlertQueryService alertQueryService;
+  private static final List<AlertStatus> ACTIVE_STATUSES = List.of(AlertStatus.OPEN, AlertStatus.ACKNOWLEDGED);
+
   private final AlertRepository alertRepository;
 
-  public MonitoringContextFacade(AlertQueryService alertQueryService, AlertRepository alertRepository) {
-    this.alertQueryService = alertQueryService;
+  public MonitoringContextFacade(AlertRepository alertRepository) {
     this.alertRepository = alertRepository;
   }
 
@@ -36,7 +39,7 @@ public class MonitoringContextFacade {
     if (equipmentId == null) {
       return 0L;
     }
-    return alertQueryService.handle(new GetOpenAlertsByEquipmentQuery(equipmentId)).size();
+    return alertRepository.findByEquipmentIdAndStatusIn(equipmentId, ACTIVE_STATUSES).size();
   }
 
   /** @return the identifier of the most recent alert matching the status, or {@code 0L}. */
@@ -50,7 +53,7 @@ public class MonitoringContextFacade {
     } catch (IllegalArgumentException ex) {
       return NO_ALERT;
     }
-    return alertQueryService.handle(new GetOpenAlertsByEquipmentQuery(equipmentId)).stream()
+    return alertRepository.findByEquipmentIdAndStatusIn(equipmentId, ACTIVE_STATUSES).stream()
         .filter(alert -> alert.getStatus() == parsedStatus)
         .findFirst()
         .map(alert -> alert.getId() == null ? NO_ALERT : alert.getId())

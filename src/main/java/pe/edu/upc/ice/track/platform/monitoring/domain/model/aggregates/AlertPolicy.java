@@ -24,6 +24,15 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDoma
 @Getter
 public class AlertPolicy extends AbstractDomainAggregateRoot<AlertPolicy> {
 
+  /** Minutes an excursion must last before an alert opens. */
+  public static final int DEFAULT_SUSTAINED_EXCURSION_MINUTES = 2;
+
+  /** Re-entry margin in Celsius; 1.0 matches the 1 °C resolution of the DHT11 sensor. */
+  public static final double DEFAULT_HYSTERESIS_MARGIN_CELSIUS = 1.0;
+
+  /** Missed synchronization windows before a device is considered offline. */
+  public static final int DEFAULT_MISSED_SYNC_WINDOWS_FOR_OFFLINE = 3;
+
   private Long id;
   private EquipmentId equipmentId;
   private Integer sustainedExcursionMinutes;
@@ -38,6 +47,22 @@ public class AlertPolicy extends AbstractDomainAggregateRoot<AlertPolicy> {
     this.hysteresisMargin = new Temperature(hysteresisMarginCelsius);
     this.missedSyncWindowsForOffline = missedSyncWindowsForOffline;
     this.active = true;
+  }
+
+  /**
+   * Builds the platform-wide default policy, which applies to every unit without a policy of its
+   * own.
+   *
+   * @return a new default policy, not yet persisted
+   */
+  public static AlertPolicy platformDefault() {
+    return new AlertPolicy(null, DEFAULT_SUSTAINED_EXCURSION_MINUTES,
+        DEFAULT_HYSTERESIS_MARGIN_CELSIUS, DEFAULT_MISSED_SYNC_WINDOWS_FOR_OFFLINE);
+  }
+
+  /** @return {@code true} for the platform-wide default, which is bound to no equipment. */
+  public boolean isPlatformDefault() {
+    return equipmentId == null;
   }
 
   public void assignId(Long id) {

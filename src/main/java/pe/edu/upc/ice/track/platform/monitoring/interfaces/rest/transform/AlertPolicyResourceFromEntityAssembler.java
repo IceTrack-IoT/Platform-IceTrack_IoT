@@ -11,7 +11,9 @@ public final class AlertPolicyResourceFromEntityAssembler {
 
   public static AlertPolicyResource toResourceFromEntity(AlertPolicy policy) {
     return new AlertPolicyResource(
-        policy.getId(), policy.getEquipmentId().equipmentId(), policy.getSustainedExcursionMinutes(),
+        policy.getId(),
+        policy.isPlatformDefault() ? null : policy.getEquipmentId().equipmentId(),
+        policy.getSustainedExcursionMinutes(),
         policy.getHysteresisMargin().celsius(), policy.getMissedSyncWindowsForOffline(),
         policy.isActive());
   }
