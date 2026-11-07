@@ -23,6 +23,8 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - [Alerts and notifications](#alerts-and-notifications)
 - [Edge devices](#edge-devices)
 - [Edge configuration, events and grants](#edge-configuration-events-and-grants)
+- [Maintenance windows](#maintenance-windows)
+- [Integration events and technician metrics](#integration-events-and-technician-metrics)
 - [Run locally with Docker](#run-locally-with-docker)
 - [Access](#access)
 - [Useful commands](#useful-commands)
@@ -39,6 +41,8 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - **IAM + Profiles** bounded contexts (`/api/v1/authentication`, `/api/v1/users`, `/api/v1/roles`, `/api/v1/profiles/owners`, `/api/v1/profiles/technicians`)
 - **Edge device authentication** — IoT boards call the edge routes (`POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`, `/api/v1/devices/me/**`) with an `X-API-Key` header and no user JWT; see [Edge devices](#edge-devices)
 - **Edge configuration and grants** — gateways poll `GET /api/v1/devices/me/config` (ETag / `304`) for thresholds, alert policy and technician edge grants; excursion events open and resolve alerts; see [Edge configuration, events and grants](#edge-configuration-events-and-grants)
+- **Maintenance windows** — gateway-reported windows put the unit in `MAINTENANCE`, suppress excursion alerts for the instants they cover, link to the service request in progress and are audited with `GET /api/v1/maintenance-windows`; see [Maintenance windows](#maintenance-windows)
+- **Transactional outbox and technician metrics** — service request events are delivered at least once to a technician metrics read model and to notifications; owners read `GET /api/v1/profiles/technicians/{id}/public`; see [Integration events and technician metrics](#integration-events-and-technician-metrics)
 - **OpenAPI first** — springdoc-openapi 3.1.1 with Swagger UI
 - **Postgres persistence** — Spring Data JPA/Hibernate with custom snake-case + pluralized naming strategy
 - **Docker-first dev loop** — multi-stage build, Compose healthchecks, dev/prod overlays
@@ -93,8 +97,22 @@ Defaults come from `src/main/resources/application.properties`:
 | `SIGN_IN_RATE_LIMIT_MAX_FAILURES` | `5` | `401` answers a client address or an account may collect within one window before sign-in answers `429` |
 | `SIGN_IN_RATE_LIMIT_WINDOW_MINUTES` | `5` | Length of the sign-in throttling window |
 | `EDGE_GRANT_TTL_HOURS` | `24` | Lifetime of the edge grant issued when a technician accepts a service request |
+| `MAINTENANCE_WINDOW_EXPIRY_GRACE_MINUTES` | `30` | Minutes after its expiration an open maintenance window is closed by the platform as `EXPIRED`, when its gateway never reported the end |
+| `MAINTENANCE_WINDOW_EXPIRY_SWEEP_MS` | `60000` | Interval of the sweep that closes those overdue windows |
+| `OUTBOX_DISPATCH_DELAY_MS` | `2000` | Interval at which the transactional outbox delivers pending integration events |
+| `OUTBOX_MAX_ATTEMPTS` | `10` | Failed deliveries after which an outbox event is no longer tried (it stays in `outbox_events`, unpublished) |
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.
+
+**Upgrading an existing database.** `ddl-auto=update` adds the new tables and columns but never rewrites the `CHECK` constraints Hibernate generated for enum columns when their tables were first created, so new enum values would be rejected. Run once before deploying this version:
+
+```sql
+ALTER TABLE edge_events DROP CONSTRAINT IF EXISTS edge_events_type_check;
+ALTER TABLE edge_events DROP CONSTRAINT IF EXISTS edge_events_result_check;
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+```
+
+Hibernate recreates no constraint on an existing table; the values are still validated by the application enums.
 
 ## User authentication
 
@@ -133,10 +151,24 @@ The actor is always the authenticated caller (IAM user id). `reason` is mandator
 
 Thermal excursion alerts are opened only by the edge gateway's `THERMAL_EXCURSION_DETECTED` event (see [Edge configuration, events and grants](#edge-configuration-events-and-grants)), with severity `CRITICAL`, never by a single reading batch. Every alert response also carries the triggering reading (`triggering_reading_id`, `triggering_temperature`, `triggering_recorded_at`) and `total_duration_seconds` once closed.
 
-**Notifications** (`/api/v1/notifications`, the recipient is always the authenticated caller):
+**Notifications** (`/api/v1/notifications`, the recipient is always the authenticated caller, owner or technician):
 
 - `GET /api/v1/notifications?page=0&size=20&unreadOnly=false` returns `{items, page, size, total_elements, total_pages}`, most recent first. Dismissed notifications are never listed. `size` defaults to `20` and is capped at `100`; a negative `page` or a `size` below `1` answers `400`.
 - `GET /api/v1/notifications/unread-count` returns `{"unread_count": 7}`: notifications neither read nor dismissed.
+- `PUT`/`DELETE /api/v1/notifications/device-tokens` register or remove the caller's FCM token; `403` only for an account with neither an owner nor a technician profile.
+
+What creates a notification, and for whom:
+
+| Source | Recipient | `type` / `severity` |
+|---|---|---|
+| Alert raised | Owner of the unit | `TEMPERATURE_EXCURSION` (or the alert type) / the alert severity |
+| Technician assigned or reassigned | New technician (request, service type, priority, unit, site, date); the replaced technician, if any | `SERVICE_REQUEST_UPDATE` / `INFO` |
+| Request rejected | Owner, with the technician's reason | `SERVICE_REQUEST_UPDATE` / `WARNING` |
+| Request canceled | Technician assigned at the time, if any, with the owner's reason | `SERVICE_REQUEST_UPDATE` / `WARNING` |
+| Maintenance window opened or closed | Owner of the unit (origin, times, order and technician when known, closure reason) | `MAINTENANCE_WINDOW` / `INFO` |
+| Maintenance window opened with no service request | Owner of the unit, at once | `UNLINKED_MAINTENANCE_WINDOW` / `WARNING` |
+
+Texts come from the `notification.*` keys of `messages.properties`. Profiles record no language preference yet, so every notification is composed in the default (English) bundle.
 
 ## Edge devices
 
@@ -186,6 +218,8 @@ Any of the following is rejected with `400` "Invalid reading payload" and nothin
 - `REPAIR` → `ACTIVE` / `DEACTIVATED`
 - `DEACTIVATED` → `ACTIVE`
 
+`MAINTENANCE` is also entered and left automatically by maintenance windows (see [Maintenance windows](#maintenance-windows)): an `ACTIVE` unit moves to `MAINTENANCE` when a window opens and returns to `ACTIVE` when it closes. A unit `REPAIR` or `DEACTIVATED` keeps its status during a window, and a status the owner sets while a window is open is kept when the window closes.
+
 ## Edge configuration, events and grants
 
 **Configuration version.** Every equipment has a `config_version` (returned in `EquipmentResponse`), starting at `1`. It goes up by one, atomically, whenever anything the gateway enforces changes:
@@ -212,10 +246,55 @@ Grants expire after `EDGE_GRANT_TTL_HOURS`. Every issuance and revocation moves 
 |---|---|---|
 | `THERMAL_EXCURSION_DETECTED` (requires `temperature_celsius`) | Opens a `CRITICAL` alert dated at `occurred_at`; `reading_uid`, when sent and stored for this unit, becomes the triggering reading | `201` `ALERT_OPENED` |
 | `THERMAL_EXCURSION_DETECTED` while an alert is `OPEN` or `ACKNOWLEDGED` | Nothing opened | `200` `ALERT_ALREADY_ACTIVE` |
+| `THERMAL_EXCURSION_DETECTED` with `occurred_at` inside a maintenance window | Nothing opened; existing alerts untouched | `200` `SUPPRESSED_BY_MAINTENANCE` |
 | `THERMAL_EXCURSION_NORMALIZED` (optional `peak_temperature_celsius`) | Resolves the active alert, recording peak and total duration | `200` `ALERT_RESOLVED` |
 | `THERMAL_EXCURSION_NORMALIZED` with no active alert | Nothing changes | `200` `NO_ACTIVE_ALERT` |
+| `MAINTENANCE_WINDOW_STARTED` (requires `origin`; optional `technician_id`, `service_request_id`) | Opens the unit's maintenance window at `occurred_at` | `201` `MAINTENANCE_WINDOW_OPENED` |
+| `MAINTENANCE_WINDOW_STARTED` with `origin: APP` while a `BUTTON` window is active | The active window becomes `APP`, keeps its id, gains technician and order, expires 2 h after `occurred_at` | `200` `MAINTENANCE_WINDOW_PROMOTED` |
+| `MAINTENANCE_WINDOW_STARTED` while any other window is active | The active window is kept | `200` `MAINTENANCE_ALREADY_ACTIVE` |
+| `MAINTENANCE_WINDOW_ENDED` (requires `closure_reason`; optional `start_event_uid`) | Closes the window opened by `start_event_uid`, or the active one, at `occurred_at` | `201` `MAINTENANCE_WINDOW_CLOSED` |
+| `MAINTENANCE_WINDOW_ENDED` with no matching open window | Nothing changes | `200` `NO_ACTIVE_MAINTENANCE` |
 
-A resent `event_uid` answers `200` with the stored outcome; one already used by another device answers `409`. Reading batches no longer open alerts. They only resolve the active one as a fallback for a lost normalization event, and only once every batch of the last `sustained_excursion_minutes` (at least one per minute, all recorded after the excursion began) lies back within range by `hysteresis_margin_celsius` on the breached side.
+Every response carries `alert_id` and `maintenance_window_id` (each `null` when it does not apply). A resent `event_uid` answers `200` with the stored outcome; one already used by another device answers `409`. Reading batches no longer open alerts. They only resolve the active one as a fallback for a lost normalization event, and only once every batch of the last `sustained_excursion_minutes` (at least one per minute, all recorded after the excursion began, none taken during maintenance) lies back within range by `hysteresis_margin_celsius` on the breached side.
+
+## Maintenance windows
+
+A maintenance window is the period a unit is being worked on, as reported by its gateway with `MAINTENANCE_WINDOW_STARTED` / `MAINTENANCE_WINDOW_ENDED` events (see above). A unit has at most one active window, shared by the mobile app and the hardware button.
+
+| | `APP` | `BUTTON` |
+|---|---|---|
+| Started by | The technician, from the mobile app with its edge grant | Pressing the gateway's button |
+| Lifetime | 2 hours | 30 minutes |
+
+Closure reasons are `MANUAL_APP`, `MANUAL_BUTTON`, `INTERVENTION_COMPLETED`, `EXPIRED` and `SAFETY_LIMIT`. Timestamps are the gateway's `occurred_at` (read in the server's zone), so a window covers what happened during it even when the events or readings arrive late from the gateway's offline buffer.
+
+While a window covers an instant:
+
+- a reading batch recorded then is stored with `under_maintenance: true` and changes no alert; it is also left out of the fallback resolution described above;
+- a `THERMAL_EXCURSION_DETECTED` dated then opens no alert (`SUPPRESSED_BY_MAINTENANCE`); alerts already active are left as they are. No `DEVICE_OFFLINE` alert is opened from any event today; an offline evaluation added later must apply the same coverage check.
+
+Other effects:
+
+- **Equipment status** — opening a window moves an `ACTIVE` unit to `MAINTENANCE`; closing it restores the previous status.
+- **Order attribution** — a start without `service_request_id` is attributed to the service request that was `IN_PROGRESS` on the unit at that instant, and its technician, when there is one; otherwise the window is *unlinked* and the owner is notified at once.
+- **Service request link** — a window attributed to a request is recorded on it, in `maintenance_windows` of `GET /api/v1/service-requests/{id}` (oldest first: `window_id`, `origin`, `technician_id`, `started_at`, `ended_at`, `closure_reason`), only when the request was `IN_PROGRESS` at the window's start (or, for a window taken over from the app, at that moment); otherwise the inconsistency is logged and nothing is linked. Duplicate events never link twice, and closing the window completes the link.
+- **Expiration** — a window still open `MAINTENANCE_WINDOW_EXPIRY_GRACE_MINUTES` after its expiration is closed by the platform as `EXPIRED`, dated at its expiration. A later start on a unit whose active window is already past its expiration closes that window the same way first.
+
+**Audit** (`GET /api/v1/maintenance-windows?equipmentId=10&from=2026-11-01T00:00:00Z&to=2026-11-30T23:59:59Z`, owner JWT): the windows of one of the caller's units, newest first, each with `id`, `equipment_id`, `origin`, `started_at`, `expires_at`, `ended_at`, `closure_reason`, `technician_id`, `service_request_id`, `unlinked` and `active`. `from` and `to` are optional ISO-8601 instants bounding the start inclusively; `from` after `to` answers `400`. A unit the caller does not own answers `404 EQUIPMENT_NOT_FOUND`.
+
+## Integration events and technician metrics
+
+**Transactional outbox.** Service request assignments, rejections, cancellations and completions, and review submissions and edits, are stored as integration events in `outbox_events` in the same transaction as the change. A dispatcher delivers them every `OUTBOX_DISPATCH_DELAY_MS`, each in its own transaction (rows are locked `FOR UPDATE SKIP LOCKED`, so several instances never deliver the same event at once), and sets `published_at`. A consumer that fails rolls back with its delivery, which is retried on a later run; after `OUTBOX_MAX_ATTEMPTS` failures the event stays unpublished, with `attempts` and `last_error`, for inspection. Delivery is at least once, so every consumer is idempotent. Maintenance window events are not part of the outbox: Assets moves the unit's status in the window's transaction, and the service request link and the owner's notification run after it commits.
+
+**Technician metrics read model.** Profiles projects the outbox events into `technician_metrics_projections` (one row per technician: `completed_services_count`, `rating_sum`, `rating_count`, `average_rating`):
+
+- a completion counts once per service request;
+- a review counts once per review; an edit replaces that review's score, and an event older than the score already counted is ignored;
+- `average_rating = rating_sum / rating_count`, and stays `null` until the first review.
+
+The projection only covers events stored from this version on; completions and reviews recorded before it are not back-filled.
+
+**Public technician profile** (`GET /api/v1/profiles/technicians/{technicianId}/public`, owner JWT): `id`, `full_name`, `speciality`, `certification_number`, `completed_services`, `average_rating` and `rating_available` (`false` while `average_rating` is `null`). Email, phone and address are never included. Unknown technician: `404`.
 
 ## Run locally with Docker
 
