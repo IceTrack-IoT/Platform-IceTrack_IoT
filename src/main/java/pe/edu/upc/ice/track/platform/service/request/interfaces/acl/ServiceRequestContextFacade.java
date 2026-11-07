@@ -3,13 +3,17 @@ package pe.edu.upc.ice.track.platform.service.request.interfaces.acl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceType;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ReviewRepository;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ServiceRequestRepository;
 
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * ACL facade that exposes Service Request and Feedback Management capabilities to other bounded
@@ -21,7 +25,8 @@ import java.util.List;
  * {@code Review} aggregate, value object, repository or JPA entity appears in its signature.
  * Callers depend on this class alone and must never reach into
  * {@code service.request.domain.*}, {@code service.request.application.*} or
- * {@code service.request.infrastructure.*}. Consumed synchronously by Reporting.</p>
+ * {@code service.request.infrastructure.*}. Consumed synchronously by Reporting, and by Assets and
+ * Monitoring to decide whether a technician may read a unit or a site.</p>
  *
  * <p>Like {@code AssetContextFacade}, every method answers empty rather than throwing: a
  * {@code null} or non-positive identifier, or an incomplete or inverted window, is answered as
@@ -30,6 +35,13 @@ import java.util.List;
  */
 @Service
 public class ServiceRequestContextFacade {
+
+  /**
+   * Statuses in which an assigned technician is still engaged with a request, and may therefore
+   * read the unit and the site it was raised for. Mirrors {@link ServiceStatus#isActive()}.
+   */
+  private static final Set<ServiceStatus> ACTIVE_ASSIGNMENT_STATUSES =
+      EnumSet.of(ServiceStatus.PENDING, ServiceStatus.ACCEPTED, ServiceStatus.IN_PROGRESS);
 
   private final ServiceRequestRepository serviceRequestRepository;
   private final ReviewRepository reviewRepository;
@@ -97,6 +109,64 @@ public class ServiceRequestContextFacade {
     }
     return reviewRepository.findAverageRatingByTechnicianId(new TechnicianProfileId(technicianProfileId))
         .orElse(null);
+  }
+
+  /**
+   * Tells whether a technician currently holds an active assignment on a unit.
+   *
+   * <p>An assignment is active while the request is {@code PENDING} (already assigned),
+   * {@code ACCEPTED} or {@code IN_PROGRESS}. Other contexts use this to scope what a technician may
+   * read: a unit is visible to a technician only while that technician is working on it.</p>
+   *
+   * @param technicianProfileId identifier of the technician profile
+   * @param equipmentId         identifier of the unit
+   * @return {@code true} when such an assignment exists; {@code false} for any missing or
+   *         non-positive identifier
+   */
+  @Transactional(readOnly = true)
+  public boolean hasActiveAssignmentOnEquipment(Long technicianProfileId, Long equipmentId) {
+    if (!isValidIdentifier(technicianProfileId) || !isValidIdentifier(equipmentId)) {
+      return false;
+    }
+    return serviceRequestRepository.existsByEquipmentIdAndTechnicianIdAndStatusIn(
+        new EquipmentId(equipmentId), new TechnicianProfileId(technicianProfileId), ACTIVE_ASSIGNMENT_STATUSES);
+  }
+
+  /**
+   * Tells whether a technician currently holds an active assignment on some unit of a site.
+   *
+   * @param technicianProfileId identifier of the technician profile
+   * @param siteId              identifier of the site
+   * @return {@code true} when such an assignment exists; {@code false} for any missing or
+   *         non-positive identifier
+   */
+  @Transactional(readOnly = true)
+  public boolean hasActiveAssignmentAtSite(Long technicianProfileId, Long siteId) {
+    if (!isValidIdentifier(technicianProfileId) || !isValidIdentifier(siteId)) {
+      return false;
+    }
+    return serviceRequestRepository.existsBySiteIdAndTechnicianIdAndStatusIn(
+        siteId, new TechnicianProfileId(technicianProfileId), ACTIVE_ASSIGNMENT_STATUSES);
+  }
+
+  /**
+   * Tells whether an owner and a technician are currently working together on some request.
+   *
+   * <p>Profiles uses this to decide whether either side may see the other's contact details: only
+   * while a request created by the owner is actively assigned to the technician.</p>
+   *
+   * @param ownerProfileId      identifier of the owner profile
+   * @param technicianProfileId identifier of the technician profile
+   * @return {@code true} when such a request exists; {@code false} for any missing or non-positive
+   *         identifier
+   */
+  @Transactional(readOnly = true)
+  public boolean hasActiveEngagementBetween(Long ownerProfileId, Long technicianProfileId) {
+    if (!isValidIdentifier(ownerProfileId) || !isValidIdentifier(technicianProfileId)) {
+      return false;
+    }
+    return serviceRequestRepository.existsByOwnerIdAndTechnicianIdAndStatusIn(
+        new OwnerId(ownerProfileId), new TechnicianProfileId(technicianProfileId), ACTIVE_ASSIGNMENT_STATUSES);
   }
 
   private static boolean isValidIdentifier(Long identifier) {

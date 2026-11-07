@@ -107,6 +107,29 @@ public interface ServiceRequestRepository {
       EquipmentId equipmentId, TechnicianProfileId technicianId, Set<ServiceStatus> statuses);
 
   /**
+   * Check whether a technician is assigned to some request raised for a site in one of the given
+   * statuses.
+   *
+   * @param siteId       the site
+   * @param technicianId the technician
+   * @param statuses     the statuses that count; required and not empty
+   * @return {@code true} when such a request exists
+   */
+  boolean existsBySiteIdAndTechnicianIdAndStatusIn(
+      Long siteId, TechnicianProfileId technicianId, Set<ServiceStatus> statuses);
+
+  /**
+   * Check whether an owner has some request assigned to a technician in one of the given statuses.
+   *
+   * @param ownerId      the owner who created the request
+   * @param technicianId the technician it is assigned to
+   * @param statuses     the statuses that count; required and not empty
+   * @return {@code true} when such a request exists
+   */
+  boolean existsByOwnerIdAndTechnicianIdAndStatusIn(
+      OwnerId ownerId, TechnicianProfileId technicianId, Set<ServiceStatus> statuses);
+
+  /**
    * Check whether an intervention client identifier is already used by some request.
    *
    * <p>Backs the uniqueness rule on {@code client_generated_id}: the check runs before the insert so

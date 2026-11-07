@@ -64,6 +64,29 @@ public interface ServiceRequestPersistenceRepository
       Long equipmentId, Long technicianId, Collection<ServiceStatus> statuses);
 
   /**
+   * Tells whether a technician is assigned to a request raised for a site in one of the given
+   * statuses.
+   *
+   * @param siteId       the site
+   * @param technicianId the technician
+   * @param statuses     the statuses that count
+   * @return {@code true} when such a request exists
+   */
+  boolean existsBySiteIdAndTechnicianIdAndStatusIn(
+      Long siteId, Long technicianId, Collection<ServiceStatus> statuses);
+
+  /**
+   * Tells whether an owner has a request assigned to a technician in one of the given statuses.
+   *
+   * @param ownerId      the owner
+   * @param technicianId the technician
+   * @param statuses     the statuses that count
+   * @return {@code true} when such a request exists
+   */
+  boolean existsByOwnerIdAndTechnicianIdAndStatusIn(
+      Long ownerId, Long technicianId, Collection<ServiceStatus> statuses);
+
+  /**
    * Projects the distinct units of a site that have a request of a type, in a status, completed
    * within a window. The closed {@link EquipmentIdProjection} limits the selection to the unit
    * identifier, so no entity, history or intervention is loaded and {@code Distinct} applies to

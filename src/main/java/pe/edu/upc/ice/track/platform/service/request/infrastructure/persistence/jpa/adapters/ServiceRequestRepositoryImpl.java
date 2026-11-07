@@ -159,6 +159,28 @@ public class ServiceRequestRepositoryImpl implements ServiceRequestRepository {
 
   // inherited javadoc
   @Override
+  public boolean existsBySiteIdAndTechnicianIdAndStatusIn(
+      Long siteId, TechnicianProfileId technicianId, Set<ServiceStatus> statuses) {
+    if (siteId == null || technicianId == null || statuses == null || statuses.isEmpty()) {
+      return false;
+    }
+    return serviceRequestPersistenceRepository.existsBySiteIdAndTechnicianIdAndStatusIn(
+        siteId, technicianId.technicianProfileId(), statuses);
+  }
+
+  // inherited javadoc
+  @Override
+  public boolean existsByOwnerIdAndTechnicianIdAndStatusIn(
+      OwnerId ownerId, TechnicianProfileId technicianId, Set<ServiceStatus> statuses) {
+    if (ownerId == null || technicianId == null || statuses == null || statuses.isEmpty()) {
+      return false;
+    }
+    return serviceRequestPersistenceRepository.existsByOwnerIdAndTechnicianIdAndStatusIn(
+        ownerId.ownerId(), technicianId.technicianProfileId(), statuses);
+  }
+
+  // inherited javadoc
+  @Override
   public boolean existsByInterventionClientGeneratedId(UUID clientGeneratedId) {
     return clientGeneratedId != null
         && serviceRequestPersistenceRepository.existsByInterventionClientGeneratedId(clientGeneratedId);
