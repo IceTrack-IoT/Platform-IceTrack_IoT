@@ -4,6 +4,8 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.BumpConfigVersionCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.EnterMaintenanceCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.LeaveMaintenanceCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateEquipmentCommand;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
@@ -63,6 +65,25 @@ public interface EquipmentCommandService {
    * @return the new version, or empty when the unit does not exist
    */
   Optional<Integer> handle(BumpConfigVersionCommand command);
+
+  /**
+   * Move a unit to {@code MAINTENANCE} because a maintenance window opened on it, remembering the
+   * status it held. A unit that does not exist, is not {@code ACTIVE}, or is already in
+   * {@code MAINTENANCE} is left unchanged.
+   *
+   * @param command The {@link EnterMaintenanceCommand} Command
+   * @return {@code true} when the unit entered maintenance
+   */
+  boolean handle(EnterMaintenanceCommand command);
+
+  /**
+   * Return a unit to the status it held before a maintenance window moved it to {@code MAINTENANCE}.
+   * A unit that does not exist, or that no window holds in maintenance, is left unchanged.
+   *
+   * @param command The {@link LeaveMaintenanceCommand} Command
+   * @return {@code true} when the unit left maintenance
+   */
+  boolean handle(LeaveMaintenanceCommand command);
 
   /**
    * Move a unit to a new operational status, when the transition is part of the matrix carried

@@ -39,7 +39,8 @@ public final class EquipmentPersistenceAssembler {
         entity.getReminderIntervalDays(),
         entity.getLastReadingAt(),
         entity.getLastKnownTemperature(),
-        entity.getConfigVersion());
+        entity.getConfigVersion(),
+        entity.getStatusBeforeMaintenance());
   }
 
   /**
@@ -67,6 +68,7 @@ public final class EquipmentPersistenceAssembler {
     entity.setLastKnownTemperature(equipment.getLastKnownTemperature());
     // Only used on insert: the column is not updatable, see EquipmentPersistenceEntity.
     entity.setConfigVersion(equipment.getConfigVersion());
+    entity.setStatusBeforeMaintenance(equipment.getStatusBeforeMaintenance());
     return entity;
   }
 }

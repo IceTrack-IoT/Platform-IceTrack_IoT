@@ -11,6 +11,8 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.BumpConfigVersionCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.EnterMaintenanceCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.LeaveMaintenanceCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.TemperatureThreshold;
@@ -31,9 +33,10 @@ import java.util.Optional;
  * impossible to bypass. An account that holds no owner profile is answered with
  * {@code ACCESS_DENIED}.</p>
  *
- * <p>Every command, the status change included, is owner-scoped. A technician never changes a
- * unit's operational status directly: maintenance is driven by service requests and maintenance
- * windows, not by a freestanding write that could reach any tenant's unit.</p>
+ * <p>Every REST command, the status change included, is owner-scoped. A technician never changes a
+ * unit's operational status directly: maintenance is driven by the maintenance windows Monitoring
+ * and Alerting reports, through the enter and leave maintenance commands its events issue, not by a
+ * freestanding write that could reach any tenant's unit.</p>
  *
  * <p>A caller that asks for a unit it does not own is told the unit does not exist rather than
  * that it belongs to somebody else: the alternative would turn this endpoint into an oracle for
@@ -168,6 +171,50 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
           command.equipmentId(), command.reason());
     }
     return configVersion;
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public boolean handle(EnterMaintenanceCommand command) {
+    var equipment = equipmentRepository.findById(command.equipmentId());
+    if (equipment.isEmpty()) {
+      log.warn("Maintenance window {} opened on equipment {}, which does not exist",
+          command.maintenanceWindowId(), command.equipmentId());
+      return false;
+    }
+    var unit = equipment.get();
+    if (!unit.enterMaintenance()) {
+      log.info("Equipment {} stays {} while maintenance window {} is open",
+          command.equipmentId(), unit.getStatus(), command.maintenanceWindowId());
+      return false;
+    }
+    equipmentRepository.save(unit);
+    log.info("Equipment {} entered MAINTENANCE (was {}) for maintenance window {}",
+        command.equipmentId(), unit.getStatusBeforeMaintenance(), command.maintenanceWindowId());
+    return true;
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public boolean handle(LeaveMaintenanceCommand command) {
+    var equipment = equipmentRepository.findById(command.equipmentId());
+    if (equipment.isEmpty()) {
+      log.warn("Maintenance window {} closed on equipment {}, which does not exist",
+          command.maintenanceWindowId(), command.equipmentId());
+      return false;
+    }
+    var unit = equipment.get();
+    if (!unit.leaveMaintenance()) {
+      log.info("Equipment {} keeps status {} after maintenance window {} closed",
+          command.equipmentId(), unit.getStatus(), command.maintenanceWindowId());
+      return false;
+    }
+    equipmentRepository.save(unit);
+    log.info("Equipment {} returned to {} after maintenance window {} closed",
+        command.equipmentId(), unit.getStatus(), command.maintenanceWindowId());
+    return true;
   }
 
   // inherited javadoc

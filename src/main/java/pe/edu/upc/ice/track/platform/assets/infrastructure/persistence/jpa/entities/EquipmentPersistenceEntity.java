@@ -127,6 +127,14 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
   @Column(name = "config_version", nullable = false, updatable = false)
   private Integer configVersion;
 
+  /**
+   * The status to restore when the maintenance window holding the unit in {@code MAINTENANCE}
+   * closes; {@code NULL} while no window holds it.
+   */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "status_before_maintenance", length = 50)
+  private StatusEquipment statusBeforeMaintenance;
+
   public EquipmentPersistenceEntity() {
   }
 }

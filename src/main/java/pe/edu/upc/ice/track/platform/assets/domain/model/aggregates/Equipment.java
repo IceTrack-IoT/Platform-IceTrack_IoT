@@ -35,6 +35,10 @@ import java.util.Objects;
  * statement issued by the repository, so concurrent changes coming from different contexts can
  * never collapse into one version.</p>
  *
+ * <p>{@code MAINTENANCE} is driven by the maintenance windows Monitoring and Alerting reports:
+ * {@link #enterMaintenance} remembers the status the unit held in {@code statusBeforeMaintenance} and
+ * {@link #leaveMaintenance} restores it when the window closes.</p>
+ *
  * <p>No JPA or persistence annotation is present here - the mapping lives exclusively in
  * {@code EquipmentPersistenceEntity}.</p>
  */
@@ -74,6 +78,12 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   private LocalDateTime lastReadingAt;
   private Double lastKnownTemperature;
   private final Integer configVersion;
+
+  /**
+   * The status the unit held when a maintenance window moved it to {@code MAINTENANCE}, restored when
+   * the window closes; {@code null} while no window holds the unit in maintenance.
+   */
+  private StatusEquipment statusBeforeMaintenance;
 
   /**
    * Registers a new equipment unit at a site.
@@ -124,11 +134,13 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * @param lastKnownTemperature  the last temperature known, may be {@code null}
    * @param configVersion         the version of the edge configuration; {@code null} is read as
    *                              {@value #INITIAL_CONFIG_VERSION}
+   * @param statusBeforeMaintenance the status to restore when the current maintenance window closes,
+   *                              or {@code null} when no window holds the unit in maintenance
    */
   public Equipment(Long equipmentId, Long siteId, String uid, String name, EquipmentType equipmentType,
                    StatusEquipment status, boolean online, TemperatureThreshold temperatureThreshold,
                    Integer reminderIntervalDays, LocalDateTime lastReadingAt, Double lastKnownTemperature,
-                   Integer configVersion) {
+                   Integer configVersion, StatusEquipment statusBeforeMaintenance) {
     this.equipmentId = equipmentId;
     this.siteId = Objects.requireNonNull(siteId, "siteId must not be null");
     this.uid = validatedUid(uid);
@@ -142,6 +154,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     this.lastReadingAt = lastReadingAt;
     this.lastKnownTemperature = lastKnownTemperature;
     this.configVersion = configVersion == null ? INITIAL_CONFIG_VERSION : configVersion;
+    this.statusBeforeMaintenance = statusBeforeMaintenance;
   }
 
   /**
@@ -201,11 +214,52 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
               .formatted(this.status, target, this.status.allowedTransitions()));
     }
     this.status = target;
+    // The owner moved the unit on purpose: the window that put it in maintenance no longer decides
+    // which status it returns to.
+    this.statusBeforeMaintenance = null;
     // A unit taken out of service is powered down and cannot be connected; keeping the two
     // consistent stops the dashboard from showing a deactivated unit as still reporting.
     if (target == StatusEquipment.DEACTIVATED) {
       this.online = false;
     }
+  }
+
+  /**
+   * Moves the unit to {@link StatusEquipment#MAINTENANCE} because a maintenance window opened on it,
+   * remembering the status to return to.
+   *
+   * <p>Only a status the matrix lets move to {@code MAINTENANCE} is left - {@code ACTIVE} - so a unit
+   * under repair or deactivated keeps its status while a technician works on it. A unit already in
+   * {@code MAINTENANCE} is left untouched, so a status an owner set by hand is not taken over by the
+   * window.</p>
+   *
+   * @return {@code true} when the unit entered maintenance
+   */
+  public boolean enterMaintenance() {
+    if (status == StatusEquipment.MAINTENANCE || !status.canTransitionTo(StatusEquipment.MAINTENANCE)) {
+      return false;
+    }
+    this.statusBeforeMaintenance = status;
+    this.status = StatusEquipment.MAINTENANCE;
+    return true;
+  }
+
+  /**
+   * Returns the unit to the status it held before a maintenance window moved it to
+   * {@code MAINTENANCE}, and forgets that status.
+   *
+   * <p>Nothing changes when no window holds the unit in maintenance: the unit never entered it through
+   * a window, or the owner has changed its status since.</p>
+   *
+   * @return {@code true} when the unit left maintenance
+   */
+  public boolean leaveMaintenance() {
+    if (status != StatusEquipment.MAINTENANCE || statusBeforeMaintenance == null) {
+      return false;
+    }
+    this.status = statusBeforeMaintenance;
+    this.statusBeforeMaintenance = null;
+    return true;
   }
 
   /**
