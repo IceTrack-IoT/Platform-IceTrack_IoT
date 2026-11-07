@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.iam.infrastructure.authorization.sfs.confi
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -52,10 +53,22 @@ import java.util.List;
  * {@code /google/link}) are throttled by {@link SignInRateLimitFilter}, which answers
  * {@code 429 TOO_MANY_REQUESTS} once a client address or an account has failed too often.
  * </p>
+ * <p>
+ * {@code GET /api/v1/telemetry/stream} is reachable without a bearer token: browsers open it with
+ * {@code EventSource}, which cannot send one, and it is authenticated by the single-use stream ticket
+ * its query string carries, issued to an owner by {@code POST /api/v1/telemetry/stream-ticket}.
+ * </p>
+ * <p>
+ * A request rejected for lack of a valid bearer token is answered {@code 401} with the standard
+ * {@code {code, message, details}} body, written by {@code UnauthorizedRequestHandlerEntryPoint}.
+ * </p>
  */
 @Configuration
 @EnableMethodSecurity
 public class WebSecurityConfiguration {
+
+  /** Server-Sent Events route of the telemetry stream, authenticated by a stream ticket instead of a JWT. */
+  static final String TELEMETRY_STREAM_PATH = "/api/v1/telemetry/stream";
 
   private final UserDetailsService userDetailsService;
 
@@ -164,6 +177,9 @@ public class WebSecurityConfiguration {
                 "/swagger-ui/**",
                 "/swagger-resources/**",
                 "/webjars/**").permitAll()
+            // The telemetry stream is opened by a browser EventSource, which cannot send a bearer
+            // token: its single-use stream ticket, checked by the controller, is its credential.
+            .requestMatchers(HttpMethod.GET, TELEMETRY_STREAM_PATH).permitAll()
             .anyRequest().authenticated());
     http.authenticationProvider(authenticationProvider());
     http.addFilterBefore(signInRateLimitFilter(), UsernamePasswordAuthenticationFilter.class);
