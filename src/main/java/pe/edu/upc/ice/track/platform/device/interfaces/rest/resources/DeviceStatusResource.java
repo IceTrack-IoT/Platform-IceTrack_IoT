@@ -6,16 +6,15 @@ import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DeviceStat
 /** REST representation of the lifecycle state of an IoT board. */
 @Schema(
     name = "DeviceStatus",
-    description = "Lifecycle state of an IoT board: PROVISIONED before its first connection, ACTIVE while "
-        + "reporting, SUSPENDED while temporarily blocked, REVOKED when its credentials were withdrawn and "
-        + "DECOMMISSIONED when it was retired",
-    example = "ACTIVE")
+    description = "Lifecycle state of an IoT board: UNPAIRED when it is linked to no equipment and "
+        + "holds no credential, PAIRED while it is linked to an equipment and may submit telemetry "
+        + "with its API key, REVOKED when its credential was withdrawn but it is still linked to "
+        + "the equipment",
+    example = "PAIRED")
 public enum DeviceStatusResource {
-  PROVISIONED,
-  ACTIVE,
-  SUSPENDED,
-  REVOKED,
-  DECOMMISSIONED;
+  UNPAIRED,
+  PAIRED,
+  REVOKED;
 
   public DeviceStatus toDomain() {
     return DeviceStatus.valueOf(name());

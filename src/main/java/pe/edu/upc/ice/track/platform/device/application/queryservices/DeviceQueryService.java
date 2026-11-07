@@ -14,5 +14,12 @@ public interface DeviceQueryService {
 
   List<Device> handle(GetDevicesByEquipmentQuery query);
 
-  Optional<DeviceAuthenticationResult> authenticate(String deviceUid, String apiKey);
+  /**
+   * Authenticates an edge request by its API key alone.
+   *
+   * @param apiKey the value of the {@code X-API-Key} header
+   * @return the server-side device and equipment identifiers, or empty when the key is malformed,
+   *         unknown, revoked or belongs to an unpaired board
+   */
+  Optional<DeviceAuthenticationResult> authenticateByApiKey(String apiKey);
 }

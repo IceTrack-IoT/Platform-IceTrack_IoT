@@ -18,7 +18,7 @@ public final class DevicePersistenceAssembler {
         entity.getDeviceUid(),
         entity.getBoardModel(),
         entity.getFirmwareVersion(),
-        entity.getApiKeyHash(),
+        entity.getApiKeyDigest(),
         entity.getStatus(),
         entity.getPairedEquipmentId(),
         entity.getLastSeenAt());
@@ -33,7 +33,7 @@ public final class DevicePersistenceAssembler {
     entity.setDeviceUid(device.getDeviceUid());
     entity.setBoardModel(device.getBoardModel());
     entity.setFirmwareVersion(device.getFirmwareVersion());
-    entity.setApiKeyHash(device.getApiKeyHash());
+    entity.setApiKeyDigest(device.getApiKeyDigest());
     entity.setStatus(device.getStatus());
     entity.setPairedEquipmentId(device.getPairedEquipmentId());
     entity.setLastSeenAt(device.getLastSeenAt());

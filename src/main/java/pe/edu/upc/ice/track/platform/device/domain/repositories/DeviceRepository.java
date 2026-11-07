@@ -11,9 +11,13 @@ public interface DeviceRepository {
 
   Optional<Device> findByDeviceUid(String deviceUid);
 
+  /** Finds the board holding the given hex SHA-256 API key digest, through a unique index. */
+  Optional<Device> findByApiKeyDigest(String apiKeyDigest);
+
   List<Device> findByEquipmentId(Long equipmentId);
 
-  boolean existsByDeviceUid(String deviceUid);
+  /** Tells whether any board, paired or revoked, is currently linked to the equipment. */
+  boolean existsLinkedToEquipment(Long equipmentId);
 
   Device save(Device device);
 }

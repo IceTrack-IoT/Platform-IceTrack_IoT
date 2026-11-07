@@ -42,6 +42,15 @@ public class DeviceRepositoryImpl implements DeviceRepository {
   }
 
   @Override
+  public Optional<Device> findByApiKeyDigest(String apiKeyDigest) {
+    if (apiKeyDigest == null || apiKeyDigest.isBlank()) {
+      return Optional.empty();
+    }
+    return devicePersistenceRepository.findByApiKeyDigest(apiKeyDigest)
+        .map(DevicePersistenceAssembler::toDomainFromPersistence);
+  }
+
+  @Override
   public List<Device> findByEquipmentId(Long equipmentId) {
     if (equipmentId == null) {
       return List.of();
@@ -52,9 +61,8 @@ public class DeviceRepositoryImpl implements DeviceRepository {
   }
 
   @Override
-  public boolean existsByDeviceUid(String deviceUid) {
-    return deviceUid != null && !deviceUid.isBlank()
-        && devicePersistenceRepository.existsByDeviceUid(deviceUid.trim());
+  public boolean existsLinkedToEquipment(Long equipmentId) {
+    return equipmentId != null && devicePersistenceRepository.existsByPairedEquipmentId(equipmentId);
   }
 
   @Override

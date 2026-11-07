@@ -51,14 +51,21 @@ public class DeviceQueryServiceImpl implements DeviceQueryService {
     return deviceRepository.findByEquipmentId(query.equipmentId());
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>The key is digested and the board found through the unique index on its digest. The
+   * constant-time comparison afterwards adds nothing the indexed equality did not already check,
+   * but it keeps the verification explicit and independent of how the repository matches. The
+   * device is re-read on every call, so a revocation or unpairing takes effect on the very next
+   * request.</p>
+   */
   @Override
-  public Optional<DeviceAuthenticationResult> authenticate(String deviceUid, String apiKey) {
-    if (deviceUid == null || deviceUid.isBlank() || apiKey == null || apiKey.isBlank()) {
-      return Optional.empty();
-    }
-    return deviceRepository.findByDeviceUid(deviceUid)
-        .filter(Device::isActiveAndPaired)
-        .filter(device -> deviceCredentialService.matches(apiKey, device.getApiKeyHash()))
+  public Optional<DeviceAuthenticationResult> authenticateByApiKey(String apiKey) {
+    return deviceCredentialService.digestOf(apiKey)
+        .flatMap(deviceRepository::findByApiKeyDigest)
+        .filter(Device::isPaired)
+        .filter(device -> deviceCredentialService.matches(apiKey, device.getApiKeyDigest()))
         .map(device -> new DeviceAuthenticationResult(device.getDeviceId(), device.getPairedEquipmentId()));
   }
 

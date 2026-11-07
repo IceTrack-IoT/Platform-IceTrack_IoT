@@ -12,7 +12,9 @@ import java.util.Optional;
 public interface DevicePersistenceRepository extends JpaRepository<DevicePersistenceEntity, Long> {
   Optional<DevicePersistenceEntity> findByDeviceUid(String deviceUid);
 
+  Optional<DevicePersistenceEntity> findByApiKeyDigest(String apiKeyDigest);
+
   List<DevicePersistenceEntity> findByPairedEquipmentIdOrderByIdAsc(Long equipmentId);
 
-  boolean existsByDeviceUid(String deviceUid);
+  boolean existsByPairedEquipmentId(Long equipmentId);
 }

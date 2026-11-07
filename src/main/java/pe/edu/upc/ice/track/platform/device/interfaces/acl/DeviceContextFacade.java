@@ -2,26 +2,22 @@ package pe.edu.upc.ice.track.platform.device.interfaces.acl;
 
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.device.application.commandservices.DeviceCommandService;
-import pe.edu.upc.ice.track.platform.device.application.queryservices.DeviceQueryService;
-import pe.edu.upc.ice.track.platform.device.application.results.DeviceAuthenticationResult;
 
-import java.util.Optional;
 import java.time.LocalDateTime;
 
-/** Published in-process contract through which other bounded contexts verify device credentials. */
+/**
+ * Published in-process contract of the Device Management context.
+ *
+ * <p>Credential verification is not offered here: edge requests are authenticated by the edge
+ * filter chain of this context, which places the device and equipment identifiers in the security
+ * context before any other context sees the request.</p>
+ */
 @Service
 public class DeviceContextFacade {
-  private final DeviceQueryService deviceQueryService;
   private final DeviceCommandService deviceCommandService;
 
-  public DeviceContextFacade(
-      DeviceQueryService deviceQueryService, DeviceCommandService deviceCommandService) {
-    this.deviceQueryService = deviceQueryService;
+  public DeviceContextFacade(DeviceCommandService deviceCommandService) {
     this.deviceCommandService = deviceCommandService;
-  }
-
-  public Optional<DeviceAuthenticationResult> authenticate(String deviceUid, String apiKey) {
-    return deviceQueryService.authenticate(deviceUid, apiKey);
   }
 
   public void recordActivity(Long deviceId, LocalDateTime seenAt) {
