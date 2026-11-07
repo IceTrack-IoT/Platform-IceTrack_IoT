@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -64,7 +65,7 @@ public class GlobalExceptionHandler {
 
   /**
    * Handles a path variable or query parameter whose text cannot be converted to the declared type,
-   * such as {@code ?status=ON} for an enum that has no such constant or {@code ?siteId=abc}.
+   * such as {@code ?status=ON} for an enum that has no such constant or {@code ?site_id=abc}.
    *
    * <p>Without this handler the conversion failure would fall into the generic
    * {@link RuntimeException} handler and be rendered as a 500, although the request is what is
@@ -92,6 +93,28 @@ public class GlobalExceptionHandler {
           parameterName);
     }
     var applicationError = ApplicationError.validationError(parameterName, reason);
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+  }
+
+  /**
+   * Handles a required query parameter that is absent, such as a maintenance window audit sent
+   * without {@code equipment_id}.
+   *
+   * <p>Without this handler the failure would fall into the generic {@link Exception} handler and be
+   * rendered as a 500, although the request is what is wrong.</p>
+   *
+   * @param ex the missing parameter exception raised while binding the request
+   * @return error response with BAD_REQUEST status
+   */
+  @ExceptionHandler(MissingServletRequestParameterException.class)
+  public ResponseEntity<?> handleMissingServletRequestParameter(MissingServletRequestParameterException ex) {
+    var parameterName = ex.getParameterName();
+    var applicationError = ApplicationError.validationError(
+        parameterName,
+        resolveMessageOrDefault(
+            "validation.request.parameter.missing",
+            "Parameter '%s' is required".formatted(parameterName),
+            parameterName));
     return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
   }
 
