@@ -7,8 +7,9 @@ import java.util.Optional;
 
 /**
  * Outbound service (the outbound half of the Anti-Corruption Layer between {@code monitoring} and
- * {@code assets}) through which the monitoring application layer retrieves the temperature
- * threshold of an equipment before evaluating an incoming reading.
+ * {@code assets}) through which the monitoring context retrieves the temperature threshold of an
+ * equipment before evaluating an incoming reading, checks who owns a unit, and resolves the owner a
+ * telemetry stream event must be delivered to.
  *
  * <p>This is the only class in {@code monitoring} that knows an {@code assets} context exists. It
  * talks to it exclusively through {@link AssetContextFacade}, whose whole signature is
@@ -47,5 +48,20 @@ public class ExternalAssetManagementService {
    */
   public boolean isEquipmentOwnedBy(Long equipmentId, Long ownerId) {
     return assetContextFacade.existsEquipmentForOwner(equipmentId, ownerId);
+  }
+
+  /**
+   * Resolves the owner of a unit, through the unit's site. The telemetry stream uses it to deliver an
+   * event to the owner of the unit it concerns and to nobody else.
+   *
+   * @param equipmentId identifier of the equipment
+   * @return the owner profile identifier, or empty when the identifier is {@code null} or the unit or
+   *         its site does not exist
+   */
+  public Optional<Long> fetchOwnerId(Long equipmentId) {
+    if (equipmentId == null) {
+      return Optional.empty();
+    }
+    return assetContextFacade.getEquipmentOwnerId(equipmentId);
   }
 }
