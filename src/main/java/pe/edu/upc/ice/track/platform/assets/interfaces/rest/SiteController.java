@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,14 +23,22 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import pe.edu.upc.ice.track.platform.assets.application.commandservices.AddressValidationCommandService;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.SiteCommandService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.SiteQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSiteByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSitesByOwnerQuery;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.AddressNotVerifiedResource;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.AddressValidationResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterSiteResource;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ValidateAddressResource;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.AddressValidationResourceFromResultAssembler;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ValidateAddressCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.AddressValidationResult;
+import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.SiteResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateSiteAddressResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateSiteResource;
@@ -74,6 +83,7 @@ public class SiteController {
   private final SiteQueryService siteQueryService;
   private final SiteCommandService siteCommandService;
   private final EquipmentQueryService equipmentQueryService;
+  private final AddressValidationCommandService addressValidationCommandService;
 
   /**
    * Constructor
@@ -82,14 +92,91 @@ public class SiteController {
    * @param siteCommandService The {@link SiteCommandService} instance
    * @param equipmentQueryService The {@link EquipmentQueryService} instance, used to list the
    *                              equipment installed at a site
+   * @param addressValidationCommandService The {@link AddressValidationCommandService} instance, which
+   *                              verifies addresses before a site is saved
    */
   public SiteController(
       SiteQueryService siteQueryService,
       SiteCommandService siteCommandService,
-      EquipmentQueryService equipmentQueryService) {
+      EquipmentQueryService equipmentQueryService,
+      AddressValidationCommandService addressValidationCommandService) {
     this.siteQueryService = siteQueryService;
     this.siteCommandService = siteCommandService;
     this.equipmentQueryService = equipmentQueryService;
+    this.addressValidationCommandService = addressValidationCommandService;
+  }
+
+  /**
+   * Verifies an address with Google Maps before a site is saved.
+   *
+   * <p>Nothing is persisted. A verified address is answered with a token that is valid for 15
+   * minutes and must be presented when the site is registered or moved.</p>
+   *
+   * @param resource The {@link ValidateAddressResource} payload
+   * @param authentication The authenticated principal, whose name identifies the caller
+   * @return The verified address and its token with 200 OK, or the reason it was refused
+   */
+  @PostMapping(value = "/validate-address", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(
+      summary = "Verify a site address",
+      description = "Verifies an address with Google Maps, restricted to Metropolitan Lima and the Constitutional "
+          + "Province of Callao. Returns the normalized address, its coordinates and district, and a validation_token "
+          + "valid for 15 minutes. Nothing is saved. Callers are limited to 20 validations per minute.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Address verified",
+          content = @Content(schema = @Schema(implementation = AddressValidationResource.class))),
+      @ApiResponse(responseCode = "400", description = "Invalid input data, such as a missing address"),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not an owner"),
+      @ApiResponse(
+          responseCode = "422",
+          description = "ADDRESS_OUT_OF_COVERAGE, or ADDRESS_NOT_VERIFIED with up to five candidates",
+          content = @Content(schema = @Schema(implementation = AddressNotVerifiedResource.class))),
+      @ApiResponse(responseCode = "429", description = "TOO_MANY_REQUESTS - more than 20 validations in a minute"),
+      @ApiResponse(responseCode = "503", description = "GEOCODING_UNAVAILABLE - the maps service failed or timed out; Retry-After is 30")
+  })
+  public ResponseEntity<?> validateAddress(
+      @Valid @RequestBody ValidateAddressResource resource,
+      Authentication authentication) {
+    var command = ValidateAddressCommandFromResourceAssembler.toCommandFromResource(authentication.getName(), resource);
+    return switch (addressValidationCommandService.handle(command)) {
+      case Result.Success<AddressValidationResult, ApplicationError> success ->
+          ResponseEntity.ok(AddressValidationResourceFromResultAssembler.toResource(success.value()));
+      case Result.Failure<AddressValidationResult, ApplicationError> failure -> validationFailure(failure.error());
+    };
+  }
+
+  /**
+   * Maps a failed address validation to its response, adding the candidates and the retry hints.
+   *
+   * @param error the failure reported by the command service
+   * @return the response for the failure
+   */
+  private static ResponseEntity<?> validationFailure(ApplicationError error) {
+    switch (error.code()) {
+      case "ADDRESS_NOT_VERIFIED" -> {
+        var candidates = error.details() == null || error.details().isBlank()
+            ? List.<String>of()
+            : List.of(error.details().split("\n"));
+        return ResponseEntity.unprocessableContent()
+            .body(new AddressNotVerifiedResource(error.code(), error.message(), candidates));
+      }
+      case "GEOCODING_UNAVAILABLE" -> {
+        var response = ErrorResponseAssembler.toErrorResponseFromApplicationError(error);
+        return ResponseEntity.status(response.getStatusCode()).header("Retry-After", "30").body(response.getBody());
+      }
+      case "TOO_MANY_REQUESTS" -> {
+        var response = ErrorResponseAssembler.toErrorResponseFromApplicationError(error);
+        return ResponseEntity.status(response.getStatusCode()).header("Retry-After", "60").body(response.getBody());
+      }
+      default -> {
+        return ErrorResponseAssembler.toErrorResponseFromApplicationError(error);
+      }
+    }
   }
 
   /**
@@ -103,16 +190,17 @@ public class SiteController {
   @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Register a site",
-      description = "Registers a new site for the authenticated owner. The owner is taken from the "
-          + "authenticated identity and cannot be supplied in the payload. The site is answered with "
-          + "geocoding_status PENDING and no location; its address is located in the background.",
+      description = "Registers a new site for the authenticated owner at the address carried by a validation_token "
+          + "issued by POST /validate-address. The owner is taken from the authenticated identity and cannot be "
+          + "supplied in the payload. An optional pin must lie within 150 meters of the verified point. The site "
+          + "is saved as RESOLVED; the maps service is not queried.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "201",
           description = "Site registered",
           content = @Content(schema = @Schema(implementation = SiteResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an address longer than 255 characters"),
+      @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR, ADDRESS_VALIDATION_REQUIRED (missing, invalid, expired or foreign token), or PIN_OUT_OF_RANGE"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile")
   })
@@ -247,9 +335,9 @@ public class SiteController {
   @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Update a site",
-      description = "Replaces the name, address, contact name and contact phone number of one of the "
-          + "authenticated owner's sites. The owner of a site never changes. A different address "
-          + "restarts geocoding; an unchanged one keeps the current location.",
+      description = "Replaces the name, contact name and contact phone number of one of the authenticated "
+          + "owner's sites. The address and coordinates are not changed here: use PUT /{siteId}/address with a "
+          + "validation_token. The owner of a site never changes.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -277,27 +365,27 @@ public class SiteController {
   }
 
   /**
-   * Changes the address of one of the authenticated owner's sites and restarts its geocoding.
+   * Moves one of the authenticated owner's sites to an address verified beforehand.
    *
    * @param siteId The site identifier
    * @param resource The {@link UpdateSiteAddressResource} payload
    * @param authentication The authenticated principal, whose name identifies the caller
-   * @return The updated {@link SiteResource}, with 200 OK and {@code geocoding_status} PENDING
+   * @return The updated {@link SiteResource} with its verified location, with 200 OK
    */
   @PutMapping(value = "/{siteId}/address", consumes = MediaType.APPLICATION_JSON_VALUE)
   @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Change the address of a site",
-      description = "Replaces the address of one of the authenticated owner's sites and answers immediately "
-          + "with geocoding_status PENDING and no location; the coordinates are resolved in the background. "
-          + "Submitting the current address again retries a FAILED or NOT_FOUND lookup.",
+      description = "Moves one of the authenticated owner's sites to the address carried by a validation_token "
+          + "issued by POST /validate-address, keeping its equipment. An optional pin must lie within 150 meters "
+          + "of the verified point. The site is answered RESOLVED with its new location.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
-          description = "Address changed, geocoding queued",
+          description = "Address changed and located",
           content = @Content(schema = @Schema(implementation = SiteResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid input data, such as an address longer than 255 characters"),
+      @ApiResponse(responseCode = "400", description = "ADDRESS_VALIDATION_REQUIRED or PIN_OUT_OF_RANGE"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
       @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller")

@@ -1,23 +1,27 @@
 package pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 
 /**
- * Resource received to change the address of a site.
+ * Resource received to move a site to a newly verified address.
  *
- * <p>Changing the address restarts geocoding, so the response always comes back {@code PENDING}
- * with no location; the new coordinates appear once the background lookup completes.</p>
+ * <p>The new address is the one carried by {@code validation_token}. The response carries the
+ * site's new coordinates immediately, since nothing is looked up in the background any more.</p>
+ *
+ * @param validationToken token from {@code POST /api/v1/assets/sites/validate-address}
+ * @param pin             optional owner-adjusted location, within 150 meters of the verified point
  */
 @Schema(
     name = "UpdateSiteAddressRequest",
-    description = "Site address update request",
-    example = "{\"address\": \"Av. Los Pinos 45, Lima\"}")
+    description = "Site address change; the new address comes from a validated token",
+    example = "{\"validation_token\": \"eyJhbGciOiJIUzI1NiJ9.e30.signature\", \"pin\": null}")
 public record UpdateSiteAddressResource(
-    @NotBlank(message = "{validation.not-blank}")
-    @Size(max = 255, message = "{validation.size.max}")
-    @Schema(description = "New physical address of the site", example = "Av. Los Pinos 45, Lima", maxLength = 255)
-    String address
+    @Schema(description = "Token issued by the address validation endpoint, valid for 15 minutes")
+    String validationToken,
+
+    @Valid
+    @Schema(description = "Owner-adjusted location, within 150 meters of the verified point", nullable = true)
+    PinResource pin
 ) {
 }

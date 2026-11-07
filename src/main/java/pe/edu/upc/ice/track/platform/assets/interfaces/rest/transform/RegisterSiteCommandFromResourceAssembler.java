@@ -8,6 +8,9 @@ import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterSi
  */
 public class RegisterSiteCommandFromResourceAssembler {
 
+  private RegisterSiteCommandFromResourceAssembler() {
+  }
+
   /**
    * Converts the site registration payload into its command representation.
    *
@@ -16,7 +19,14 @@ public class RegisterSiteCommandFromResourceAssembler {
    * @return the {@link RegisterSiteCommand} command
    */
   public static RegisterSiteCommand toCommandFromResource(String username, RegisterSiteResource resource) {
+    var pin = resource.pin();
     return new RegisterSiteCommand(
-        username, resource.name(), resource.address(), resource.contactName(), resource.phone());
+        username,
+        resource.name(),
+        resource.contactName(),
+        resource.phone(),
+        resource.validationToken(),
+        pin == null ? null : pin.latitude(),
+        pin == null ? null : pin.longitude());
   }
 }

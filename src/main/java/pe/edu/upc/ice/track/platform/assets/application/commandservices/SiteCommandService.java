@@ -11,46 +11,39 @@ import pe.edu.upc.ice.track.platform.shared.application.result.Result;
  * Application service handling write operations on {@link Site}.
  *
  * <p>Every method returns a {@link Result} rather than throwing, so a rejected write reaches the
- * caller as a value it can render as a status code instead of as an exception it has to
- * translate. The distinction the codes carry: a {@code *_NOT_FOUND} failure means the site does
- * not exist, a {@code SITE_CONFLICT} failure means it exists but belongs to somebody else, so a
- * caller cannot probe for the existence of other owners' sites.</p>
+ * caller as a value it can render as a status code. A {@code *_NOT_FOUND} failure means the site
+ * does not exist or belongs to somebody else, so a caller cannot probe for other owners' sites.</p>
+ *
+ * <p>Registration and address changes require a {@code validation_token} issued by
+ * {@link AddressValidationCommandService}. None of these methods calls the geocoding provider.</p>
  */
 public interface SiteCommandService {
 
   /**
-   * Register a new site for the owner carried by the command.
+   * Registers a new site at a verified address.
    *
-   * @param command The {@link RegisterSiteCommand} Command
-   * @return A {@link Result} containing the registered {@link Site} on success, or an
-   *         {@link ApplicationError} when a value violates a site invariant
+   * @param command the {@link RegisterSiteCommand} to handle
+   * @return the registered site, or an {@link ApplicationError} when the token is missing, invalid,
+   *         expired or belongs to another owner ({@code ADDRESS_VALIDATION_REQUIRED}), the pin is
+   *         too far away ({@code PIN_OUT_OF_RANGE}), or a value violates a site invariant
    */
   Result<Site, ApplicationError> handle(RegisterSiteCommand command);
 
   /**
-   * Replace the editable details of an existing site.
+   * Replaces the name, contact name and contact phone of an existing site.
    *
-   * <p>Loads the site, verifies it belongs to the command's owner, applies the changes through
-   * its domain method and persists it.</p>
-   *
-   * @param command The {@link UpdateSiteInfoCommand} Command
-   * @return A {@link Result} containing the updated {@link Site} on success, or an
-   *         {@link ApplicationError} when the site is missing, belongs to another owner, or a
-   *         value violates a site invariant
+   * @param command the {@link UpdateSiteInfoCommand} to handle
+   * @return the updated site, or an {@link ApplicationError} when the site is not reachable by the
+   *         caller or a value violates a site invariant
    */
   Result<Site, ApplicationError> handle(UpdateSiteInfoCommand command);
 
   /**
-   * Change the address of an existing site and queue a new lookup of its location.
+   * Moves an existing site to an address verified beforehand, keeping its equipment.
    *
-   * <p>Returns as soon as the new address is saved, with the site {@code PENDING}: the lookup
-   * itself happens asynchronously after the transaction commits, so neither its duration nor its
-   * failure can affect this call.</p>
-   *
-   * @param command The {@link UpdateSiteAddressCommand} Command
-   * @return A {@link Result} containing the updated {@link Site} on success, or an
-   *         {@link ApplicationError} when the site is missing, belongs to another owner, or the
-   *         address violates a site invariant
+   * @param command the {@link UpdateSiteAddressCommand} to handle
+   * @return the updated site, or an {@link ApplicationError} when the site is not reachable by the
+   *         caller, the token is not valid for the caller, or the pin is out of range
    */
   Result<Site, ApplicationError> handle(UpdateSiteAddressCommand command);
 }

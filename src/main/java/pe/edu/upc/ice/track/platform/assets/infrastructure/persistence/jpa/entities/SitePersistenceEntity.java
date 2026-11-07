@@ -36,8 +36,9 @@ import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entit
  * {@code GeoLocation} value object stays free of JPA too. The columns added for geocoding, the
  * equipment counter and the version all carry a database default, because the schema is evolved
  * by {@code ddl-auto=update} and a {@code NOT NULL} column without a default cannot be added to a
- * table that already holds rows. Existing sites therefore start {@code PENDING}, which the startup
- * recovery in {@code SiteGeocodingRecoveryEventHandler} picks up.</p>
+ * table that already holds rows. Sites created before address verification may keep a status other
+ * than {@code RESOLVED} and no coordinates; they are reported without a location and are not
+ * geocoded again.</p>
  */
 @Getter
 @Setter

@@ -1,7 +1,6 @@
 package pe.edu.upc.ice.track.platform.assets.domain.repositories;
 
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingStatus;
 
 import java.util.List;
 import java.util.Optional;
@@ -10,8 +9,7 @@ import java.util.Optional;
  * Site repository port.
  *
  * <p>Implemented by {@code SiteRepositoryImpl} in the infrastructure layer, which is also the
- * place where the domain events of a site - its {@code SiteCreatedEvent} and every
- * {@code SiteAddressChangedEvent} - are published.</p>
+ * place where the domain events of a site - its {@code SiteCreatedEvent} - are published.</p>
  */
 public interface SiteRepository {
 
@@ -33,16 +31,6 @@ public interface SiteRepository {
    * @return the sites of that owner, empty when it has none
    */
   List<Site> findByOwnerId(Long ownerId);
-
-  /**
-   * Find every site in a given geocoding status, whatever its owner.
-   *
-   * <p>Used to resume lookups that a previous run of the application queued but never finished.</p>
-   *
-   * @param geocodingStatus the status to match
-   * @return the matching sites, empty when there are none
-   */
-  List<Site> findByGeocodingStatus(GeocodingStatus geocodingStatus);
 
   /**
    * Check whether a site already exists.

@@ -145,14 +145,15 @@ public final class ErrorResponseAssembler {
    */
   public static HttpStatusCode toStatusFromErrorCode(String errorCode) {
     return switch (errorCode) {
-      case "VALIDATION_ERROR" -> HttpStatus.BAD_REQUEST;
+      case "VALIDATION_ERROR", "ADDRESS_VALIDATION_REQUIRED", "PIN_OUT_OF_RANGE" -> HttpStatus.BAD_REQUEST;
       case "INVALID_STATUS_TRANSITION", "TECHNICIAN_NOT_ELIGIBLE", "REVIEW_NOT_ALLOWED", "ACCOUNT_LINK_REQUIRED" ->
           HttpStatus.CONFLICT;
       case String s when s.endsWith("_NOT_FOUND") -> HttpStatus.NOT_FOUND;
-      case "BUSINESS_RULE_VIOLATION" -> HttpStatusCode.valueOf(422);
+      case "BUSINESS_RULE_VIOLATION", "ADDRESS_OUT_OF_COVERAGE", "ADDRESS_NOT_VERIFIED" -> HttpStatusCode.valueOf(422);
       case "UNAUTHORIZED", "BAD_CREDENTIALS", "INVALID_TOKEN" -> HttpStatus.UNAUTHORIZED;
       case "ACCESS_DENIED", "ROLE_CHANNEL_MISMATCH" -> HttpStatus.FORBIDDEN;
       case "TOO_MANY_REQUESTS" -> HttpStatus.TOO_MANY_REQUESTS;
+      case "GEOCODING_UNAVAILABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
       case String s when s.endsWith("_CONFLICT") -> HttpStatus.CONFLICT;
       default -> HttpStatus.INTERNAL_SERVER_ERROR;
     };

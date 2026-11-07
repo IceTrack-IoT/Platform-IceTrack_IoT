@@ -1,22 +1,23 @@
 package pe.edu.upc.ice.track.platform.assets.domain.model.commands;
 
 /**
- * Command to register a new site for an owner.
+ * Command to register a new site at an address verified beforehand.
  *
- * <p>The owner is never part of the payload: the command carries the username of the already
- * authenticated caller, which the command service resolves to an owner, so a client can only ever
- * create a site for itself.</p>
- *
- * @param username    username of the authenticated caller; required
- * @param name        the site name; required, at most 30 characters
- * @param address     the physical address of the site; required, at most 255 characters
- * @param contactName the person reachable on site; required, at most 30 characters
- * @param phone       the contact phone number; required
+ * @param username        username of the authenticated caller; required. Resolved to an owner by the
+ *                        command service, never taken from the payload
+ * @param name            the site name; required, at most 30 characters
+ * @param contactName     the person reachable on site; required, at most 30 characters
+ * @param phone           the contact phone number; required
+ * @param validationToken the token issued by the address validation endpoint; may be {@code null}
+ * @param pinLatitude     latitude of the owner's pin, or {@code null} to use the verified point
+ * @param pinLongitude    longitude of the owner's pin, or {@code null} to use the verified point
  */
 public record RegisterSiteCommand(
     String username,
     String name,
-    String address,
     String contactName,
-    String phone) {
+    String phone,
+    String validationToken,
+    Double pinLatitude,
+    Double pinLongitude) {
 }

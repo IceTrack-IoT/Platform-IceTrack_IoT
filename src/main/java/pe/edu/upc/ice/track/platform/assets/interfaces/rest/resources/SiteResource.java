@@ -1,16 +1,14 @@
 package pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Outbound REST resource representing a registered site.
  *
- * <p>Carries the owner identifier because an owner listing has to tell a caller which of the rows
- * is whose, but it is read-only here: it is never accepted as input.</p>
- *
- * <p>{@code location} and {@code navigation_url} are present only when {@code geocoding_status}
- * is {@code RESOLVED}, and {@code null} otherwise. A client therefore never has to tell real
- * coordinates from placeholder zeroes: no coordinates are sent unless they were resolved.</p>
+ * <p>{@code location} and {@code navigation_url} are <em>omitted</em> from the JSON when the site has
+ * no coordinates; they are never sent as {@code null}. A client therefore never has to tell real
+ * coordinates from placeholders.</p>
  */
 @Schema(
     name = "SiteResponse",
@@ -45,15 +43,15 @@ public record SiteResource(
     @Schema(description = "Where the site stands in locating its address", example = "RESOLVED")
     GeocodingStatusResource geocodingStatus,
 
-    @Schema(
-        description = "Resolved coordinates; null unless geocoding_status is RESOLVED",
-        nullable = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Resolved coordinates; omitted unless geocoding_status is RESOLVED",
+        requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     GeoLocationResource location,
 
-    @Schema(
-        description = "Google Maps directions link to the site; null unless geocoding_status is RESOLVED",
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Google Maps directions link; omitted unless the site is located",
         example = "https://www.google.com/maps/dir/?api=1&destination=-12.0931,-77.0465",
-        nullable = true)
+        requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     String navigationUrl
 ) {
 }

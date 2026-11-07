@@ -26,15 +26,31 @@ public record GoogleGeocodingResponse(
   /**
    * One candidate place.
    *
-   * @param geometry     where the place is
-   * @param placeId      Google's identifier for the place
-   * @param partialMatch {@code true} when Google matched only part of the address
+   * @param formattedAddress  the normalized address Google writes for the place
+   * @param addressComponents the parts of the address, used to read the district
+   * @param geometry          where the place is
+   * @param placeId           Google's identifier for the place
+   * @param partialMatch      {@code true} when Google matched only part of the address
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
   public record Result(
+      @JsonProperty("formatted_address") String formattedAddress,
+      @JsonProperty("address_components") List<AddressComponent> addressComponents,
       @JsonProperty("geometry") Geometry geometry,
       @JsonProperty("place_id") String placeId,
       @JsonProperty("partial_match") Boolean partialMatch) {
+  }
+
+  /**
+   * One part of an address, such as a street, a district or a province.
+   *
+   * @param longName the full name of the part
+   * @param types    the kinds of part it is, such as {@code locality}
+   */
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public record AddressComponent(
+      @JsonProperty("long_name") String longName,
+      @JsonProperty("types") List<String> types) {
   }
 
   /**
