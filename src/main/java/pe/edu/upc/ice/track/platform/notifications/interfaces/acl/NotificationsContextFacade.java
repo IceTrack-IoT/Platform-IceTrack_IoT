@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.notifications.interfaces.acl;
 
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.notifications.application.queryservices.NotificationQueryService;
-import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationsByRecipientQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationCountQuery;
 
 /**
  * ACL facade that exposes Notifications capabilities to other bounded contexts.
@@ -24,11 +24,12 @@ public class NotificationsContextFacade {
     this.notificationQueryService = notificationQueryService;
   }
 
-  /** @return the number of unread notifications currently addressed to the recipient. */
+  /** @return the number of notifications addressed to the recipient that are neither read nor dismissed. */
   public int countUnreadNotificationsByRecipient(Long recipientUserId) {
     if (recipientUserId == null) {
       return 0;
     }
-    return notificationQueryService.handle(new GetUnreadNotificationsByRecipientQuery(recipientUserId)).size();
+    var count = notificationQueryService.handle(new GetUnreadNotificationCountQuery(recipientUserId));
+    return (int) Math.min(count, Integer.MAX_VALUE);
   }
 }

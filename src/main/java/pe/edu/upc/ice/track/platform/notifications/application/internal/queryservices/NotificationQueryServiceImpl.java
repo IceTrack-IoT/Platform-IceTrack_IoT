@@ -1,18 +1,22 @@
 package pe.edu.upc.ice.track.platform.notifications.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.notifications.application.queryservices.NotificationQueryService;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationByIdQuery;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationsByRecipientQuery;
-import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationsByRecipientQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationCountQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationPage;
 import pe.edu.upc.ice.track.platform.notifications.domain.repositories.NotificationRepository;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
  *  Implementation of {@link NotificationQueryService} that uses a {@link NotificationRepository} to fetch notifications from the database.
+ *
+ * <p>Listings and counts only consider active notifications: a dismissed notification is hidden
+ * from the inbox and from the unread badge, but it is kept.</p>
  */
 @Service
 public class NotificationQueryServiceImpl implements NotificationQueryService {
@@ -35,23 +39,18 @@ public class NotificationQueryServiceImpl implements NotificationQueryService {
         .filter(notification -> notification.isAddressedTo(query.recipientUserId()));
   }
 
-  /**
-   *  Fetches all notifications for a given recipient user.
-   * @param query The query containing the recipient user Id
-   * @return  A list of notifications for the given recipient user.
-   */
+  // inherited javadoc
   @Override
-  public List<Notification> handle(GetNotificationsByRecipientQuery query) {
-    return notificationRepository.findActiveByRecipientUserId(query.recipientUserId());
+  @Transactional(readOnly = true)
+  public NotificationPage handle(GetNotificationsByRecipientQuery query) {
+    return notificationRepository.findActivePageByRecipientUserId(
+        query.recipientUserId(), query.unreadOnly(), query.page(), query.size());
   }
 
-  /**
-   *  Fetches all unread notifications for a given recipient user.
-   * @param query The query containing the recipient user Id
-   * @return  A list of unread notifications for the given recipient user.
-   */
+  // inherited javadoc
   @Override
-  public List<Notification> handle(GetUnreadNotificationsByRecipientQuery query) {
-    return notificationRepository.findByRecipientUserIdAndIsReadFalse(query.recipientUserId());
+  @Transactional(readOnly = true)
+  public long handle(GetUnreadNotificationCountQuery query) {
+    return notificationRepository.countActiveUnreadByRecipientUserId(query.recipientUserId());
   }
 }

@@ -1,9 +1,11 @@
 package pe.edu.upc.ice.track.platform.notifications.interfaces.rest.transform;
 
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationPage;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.NotificationResource;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.PagedNotificationResource;
 
-/** Maps a {@link Notification} into a {@link NotificationResource}. */
+/** Maps a {@link Notification}, or a page of them, into its REST representation. */
 public final class NotificationResourceFromEntityAssembler {
 
   private NotificationResourceFromEntityAssembler() {
@@ -22,5 +24,20 @@ public final class NotificationResourceFromEntityAssembler {
         notification.isRead(),
         notification.getReadAt(),
         notification.getDismissedAt());
+  }
+
+  /**
+   * Converts a {@link NotificationPage} into its outbound paged resource.
+   *
+   * @param page the page to convert
+   * @return the {@link PagedNotificationResource} resource
+   */
+  public static PagedNotificationResource toPagedResourceFromPage(NotificationPage page) {
+    return new PagedNotificationResource(
+        page.content().stream().map(NotificationResourceFromEntityAssembler::toResourceFromEntity).toList(),
+        page.page(),
+        page.size(),
+        page.totalElements(),
+        page.totalPages());
   }
 }

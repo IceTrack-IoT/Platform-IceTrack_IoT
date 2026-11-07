@@ -19,11 +19,13 @@ import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.Dismiss
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationAsReadCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationByIdQuery;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationsByRecipientQuery;
-import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationsByRecipientQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationCountQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationPage;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.NotificationResource;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.PagedNotificationResource;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.UnreadNotificationCountResource;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.transform.NotificationResourceFromEntityAssembler;
-
-import java.util.List;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
 
 /**
  * REST controller for the authenticated caller's notification inbox: listing, detail and
@@ -36,11 +38,17 @@ import java.util.List;
  * <p>The recipient is always derived from the authenticated principal, never taken from the
  * request, the same way {@code DeviceTokensController} does. A notification addressed
  * to anybody else answers 404, exactly like a missing one, so identifiers cannot be harvested.</p>
+ *
+ * <p>The inbox is paginated and only lists active notifications: a dismissed notification is
+ * hidden, but kept. {@code /unread-count} feeds the unread badge.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/notifications", produces = MediaType.APPLICATION_JSON_VALUE)
 @Tag(name = "Notifications", description = "Notification management endpoints")
 public class NotificationsController {
+
+  /** Placeholder recipient used only to validate the paging values of a caller who has no inbox. */
+  private static final Long NO_RECIPIENT = 0L;
 
   private final NotificationCommandService notificationCommandService;
   private final NotificationQueryService notificationQueryService;
@@ -57,32 +65,66 @@ public class NotificationsController {
 
   @GetMapping
   @Operation(
-      summary = "Get my notifications",
-      description = "Retrieves the authenticated caller's notifications, optionally filtered to "
-          + "return only unread ones. The recipient is derived from the access token.",
+      summary = "List my notifications",
+      description = "Returns one page of the authenticated caller's active (not dismissed) notifications, most "
+          + "recent first, optionally only the unread ones. The recipient is derived from the access token. "
+          + "size defaults to 20 and is capped at 100.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
-          description = "Notifications retrieved successfully; empty when the caller has none",
-          content = @Content(schema = @Schema(implementation = NotificationResource.class))
+          description = "Page of notifications; empty when the caller has none",
+          content = @Content(schema = @Schema(implementation = PagedNotificationResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - a negative page or a size below 1",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
       ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
   })
-  public ResponseEntity<List<NotificationResource>> getMyNotifications(
-      @Parameter(description = "Flag to filter only unread notifications")
-      @RequestParam(defaultValue = "false") boolean onlyUnread,
+  public ResponseEntity<PagedNotificationResource> listMyNotifications(
+      @Parameter(description = "Zero-based page index", example = "0")
+      @RequestParam(defaultValue = "0") int page,
+      @Parameter(description = "Page size, from 1 to 100; larger values are capped at 100", example = "20")
+      @RequestParam(defaultValue = "" + GetNotificationsByRecipientQuery.DEFAULT_PAGE_SIZE) int size,
+      @Parameter(description = "Return only notifications not yet read", example = "false")
+      @RequestParam(defaultValue = "false") boolean unreadOnly,
       Authentication authentication) {
     var recipient = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName());
     if (recipient.isEmpty()) {
-      // Accounts without an owner profile (technicians today) receive no notifications yet.
-      return ResponseEntity.ok(List.of());
+      // Accounts without an owner profile (technicians today) receive no notifications yet. The
+      // paging values are still validated, so the answer does not depend on the caller's role.
+      var emptyQuery = new GetNotificationsByRecipientQuery(NO_RECIPIENT, unreadOnly, page, size);
+      return ResponseEntity.ok(NotificationResourceFromEntityAssembler.toPagedResourceFromPage(
+          NotificationPage.empty(emptyQuery.page(), emptyQuery.size())));
     }
-    var notifications = onlyUnread
-        ? notificationQueryService.handle(new GetUnreadNotificationsByRecipientQuery(recipient.get()))
-        : notificationQueryService.handle(new GetNotificationsByRecipientQuery(recipient.get()));
-    return ResponseEntity.ok(notifications.stream().map(NotificationResourceFromEntityAssembler::toResourceFromEntity).toList());
+    var query = new GetNotificationsByRecipientQuery(recipient.get(), unreadOnly, page, size);
+    var notifications = notificationQueryService.handle(query);
+    return ResponseEntity.ok(NotificationResourceFromEntityAssembler.toPagedResourceFromPage(notifications));
+  }
+
+  @GetMapping("/unread-count")
+  @Operation(
+      summary = "Count my unread notifications",
+      description = "Returns how many of the authenticated caller's notifications are neither read nor dismissed, "
+          + "for the unread badge. The recipient is derived from the access token.",
+      security = @SecurityRequirement(name = "bearerAuth")
+  )
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Unread count; 0 when the caller has none",
+          content = @Content(schema = @Schema(implementation = UnreadNotificationCountResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
+  })
+  public ResponseEntity<UnreadNotificationCountResource> countMyUnreadNotifications(Authentication authentication) {
+    var unreadCount = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
+        .map(recipient -> notificationQueryService.handle(new GetUnreadNotificationCountQuery(recipient)))
+        .orElse(0L);
+    return ResponseEntity.ok(new UnreadNotificationCountResource(unreadCount));
   }
 
   @GetMapping("/{notificationId}")

@@ -3,9 +3,9 @@ package pe.edu.upc.ice.track.platform.notifications.application.queryservices;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationByIdQuery;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationsByRecipientQuery;
-import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationsByRecipientQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationCountQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationPage;
 
-import java.util.List;
 import java.util.Optional;
 
 /** Application service handling read operations on {@link Notification}. */
@@ -18,16 +18,18 @@ public interface NotificationQueryService {
   Optional<Notification> handle(GetNotificationByIdQuery query);
 
   /**
-   *  Fetch all notifications for a given recipient user.
-   * @param query The query containing the recipient user Id
-   * @return  A list of notifications for the given recipient user.
+   * Fetch one page of a recipient's active notifications, most recent first.
+   *
+   * @param query the recipient, the unread filter and the page to read
+   * @return the notifications of that page and the paging metadata
    */
-  List<Notification> handle(GetNotificationsByRecipientQuery query);
+  NotificationPage handle(GetNotificationsByRecipientQuery query);
 
   /**
-   *  Fetch all unread notifications for a given recipient user.
-   * @param query The query containing the recipient user Id
-   * @return  A list of unread notifications for the given recipient user.
+   * Count a recipient's notifications neither read nor dismissed.
+   *
+   * @param query the recipient
+   * @return the unread count
    */
-  List<Notification> handle(GetUnreadNotificationsByRecipientQuery query);
+  long handle(GetUnreadNotificationCountQuery query);
 }
