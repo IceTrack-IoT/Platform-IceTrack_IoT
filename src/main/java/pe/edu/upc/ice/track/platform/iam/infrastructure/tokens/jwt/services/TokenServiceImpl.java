@@ -78,7 +78,7 @@ public class TokenServiceImpl implements BearerTokenService {
     if (secret == null || secret.isBlank()) {
       throw new IllegalStateException(
           "authorization.jwt.secret is not set: define the JWT_SECRET environment variable "
-              + "(generate one with: openssl rand -base64 64)");
+              + "(generate one with: openssl rand -base64 64 | tr -d '\\n')");
     }
     byte[] keyBytes;
     try {
