@@ -1,5 +1,6 @@
 package pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform;
 
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -13,11 +14,18 @@ import java.text.MessageFormat;
 import java.util.Locale;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
+import java.util.UUID;
 
 /**
  * Assembler for converting application errors to HTTP responses.
+ *
+ * <p>Server errors (any 5xx) never reach the client with their details: whatever an application
+ * service or exception handler put there (exception messages, SQL fragments, class names) is
+ * logged together with a random reference, and the client receives only that reference, which
+ * support can use to find the log entry.</p>
  */
 @NullMarked
+@Slf4j
 public final class ErrorResponseAssembler {
   private static final String MESSAGES_BASENAME = "messages";
 
@@ -32,10 +40,36 @@ public final class ErrorResponseAssembler {
    * @return a ResponseEntity with the appropriate HTTP status and error resource
    */
   public static ResponseEntity<ErrorResource> toErrorResponseFromApplicationError(ApplicationError error) {
+    return toErrorResponseFromApplicationError(error, null);
+  }
+
+  /**
+   * Maps an ApplicationError to an HTTP response, logging the cause of a server error.
+   *
+   * <p>For a 5xx status the error, its details and the cause (when given) are logged under a new
+   * reference, and the response carries the reference instead of the details.</p>
+   *
+   * @param error the ApplicationError to map
+   * @param cause the exception behind the error, logged with its stack trace; may be {@code null}
+   * @return a ResponseEntity with the appropriate HTTP status and error resource
+   */
+  public static ResponseEntity<ErrorResource> toErrorResponseFromApplicationError(
+      ApplicationError error, @Nullable Throwable cause) {
     HttpStatusCode status = toStatusFromErrorCode(error.code());
-    String localizedMessage = toLocalizedMessageFromApplicationError(error);
-    ErrorResource resource = new ErrorResource(error.code(), localizedMessage, error.details());
+    ApplicationError exposed = status.is5xxServerError() ? withReferenceInsteadOfDetails(error, cause) : error;
+    String localizedMessage = toLocalizedMessageFromApplicationError(exposed);
+    ErrorResource resource = new ErrorResource(exposed.code(), localizedMessage, exposed.details());
     return new ResponseEntity<>(resource, status);
+  }
+
+  private static ApplicationError withReferenceInsteadOfDetails(ApplicationError error, @Nullable Throwable cause) {
+    var reference = UUID.randomUUID().toString();
+    if (cause != null) {
+      log.error("Server error {} [reference {}]: {} - {}", error.code(), reference, error.message(), error.details(), cause);
+    } else {
+      log.error("Server error {} [reference {}]: {} - {}", error.code(), reference, error.message(), error.details());
+    }
+    return new ApplicationError(error.code(), error.message(), "Reference: " + reference);
   }
 
   private static String toLocalizedMessageFromApplicationError(ApplicationError error) {

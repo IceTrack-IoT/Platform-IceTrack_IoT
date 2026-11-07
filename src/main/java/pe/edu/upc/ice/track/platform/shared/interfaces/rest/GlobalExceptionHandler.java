@@ -190,43 +190,44 @@ public class GlobalExceptionHandler {
           resolveMessageOrDefault("error.duplicate-resource.reason", "Verify unique attributes such as the equipment UID and try again"));
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
     }
-    log.error("Data integrity violation not caused by a unique constraint", ex);
     var applicationError = ApplicationError.unexpected(
         resolveMessageOrDefault("error.unexpected.context", "global-exception-handler"),
-        resolveMessageOrDefault("error.data-integrity.reason", "The data could not be stored"));
-    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+        "Data integrity violation not caused by a unique constraint");
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError, ex);
   }
 
   /**
    * Handles unexpected runtime exceptions not caught by specific handlers.
-   * Maps to a generic unexpected error response.
+   *
+   * <p>The exception is logged with its stack trace under a reference; the client receives a generic
+   * {@code UNEXPECTED_ERROR} carrying only that reference, never the exception message.</p>
    *
    * @param ex the unhandled runtime exception
    * @return error response with INTERNAL_SERVER_ERROR status
    */
   @ExceptionHandler(RuntimeException.class)
   public ResponseEntity<?> handleRuntimeException(RuntimeException ex) {
-    var applicationError = ApplicationError.unexpected(
-        resolveMessageOrDefault("error.unexpected.context", "global-exception-handler"),
-        ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred"
-    );
-    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+    return toUnexpectedErrorResponse(ex);
   }
 
   /**
    * Handles all other exceptions not matched by specific handlers.
-   * Provides a final fallback for any unexpected exception type.
+   * Provides a final fallback for any unexpected exception type, with the same sanitizing as
+   * {@link #handleRuntimeException(RuntimeException)}.
    *
    * @param ex the exception
    * @return error response with INTERNAL_SERVER_ERROR status
    */
   @ExceptionHandler(Exception.class)
   public ResponseEntity<?> handleException(Exception ex) {
+    return toUnexpectedErrorResponse(ex);
+  }
+
+  private ResponseEntity<?> toUnexpectedErrorResponse(Exception ex) {
     var applicationError = ApplicationError.unexpected(
         resolveMessageOrDefault("error.unexpected.context", "global-exception-handler"),
-        ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred"
-    );
-    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError);
+        "Unhandled " + ex.getClass().getName());
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(applicationError, ex);
   }
 
   /**
