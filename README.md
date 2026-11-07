@@ -19,12 +19,14 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - [Prerequisites](#prerequisites)
 - [Services (Compose)](#services-compose)
 - [Configuration](#configuration)
+- [API conventions](#api-conventions)
 - [User authentication](#user-authentication)
 - [Alerts and notifications](#alerts-and-notifications)
 - [Edge devices](#edge-devices)
 - [Edge configuration, events and grants](#edge-configuration-events-and-grants)
 - [Maintenance windows](#maintenance-windows)
 - [Sites, address verification and reports](#sites-address-verification-and-reports)
+- [Real-time telemetry stream](#real-time-telemetry-stream)
 - [Integration events and technician metrics](#integration-events-and-technician-metrics)
 - [Run locally with Docker](#run-locally-with-docker)
 - [Access](#access)
@@ -44,7 +46,8 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - **Edge configuration and grants** — gateways poll `GET /api/v1/devices/me/config` (ETag / `304`) for thresholds, alert policy and technician edge grants; excursion events open and resolve alerts; see [Edge configuration, events and grants](#edge-configuration-events-and-grants)
 - **Maintenance windows** — gateway-reported windows put the unit in `MAINTENANCE`, suppress excursion alerts for the instants they cover, link to the service request in progress and are audited with `GET /api/v1/maintenance-windows`; see [Maintenance windows](#maintenance-windows)
 - **Transactional outbox and technician metrics** — service request events are delivered at least once to a technician metrics read model and to notifications; owners read `GET /api/v1/profiles/technicians/{id}/public`; see [Integration events and technician metrics](#integration-events-and-technician-metrics)
-- **OpenAPI first** — springdoc-openapi 3.1.1 with Swagger UI
+- **Real-time telemetry stream** — owners receive readings and alert status changes of their own units over Server-Sent Events, opened with a single-use stream ticket; see [Real-time telemetry stream](#real-time-telemetry-stream)
+- **OpenAPI first** — springdoc-openapi 3.1.1 with Swagger UI; every operation documents the standard error body for `400`, `401`, `429`, `500` and `503`; see [API conventions](#api-conventions)
 - **Postgres persistence** — Spring Data JPA/Hibernate with custom snake-case + pluralized naming strategy
 - **Docker-first dev loop** — multi-stage build, Compose healthchecks, dev/prod overlays
 
@@ -89,7 +92,7 @@ Defaults come from `src/main/resources/application.properties`:
 | `SPRING_DATASOURCE_USERNAME` | `postgres` | DB user |
 | `SPRING_DATASOURCE_PASSWORD` | none (required) | DB password; startup fails without it |
 | `SPRING_PROFILES_ACTIVE` | `dev` | Set to `dev` by `docker-compose.dev.yml` |
-| `JWT_SECRET` | none (required) | Base64-encoded HS512 signing key of at least 64 decoded bytes, e.g. `openssl rand -base64 64`; startup fails when it is missing, blank, not Base64 or too short |
+| `JWT_SECRET` | none (required) | Base64-encoded HS512 signing key of at least 64 decoded bytes, e.g. `openssl rand -base64 64 \| tr -d '\n'` (the command wraps its output, so without stripping the line break only the first line reaches `.env` and the key is too short); startup fails when it is missing, blank, not Base64 or too short |
 | `JWT_EXPIRATION_MINUTES` | `30` | Access token TTL |
 | `REFRESH_TOKEN_EXPIRATION_DAYS` | `7` | Refresh token TTL (each refresh rotates the token) |
 | `REFRESH_TOKEN_REUSE_GRACE_SECONDS` | `20` | Window in which re-presenting a just-rotated refresh token is a concurrent refresh (`401 REFRESH_TOKEN_RECENTLY_ROTATED`, retry once) instead of a replay (`401 REFRESH_TOKEN_REPLAY_DETECTED`, revokes all sessions); `0` disables it |
@@ -104,8 +107,17 @@ Defaults come from `src/main/resources/application.properties`:
 | `ADDRESS_VALIDATION_SECRET` | none (required) | Base64-encoded key, at least 32 decoded bytes, that signs address validation tokens (`openssl rand -base64 32`); startup fails when it is missing, not Base64 or too short. It is separate from `JWT_SECRET` |
 | `GOOGLE_MAPS_API_KEY` | `YOUR_MAPS_DEMO_KEY` | Google Maps Geocoding key; with the placeholder every address validation answers `503` |
 | `OUTBOX_MAX_ATTEMPTS` | `10` | Failed deliveries after which an outbox event is no longer tried (it stays in `outbox_events`, unpublished) |
+| `TELEMETRY_STREAM_MAX_PENDING_TICKETS_PER_OWNER` | `10` | Unredeemed stream tickets one owner may hold; one more answers `429` |
+| `TELEMETRY_STREAM_MAX_PENDING_TICKETS` | `10000` | Stream tickets the instance keeps in total; one more answers `429` |
+| `TELEMETRY_STREAM_MAX_PER_OWNER` | `10` | Telemetry streams one owner may keep open; opening one more closes the oldest |
+| `TELEMETRY_STREAM_HEARTBEAT_MS` | `25000` | Interval of the heartbeat comment written to every open stream |
+| `APP_TASK_POOL_CORE_SIZE` / `APP_TASK_POOL_MAX_SIZE` / `APP_TASK_POOL_QUEUE_CAPACITY` | `8` / `16` / `5000` | Default `@Async` pool (push notifications, maintenance window notices) |
+| `TOMCAT_MAX_THREADS` / `TOMCAT_MAX_CONNECTIONS` | `200` / `8192` | Request threads and open connections; an open telemetry stream holds a connection, not a thread |
+| `DB_POOL_MAX_SIZE` / `DB_CONNECTION_TIMEOUT_MS` | `10` / `5000` | Database connection pool size, and how long a request waits for a free connection before failing |
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.
+
+**Thread pools.** Readings are ingested on the request threads and hold a database connection for a few milliseconds. Slow work has its own bounded pool: the default `@Async` pool for push notifications, `reportTaskExecutor` (1 to 2 threads) for reports, and `streamTaskExecutor` (4 to 8 threads, queue of 1000) for every write to a telemetry stream. When the stream pool's queue is full, the oldest pending update is dropped with a warning. Two scheduler threads run the periodic jobs, so a slow outbox run never delays the stream heartbeat. These defaults are sized for 500 reading batches per minute with a p95 ingestion latency of at most 500 ms; the device API key check on every edge request is a SHA-256 digest looked up through the unique index on `devices.api_key_digest`, so it costs microseconds.
 
 **Upgrading an existing database.** `ddl-auto=update` adds the new tables and columns but never rewrites the `CHECK` constraints Hibernate generated for enum columns when their tables were first created, so new enum values would be rejected. Run once before deploying this version:
 
@@ -116,6 +128,31 @@ ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
 ```
 
 Hibernate recreates no constraint on an existing table; the values are still validated by the application enums.
+
+## API conventions
+
+**Naming.** Every JSON field and every query parameter is `snake_case`. The query parameters below were renamed in this version, and the old names are no longer read, so clients must be updated with it:
+
+| Endpoint | Old name | New name |
+|---|---|---|
+| `GET /api/v1/notifications` | `unreadOnly` | `unread_only` |
+| `GET /api/v1/service-requests` | `assignedTo` | `assigned_to` |
+| `GET /api/v1/assets/equipments` | `equipmentType`, `siteId` | `equipment_type`, `site_id` |
+| `GET /api/v1/maintenance-windows` | `equipmentId` | `equipment_id` |
+
+Path variables keep their names (`{equipmentId}`, `{siteId}`, ...): they only appear in the documentation, never on the wire.
+
+**Errors.** Error answers carry the standard body `{"code": "...", "message": "...", "details": "..."}` (`ErrorResponse` in the OpenAPI document). The `401` of the edge routes is empty, and an endpoint documents its own body where it differs, such as the candidates of `422 ADDRESS_NOT_VERIFIED` or a `404` answered without a body. The OpenAPI document declares the standard body for these codes on every operation, without per-method repetition:
+
+| Code | Documented on |
+|---|---|
+| `400 VALIDATION_ERROR` | every operation taking parameters or a body; a required query parameter that is missing also answers `400` |
+| `401 UNAUTHORIZED` | every operation that requires a JWT; a missing or invalid bearer token is now answered with the standard body instead of the container's default error page |
+| `429 TOO_MANY_REQUESTS` | `sign-in/local`, `google/verify`, `google/link`, `validate-address` and `stream-ticket`, with a `Retry-After` header |
+| `500 UNEXPECTED_ERROR` | every operation; `details` carries only a reference to the server log |
+| `503 GEOCODING_UNAVAILABLE` | `validate-address`, with a `Retry-After` header |
+
+Public routes (sign-in, sign-up, the Google token exchange, refresh, logout and the telemetry stream) are documented as requiring no security scheme.
 
 ## User authentication
 
@@ -156,7 +193,7 @@ Thermal excursion alerts are opened only by the edge gateway's `THERMAL_EXCURSIO
 
 **Notifications** (`/api/v1/notifications`, the recipient is always the authenticated caller, owner or technician):
 
-- `GET /api/v1/notifications?page=0&size=20&unreadOnly=false` returns `{items, page, size, total_elements, total_pages}`, most recent first. Dismissed notifications are never listed. `size` defaults to `20` and is capped at `100`; a negative `page` or a `size` below `1` answers `400`.
+- `GET /api/v1/notifications?page=0&size=20&unread_only=false` returns `{items, page, size, total_elements, total_pages}`, most recent first. Dismissed notifications are never listed. `size` defaults to `20` and is capped at `100`; a negative `page` or a `size` below `1` answers `400`.
 - `GET /api/v1/notifications/unread-count` returns `{"unread_count": 7}`: notifications neither read nor dismissed.
 - `PUT`/`DELETE /api/v1/notifications/device-tokens` register or remove the caller's FCM token; `403` only for an account with neither an owner nor a technician profile.
 
@@ -180,7 +217,7 @@ Two separate security filter chains guard the API:
 | Chain | Routes | Credential |
 |---|---|---|
 | Edge | `POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`, `/api/v1/devices/me/**` | `X-API-Key: it_dev_<64 hex>` only; a user JWT is not accepted |
-| User | everything else | `Authorization: Bearer <JWT>` |
+| User | everything else | `Authorization: Bearer <JWT>`; `GET /api/v1/telemetry/stream` takes a stream ticket instead (see [Real-time telemetry stream](#real-time-telemetry-stream)) |
 
 The edge endpoints are `POST /api/v1/telemetry`, `POST /api/v1/telemetry/events` and `GET /api/v1/devices/me/config`. A missing, unknown, revoked or malformed key answers `401`. The key identifies the device and its equipment, so telemetry is stored under the identifiers the key is paired with. `equipment_id` / `device_id` in the body are optional and, when sent, must match (`403` otherwise). There is no device authentication endpoint.
 
@@ -283,7 +320,7 @@ Other effects:
 - **Service request link** — a window attributed to a request is recorded on it, in `maintenance_windows` of `GET /api/v1/service-requests/{id}` (oldest first: `window_id`, `origin`, `technician_id`, `started_at`, `ended_at`, `closure_reason`), only when the request was `IN_PROGRESS` at the window's start (or, for a window taken over from the app, at that moment); otherwise the inconsistency is logged and nothing is linked. Duplicate events never link twice, and closing the window completes the link.
 - **Expiration** — a window still open `MAINTENANCE_WINDOW_EXPIRY_GRACE_MINUTES` after its expiration is closed by the platform as `EXPIRED`, dated at its expiration. A later start on a unit whose active window is already past its expiration closes that window the same way first.
 
-**Audit** (`GET /api/v1/maintenance-windows?equipmentId=10&from=2026-11-01T00:00:00Z&to=2026-11-30T23:59:59Z`, owner JWT): the windows of one of the caller's units, newest first, each with `id`, `equipment_id`, `origin`, `started_at`, `expires_at`, `ended_at`, `closure_reason`, `technician_id`, `service_request_id`, `unlinked` and `active`. `from` and `to` are optional ISO-8601 instants bounding the start inclusively; `from` after `to` answers `400`. A unit the caller does not own answers `404 EQUIPMENT_NOT_FOUND`.
+**Audit** (`GET /api/v1/maintenance-windows?equipment_id=10&from=2026-11-01T00:00:00Z&to=2026-11-30T23:59:59Z`, owner JWT): the windows of one of the caller's units, newest first, each with `id`, `equipment_id`, `origin`, `started_at`, `expires_at`, `ended_at`, `closure_reason`, `technician_id`, `service_request_id`, `unlinked` and `active`. `from` and `to` are optional ISO-8601 instants bounding the start inclusively; `from` after `to` answers `400`. A unit the caller does not own answers `404 EQUIPMENT_NOT_FOUND`.
 
 ## Sites, address verification and reports
 
@@ -318,6 +355,33 @@ ALTER TABLE reports ALTER COLUMN completed_at TYPE timestamp USING completed_at:
 ```
 
 Clients must be updated for the renamed fields: the report request uses `name` and `filters`, and the report response uses `name` and `failure_reason`.
+
+## Real-time telemetry stream
+
+The dashboard receives the readings and alert status changes of the owner's units over Server-Sent Events, without polling. A browser `EventSource` cannot send an `Authorization` header, so the stream is opened in two steps:
+
+1. `POST /api/v1/telemetry/stream-ticket` (owner JWT) answers `200` with `{"ticket": "st_<64 hex>", "expires_in": 60}` and `Cache-Control: no-store`. The ticket is bound to the authenticated owner, valid for 60 seconds and redeemable once. An owner may hold up to `TELEMETRY_STREAM_MAX_PENDING_TICKETS_PER_OWNER` unredeemed tickets; one more answers `429 TOO_MANY_REQUESTS` with `Retry-After: 60`. A technician gets `403`.
+2. `GET /api/v1/telemetry/stream?ticket=st_...` (no JWT) consumes the ticket, whatever the outcome, and opens a `text/event-stream` response for 30 minutes. A missing, malformed, unknown, used or expired ticket answers `401 UNAUTHORIZED` with the standard JSON body; `EventSource` does not retry a `401`, so request a new ticket and reconnect.
+
+```js
+const { ticket } = await (await fetch('/api/v1/telemetry/stream-ticket', {
+  method: 'POST', headers: { Authorization: `Bearer ${jwt}` } })).json();
+const stream = new EventSource(`/api/v1/telemetry/stream?ticket=${ticket}`);
+stream.addEventListener('telemetry-update', (e) => render(JSON.parse(e.data)));
+```
+
+| Event | Data |
+|---|---|
+| `stream-opened` | First event: `timeout_seconds`, `heartbeat_seconds`, and a `retry` of 5 seconds |
+| `telemetry-update` with `"type": "READING_RECORDED"` | `reading_uid`, `equipment_id`, `device_id`, `min/max/avg_temperature`, `humidity`, `sample_count`, `recorded_at`, `received_at`, `under_maintenance` |
+| `telemetry-update` with `"type": "ALERT_STATUS_CHANGED"` | `alert_id`, `equipment_id`, `alert_type`, `severity`, `previous_status` (`null` when just raised), `status`, `peak_temperature`, `changed_at` |
+| comment `heartbeat` | Every `TELEMETRY_STREAM_HEARTBEAT_MS`, so proxies keep idle streams open |
+
+An alert update is sent when an alert opens and on every later transition, manual or automatic. Events are pushed only once the change is committed, so a rejected or duplicate batch is never streamed.
+
+**Tenant isolation.** Streams are kept per owner profile, the one the ticket was issued for. The recipient of an event is resolved from the unit itself (unit, then site, then owner), and the event is written to that owner's streams only; a unit whose owner cannot be resolved is streamed to nobody.
+
+**Limits.** An owner keeps up to `TELEMETRY_STREAM_MAX_PER_OWNER` streams open (browser tabs); opening one more closes the oldest. A stream is dropped as soon as a write to it fails, or when it times out; the browser then needs a new ticket. Writes run on `streamTaskExecutor`, never on a request thread, and opening a stream uses no database connection. Tickets and streams live in the instance's memory: with several replicas, route a client's ticket and stream to the same instance (sticky sessions) and fan events out between instances, for example through PostgreSQL `LISTEN/NOTIFY`. Behind nginx, the `X-Accel-Buffering: no` header the stream sends disables response buffering.
 
 ## Integration events and technician metrics
 
