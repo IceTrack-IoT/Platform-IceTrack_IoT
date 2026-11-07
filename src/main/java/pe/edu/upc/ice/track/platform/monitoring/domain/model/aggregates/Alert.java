@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates;
 
 import lombok.Getter;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.events.AlertRaisedEvent;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.events.AlertStatusChangedEvent;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertSeverity;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertStatus;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
@@ -33,6 +34,9 @@ import java.util.Objects;
  * {@code dismissReason} and an optional {@code dismissEvidence}. Actors are IAM user
  * identifiers. {@code resolvedBy} stays {@code null} when the alert was resolved automatically,
  * because the readings returned within range.</p>
+ *
+ * <p>Every status the alert enters, {@code OPEN} included, is announced by an
+ * {@link AlertStatusChangedEvent}, published when the alert is saved.</p>
  *
  * <p>{@code triggeringTemperature} and {@code triggeringRecordedAt} snapshot the reading that
  * raised the alert, so it can be shown without loading that reading. {@code peakTemperature} and
@@ -129,10 +133,12 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
    * Signals that this alert has just been raised and persisted.
    *
    * <p>Registers an {@link AlertRaisedEvent} so the infrastructure can publish the corresponding
-   * integration event to Notifications after the transaction commits.</p>
+   * integration event to Notifications after the transaction commits, and an
+   * {@link AlertStatusChangedEvent} announcing the {@code OPEN} status to the telemetry stream.</p>
    */
   public void onRaised() {
     registerDomainEvent(new AlertRaisedEvent(id, equipmentId, type, severity, peakTemperature.celsius()));
+    announceStatus(null, openedAt);
   }
 
   /**
@@ -147,9 +153,11 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     if (status != AlertStatus.OPEN) {
       throw new IllegalStateException("Only an OPEN alert can be acknowledged, was " + status);
     }
+    var previousStatus = status;
     this.status = AlertStatus.ACKNOWLEDGED;
     this.acknowledgedBy = actorUserId;
     this.acknowledgedAt = LocalDateTime.now();
+    announceStatus(previousStatus, acknowledgedAt);
   }
 
   /**
@@ -162,9 +170,11 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
   public void resolve(Long actorUserId) {
     requireActor(actorUserId);
     requireActive();
+    var previousStatus = status;
     this.status = AlertStatus.RESOLVED;
     this.resolvedBy = actorUserId;
     this.resolvedAt = LocalDateTime.now();
+    announceStatus(previousStatus, resolvedAt);
   }
 
   /**
@@ -175,8 +185,10 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
    */
   public void resolveAutomatically() {
     requireActive();
+    var previousStatus = status;
     this.status = AlertStatus.RESOLVED;
     this.resolvedAt = LocalDateTime.now();
+    announceStatus(previousStatus, resolvedAt);
   }
 
   /**
@@ -204,8 +216,10 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     if (peakTemperatureCelsius != null) {
       this.peakTemperature = new Temperature(peakTemperatureCelsius);
     }
+    var previousStatus = status;
     this.status = AlertStatus.RESOLVED;
     this.resolvedAt = resolution;
+    announceStatus(previousStatus, resolvedAt);
   }
 
   /**
@@ -235,11 +249,13 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
           "The dismissal evidence must not exceed %d characters".formatted(MAX_DISMISS_EVIDENCE_LENGTH));
     }
     requireActive();
+    var previousStatus = status;
     this.status = AlertStatus.DISMISSED;
     this.dismissedBy = actorUserId;
     this.dismissedAt = LocalDateTime.now();
     this.dismissReason = trimmedReason;
     this.dismissEvidence = trimmedEvidence;
+    announceStatus(previousStatus, dismissedAt);
   }
 
   /**
@@ -282,6 +298,18 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     this.dismissedAt = dismissedAt;
     this.dismissReason = dismissReason;
     this.dismissEvidence = dismissEvidence;
+  }
+
+  /**
+   * Registers an {@link AlertStatusChangedEvent} for the status the alert has just entered. The
+   * repository publishes it when the alert is saved.
+   *
+   * @param previousStatus the status the alert left, or {@code null} when it was just raised
+   * @param changedAt      when the alert entered its current status
+   */
+  private void announceStatus(AlertStatus previousStatus, LocalDateTime changedAt) {
+    registerDomainEvent(new AlertStatusChangedEvent(
+        id, equipmentId, type, severity, previousStatus, status, peakTemperature.celsius(), changedAt));
   }
 
   private void requireActive() {

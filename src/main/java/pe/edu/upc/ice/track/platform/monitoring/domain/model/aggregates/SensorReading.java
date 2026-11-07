@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates;
 
 import lombok.Getter;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.events.ReadingRecordedEvent;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EnvironmentObservation;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Humidity;
@@ -113,6 +114,9 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
    * Creates a newly received batch, enforcing the physical bounds of the sensor and the
    * consistency of its calibration.
    *
+   * <p>Registers a {@link ReadingRecordedEvent}, which the repository publishes once the batch is
+   * saved, so the batch can be streamed to the owner's dashboards after the transaction commits.</p>
+   *
    * @param environment      what the light and PIR sensors observed; {@code null} when neither
    *                         reported
    * @param underMaintenance whether a maintenance window of the unit covers {@code recordedAt}
@@ -147,10 +151,16 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
     if (appliedConfigVersion < 0) {
       throw new IllegalArgumentException("appliedConfigVersion must not be negative, was " + appliedConfigVersion);
     }
-    return new SensorReading(readingUid, equipmentId, deviceId,
+    var reading = new SensorReading(readingUid, equipmentId, deviceId,
         minTemperature, maxTemperature, avgTemperature,
         rawMinTemperature, rawMaxTemperature, rawAvgTemperature,
         humidity, sampleCount, environment, recordedAt, LocalDateTime.now(), appliedConfigVersion, underMaintenance);
+    reading.registerDomainEvent(new ReadingRecordedEvent(
+        reading.readingUid, reading.equipmentId.equipmentId(), reading.deviceId,
+        reading.minTemperature.celsius(), reading.maxTemperature.celsius(), reading.avgTemperature.celsius(),
+        reading.humidity.percentage(), reading.sampleCount,
+        reading.recordedAt, reading.receivedAt, reading.underMaintenance));
+    return reading;
   }
 
   public void assignId(Long id) {

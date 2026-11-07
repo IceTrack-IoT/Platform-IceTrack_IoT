@@ -1,5 +1,6 @@
 package pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.adapters;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Repository;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.SensorReading;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadingRepository;
@@ -11,21 +12,32 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Adapter fulfilling {@link SensorReadingRepository} on top of Spring Data JPA. */
+/**
+ * Adapter fulfilling {@link SensorReadingRepository} on top of Spring Data JPA.
+ *
+ * <p>Publishes the domain events a reading registered, such as {@code ReadingRecordedEvent}, once it
+ * is saved, in the caller's transaction, exactly like {@code AlertRepositoryImpl}.</p>
+ */
 @Repository
 public class SensorReadingRepositoryImpl implements SensorReadingRepository {
 
   private final SensorReadingPersistenceRepository persistenceRepository;
+  private final ApplicationEventPublisher eventPublisher;
 
-  public SensorReadingRepositoryImpl(SensorReadingPersistenceRepository persistenceRepository) {
+  public SensorReadingRepositoryImpl(SensorReadingPersistenceRepository persistenceRepository,
+                                     ApplicationEventPublisher eventPublisher) {
     this.persistenceRepository = persistenceRepository;
+    this.eventPublisher = eventPublisher;
   }
 
   @Override
   public SensorReading save(SensorReading reading) {
     var entity = SensorReadingPersistenceAssembler.toPersistenceEntityFromDomain(reading);
     var saved = persistenceRepository.save(entity);
-    return SensorReadingPersistenceAssembler.toDomainFromPersistenceEntity(saved);
+    var savedReading = SensorReadingPersistenceAssembler.toDomainFromPersistenceEntity(saved);
+    reading.domainEvents().forEach(eventPublisher::publishEvent);
+    reading.clearDomainEvents();
+    return savedReading;
   }
 
   @Override
