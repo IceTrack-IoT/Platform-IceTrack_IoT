@@ -19,6 +19,7 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - [Prerequisites](#prerequisites)
 - [Services (Compose)](#services-compose)
 - [Configuration](#configuration)
+- [Edge devices](#edge-devices)
 - [Run locally with Docker](#run-locally-with-docker)
 - [Access](#access)
 - [Useful commands](#useful-commands)
@@ -31,6 +32,7 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - **Auth built-in** — local sign-up/sign-in + Google OIDC deferred registration (`/google/verify` → `/google/complete-registration/{owner|technician}`), role explicit local sign-up (`/sign-up/{owner|technician}`), JWT bearer auth with a `role` claim (JJWT 0.13.0), rotating refresh tokens (`/refresh-token`), `/logout` and `/me`
 - **Immutable roles** — every account is `OWNER_ROLE` or `TECHNICIAN_ROLE`, chosen once at registration, and gets its `OwnerProfile` / `TechnicianProfile` in the same transaction
 - **IAM + Profiles** bounded contexts (`/api/v1/authentication`, `/api/v1/users`, `/api/v1/roles`, `/api/v1/profiles/owners`, `/api/v1/profiles/technicians`)
+- **Edge device authentication** — IoT boards call the edge routes (`POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`, `/api/v1/devices/me/**`) with an `X-API-Key` header and no user JWT; see [Edge devices](#edge-devices)
 - **OpenAPI first** — springdoc-openapi 3.1.1 with Swagger UI
 - **Postgres persistence** — Spring Data JPA/Hibernate with custom snake-case + pluralized naming strategy
 - **Docker-first dev loop** — multi-stage build, Compose healthchecks, dev/prod overlays
@@ -84,6 +86,54 @@ Defaults come from `src/main/resources/application.properties`:
 | `GOOGLE_CLIENT_ID` | `google-client-id` | Google OIDC client ID for `id_token` validation |
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.
+
+## Edge devices
+
+Two separate security filter chains guard the API:
+
+| Chain | Routes | Credential |
+|---|---|---|
+| Edge | `POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`, `/api/v1/devices/me/**` | `X-API-Key: it_dev_<64 hex>` only; a user JWT is not accepted |
+| User | everything else | `Authorization: Bearer <JWT>` |
+
+Only `POST /api/v1/telemetry` has a controller today; the other two edge routes are already claimed by the edge chain so their future endpoints are key-protected from the start. A missing, unknown, revoked or malformed key answers `401`. The key identifies the device and its equipment, so telemetry is stored under the identifiers the key is paired with. `equipment_id` / `device_id` in the body are optional and, when sent, must match (`403` otherwise). There is no device authentication endpoint.
+
+**Device lifecycle** (`/api/v1/devices`, owner JWT):
+
+| Action | Endpoint | Result |
+|---|---|---|
+| Pair | `POST /api/v1/devices` | `201` with the API key, shown only once. `404` if the equipment is not the caller's; `409` "Device already paired" if the board is linked to an equipment, or "Equipment already has a paired device" |
+| Rotate key | `POST /{deviceId}/rotate-api-key` | `200` with a new key; the old one stops working. Also how a `REVOKED` device resumes |
+| Revoke | `PUT /{deviceId}/status` `{"new_status": "REVOKED"}` | Key invalidated immediately; device stays linked to its equipment |
+| Unpair | `POST /{deviceId}/unpair` | Equipment link and key cleared; both the board and the equipment can be paired again |
+
+Statuses are `UNPAIRED`, `PAIRED` and `REVOKED`. Keys are stored only as SHA-256 digests (unique index on `devices.api_key_digest`).
+
+**Telemetry ingestion** (`POST /api/v1/telemetry`) answers `201` for a new batch and `200` with the stored reading when the same `reading_uid` is resubmitted.
+
+Each batch carries temperatures twice:
+
+- `raw_min/max/avg_temperature`: what the DHT11 measured.
+- `min/max/avg_temperature`: the raw values corrected by the calibration offset the edge applied. Thresholds are evaluated on these.
+
+Both sets are stored. Optional fields are `light_level_max` (0–100 %), `door_open_seconds` and `presence_detected`; an omitted presence is stored as unavailable (`null`), never as `false`.
+
+Any of the following is rejected with `400` "Invalid reading payload" and nothing is stored:
+
+- a raw temperature outside 0–50 °C, or a humidity outside 20–90 % (DHT11 range)
+- a calibrated temperature more than 5 °C away from its raw value
+- `min <= avg <= max` not holding, for either set
+- `light_level_max` outside 0–100, or a negative `door_open_seconds`
+- `sample_count` outside 1–360
+- a missing `applied_config_version`
+- a non-numeric value
+
+**Equipment rules:** thresholds must lie within 0–30 °C with `min_celsius < max_celsius`. Types are `DISPLAY_CASE`, `COLD_ROOM`, `REFRIGERATOR` and `OTHER`. Statuses are `ACTIVE`, `MAINTENANCE`, `REPAIR` and `DEACTIVATED`, with these transitions:
+
+- `ACTIVE` → `MAINTENANCE` / `REPAIR` / `DEACTIVATED`
+- `MAINTENANCE` → `ACTIVE` / `REPAIR` / `DEACTIVATED`
+- `REPAIR` → `ACTIVE` / `DEACTIVATED`
+- `DEACTIVATED` → `ACTIVE`
 
 ## Run locally with Docker
 
