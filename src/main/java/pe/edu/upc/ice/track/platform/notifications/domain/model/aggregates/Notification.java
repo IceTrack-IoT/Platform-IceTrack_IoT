@@ -86,6 +86,16 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
     this.readAt = LocalDateTime.now();
   }
 
+  /**
+   * Tells whether the notification is addressed to a recipient.
+   *
+   * @param recipientUserId the candidate recipient
+   * @return {@code true} only when it is this notification's recipient
+   */
+  public boolean isAddressedTo(Long recipientUserId) {
+    return recipientUserId != null && recipientUserId.equals(this.recipientUserId);
+  }
+
   /** Dismisses the notification from the recipient's active inbox. Idempotent. */
   public void dismiss() {
     if (dismissedAt != null) {

@@ -24,13 +24,15 @@ public class NotificationQueryServiceImpl implements NotificationQueryService {
   }
 
   /**
-   *  Fetches a notification by its identifier.
-   * @param query The query containing the notification Id
-   * @return  An {@code Optional} containing the notification if found, or empty if not found.
+   *  Fetches one of the caller's notifications by its identifier.
+   * @param query The query containing the notification ID and the caller's recipient identifier
+   * @return  An {@code Optional} containing the notification if found and addressed to the caller,
+   *          or empty otherwise.
    */
   @Override
   public Optional<Notification> handle(GetNotificationByIdQuery query) {
-    return notificationRepository.findById(query.notificationId());
+    return notificationRepository.findById(query.notificationId())
+        .filter(notification -> notification.isAddressedTo(query.recipientUserId()));
   }
 
   /**

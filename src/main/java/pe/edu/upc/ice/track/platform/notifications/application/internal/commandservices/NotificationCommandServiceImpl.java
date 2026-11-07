@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.notifications.application.internal.command
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.notifications.application.commandservices.NotificationCommandService;
 import pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.assetmanagement.ExternalAssetManagementServiceForNotifications;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
@@ -71,20 +72,35 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
         command.severity())));
   }
 
+  /**
+   * Marks one of the caller's notifications as read. A notification addressed to anybody else is
+   * answered as absent, so identifiers cannot be harvested.
+   */
   @Override
+  @Transactional
   public Optional<Notification> handle(MarkNotificationAsReadCommand command) {
-    return notificationRepository.findById(command.notificationId()).map(notification -> {
+    return findAddressedTo(command.notificationId(), command.recipientUserId()).map(notification -> {
       notification.markAsRead();
       return notificationRepository.save(notification);
     });
   }
 
+  /**
+   * Dismisses one of the caller's notifications. A notification addressed to anybody else is
+   * answered as absent.
+   */
   @Override
+  @Transactional
   public Optional<Notification> handle(DismissNotificationCommand command) {
-    return notificationRepository.findById(command.notificationId()).map(notification -> {
+    return findAddressedTo(command.notificationId(), command.recipientUserId()).map(notification -> {
       notification.dismiss();
       return notificationRepository.save(notification);
     });
+  }
+
+  private Optional<Notification> findAddressedTo(Long notificationId, Long recipientUserId) {
+    return notificationRepository.findById(notificationId)
+        .filter(notification -> notification.isAddressedTo(recipientUserId));
   }
 
   private static String buildAlertMessage(NotifyAlertRaisedCommand command) {
