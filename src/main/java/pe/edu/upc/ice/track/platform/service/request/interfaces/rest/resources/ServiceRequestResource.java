@@ -13,7 +13,7 @@ import java.util.List;
     name = "ServiceRequestResponse",
     description = "Service request with its status history",
     example = "{\"id\": 42, \"owner_id\": 3, \"equipment_id\": 10, \"site_id\": 1, \"technician_id\": 7, "
-        + "\"type\": \"REPAIR\", \"priority\": \"HIGH\", \"description\": \"The freezer does not reach its temperature\", "
+        + "\"type\": \"REPAIR\", \"priority\": \"HIGH\", \"description\": \"The display case does not hold 2 to 8 °C\", "
         + "\"status\": \"ACCEPTED\", \"created_at\": \"2026-10-23T13:00:00Z\", \"assigned_at\": \"2026-10-23T13:10:00Z\", "
         + "\"started_at\": null, \"completed_at\": null, \"canceled_at\": null, \"cancel_reason\": null, "
         + "\"history\": [], \"intervention\": null, \"maintenance_windows\": []}")
@@ -39,7 +39,7 @@ public record ServiceRequestResource(
     @Schema(description = "Urgency", example = "HIGH")
     ServicePriorityResource priority,
 
-    @Schema(description = "What the owner needs", example = "The freezer does not reach its temperature")
+    @Schema(description = "What the owner needs", example = "The display case does not hold 2 to 8 °C")
     String description,
 
     @Schema(description = "Current lifecycle status", example = "ACCEPTED")

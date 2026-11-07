@@ -15,7 +15,7 @@ import jakarta.validation.constraints.Size;
 @Schema(
     name = "CreateServiceRequestRequest",
     description = "Service request creation request",
-    example = "{\"equipment_id\": 10, \"type\": \"REPAIR\", \"priority\": \"HIGH\", \"description\": \"The freezer does not reach its temperature\"}")
+    example = "{\"equipment_id\": 10, \"type\": \"REPAIR\", \"priority\": \"HIGH\", \"description\": \"The display case does not hold 2 to 8 °C\"}")
 public record CreateServiceRequestResource(
     @NotNull(message = "{validation.not-null}")
     @Positive(message = "{validation.positive}")
@@ -32,7 +32,7 @@ public record CreateServiceRequestResource(
 
     @NotBlank(message = "{validation.not-blank}")
     @Size(max = 1000, message = "{validation.size.max}")
-    @Schema(description = "What the owner needs", example = "The freezer does not reach its temperature", maxLength = 1000)
+    @Schema(description = "What the owner needs", example = "The display case does not hold 2 to 8 °C", maxLength = 1000)
     String description
 ) {
 }

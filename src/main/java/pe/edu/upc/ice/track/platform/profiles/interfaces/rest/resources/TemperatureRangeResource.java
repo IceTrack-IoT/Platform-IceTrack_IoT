@@ -11,15 +11,15 @@ import jakarta.validation.constraints.NotNull;
 @Schema(
     name = "TemperatureRange",
     description = "Temperature range a dashboard filters on by default",
-    example = "{\"min\": -22, \"max\": -18, \"unit\": \"C\", \"label\": \"-18°C to -22°C\"}"
+    example = "{\"min\": 2, \"max\": 8, \"unit\": \"C\", \"label\": \"2°C to 8°C\"}"
 )
 public record TemperatureRangeResource(
     @NotNull(message = "{validation.not-null}")
-    @Schema(description = "Lower bound of the range, never above max", example = "-22")
+    @Schema(description = "Lower bound of the range, never above max", example = "2")
     Integer min,
 
     @NotNull(message = "{validation.not-null}")
-    @Schema(description = "Upper bound of the range, never below min", example = "-18")
+    @Schema(description = "Upper bound of the range, never below min", example = "8")
     Integer max,
 
     @NotBlank(message = "{validation.not-blank}")
@@ -27,7 +27,7 @@ public record TemperatureRangeResource(
     String unit,
 
     @NotBlank(message = "{validation.not-blank}")
-    @Schema(description = "Human-readable range label", example = "-18°C to -22°C")
+    @Schema(description = "Human-readable range label", example = "2°C to 8°C")
     String label
 ) {
 }

@@ -13,7 +13,7 @@ import jakarta.validation.constraints.Positive;
 @Schema(
     name = "CreateDashboardConfigRequest",
     description = "Dashboard configuration creation request",
-    example = "{\"user_id\": 42, \"default_site_id\": 3, \"default_temperature_range\": {\"min\": -22, \"max\": -18, \"unit\": \"C\", \"label\": \"-18°C to -22°C\"}}"
+    example = "{\"user_id\": 42, \"default_site_id\": 3, \"default_temperature_range\": {\"min\": 2, \"max\": 8, \"unit\": \"C\", \"label\": \"2°C to 8°C\"}}"
 )
 public record CreateDashboardConfigResource(
     @NotNull(message = "{validation.not-null}")
