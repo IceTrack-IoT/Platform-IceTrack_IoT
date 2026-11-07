@@ -6,16 +6,19 @@ import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportT
 import java.time.LocalDateTime;
 
 /**
- * Command to request a new report.
+ * Command to request a new report on behalf of the authenticated caller.
  *
  * <p>{@code siteId}, {@code equipmentId} and {@code technicianId} are each optional: which ones
  * are required depends on {@code type} alone, and is enforced by that type's
- * {@code ReportGenerationStrategy} rather than by this command.</p>
+ * {@code ReportGenerationStrategy} rather than by this command. A site or unit, when given, must
+ * belong to the caller.</p>
  *
  * @param title        display title for the report; required
  * @param type         which {@code ReportGenerationStrategy} computes it; required
  * @param format       the export format the requester wants; required
- * @param userId       identifier of the user requesting the report; required
+ * @param username     username of the authenticated caller, resolved by the command service to
+ *                     the account the report belongs to and the owner whose assets it covers;
+ *                     required
  * @param siteId       restrict to a single site, may be {@code null}
  * @param equipmentId  restrict to a single unit, may be {@code null}
  * @param technicianId restrict to a single technician, may be {@code null}
@@ -26,7 +29,7 @@ public record RequestReportCommand(
     String title,
     ReportType type,
     ReportFormat format,
-    Long userId,
+    String username,
     Long siteId,
     Long equipmentId,
     Long technicianId,

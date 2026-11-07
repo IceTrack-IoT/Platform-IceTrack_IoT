@@ -1,7 +1,10 @@
 package pe.edu.upc.ice.track.platform.reporting.application.internal.commandservices;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.reporting.application.commandservices.ReportCommandService;
+import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.assets.ExternalAssetsServiceForReporting;
+import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.profiles.ExternalProfilesServiceForReporting;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.storage.ReportFileStorage;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportContent;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportRenderer;
@@ -13,6 +16,8 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentI
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.SiteId;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 import pe.edu.upc.ice.track.platform.reporting.domain.repositories.ReportRepository;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -40,8 +45,14 @@ import java.util.UUID;
  * <p>Generation is synchronous: the real codebase has no job queue or async infrastructure, so
  * all of the above happens within the request. If saving the report fails after the file was
  * uploaded, the file is deleted again so no orphan is left in the bucket.</p>
+ *
+ * <p>The requester is always the authenticated caller: the command names it by
+ * username, which is resolved to its platform account and owner profile through the
+ * {@link ExternalProfilesServiceForReporting} ACL. A site or unit filter that does not belong to
+ * that owner is answered 404 before any strategy runs.</p>
  */
 @Service
+@Slf4j
 public class ReportCommandServiceImpl implements ReportCommandService {
 
   private final Map<String, ReportGenerationStrategy> strategies;
@@ -49,24 +60,53 @@ public class ReportCommandServiceImpl implements ReportCommandService {
   private final ReportFileStorage fileStorage;
   private final ReportRepository reportRepository;
   private final ObjectMapper objectMapper;
+  private final ExternalProfilesServiceForReporting externalProfilesService;
+  private final ExternalAssetsServiceForReporting externalAssetsService;
 
   public ReportCommandServiceImpl(
       Map<String, ReportGenerationStrategy> strategies,
       Map<String, ReportRenderer> renderers,
       ReportFileStorage fileStorage,
       ReportRepository reportRepository,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      ExternalProfilesServiceForReporting externalProfilesService,
+      ExternalAssetsServiceForReporting externalAssetsService) {
     this.strategies = strategies;
     this.renderers = renderers;
     this.fileStorage = fileStorage;
     this.reportRepository = reportRepository;
     this.objectMapper = objectMapper;
+    this.externalProfilesService = externalProfilesService;
+    this.externalAssetsService = externalAssetsService;
   }
 
   @Override
-  public Report handle(RequestReportCommand command) {
+  public Result<Report, ApplicationError> handle(RequestReportCommand command) {
     Objects.requireNonNull(command, "command must not be null");
 
+    var userId = externalProfilesService.fetchUserIdByUsername(command.username());
+    if (userId.isEmpty()) {
+      return Result.failure(ApplicationError.accessDenied("The caller has no platform account"));
+    }
+    var ownerId = externalProfilesService.fetchOwnerIdByUserId(userId.get());
+    if (ownerId.isEmpty()) {
+      return Result.failure(ApplicationError.accessDenied("Reports are available to owners only"));
+    }
+    if (command.siteId() != null && !externalAssetsService.isSiteOwnedBy(command.siteId(), ownerId.get())) {
+      return Result.failure(ApplicationError.notFound("Site", String.valueOf(command.siteId())));
+    }
+    if (command.equipmentId() != null
+        && !externalAssetsService.isEquipmentOwnedBy(command.equipmentId(), ownerId.get())) {
+      return Result.failure(ApplicationError.notFound("Equipment", String.valueOf(command.equipmentId())));
+    }
+    try {
+      return Result.success(generate(command, userId.get()));
+    } catch (IllegalArgumentException ex) {
+      return Result.failure(ApplicationError.validationError("report", ex.getMessage()));
+    }
+  }
+
+  private Report generate(RequestReportCommand command, Long userId) {
     var filters = new ReportFilters(
         command.siteId() != null ? new SiteId(command.siteId()) : null,
         command.equipmentId() != null ? new EquipmentId(command.equipmentId()) : null,
@@ -74,7 +114,7 @@ public class ReportCommandServiceImpl implements ReportCommandService {
         new DateRange(command.from(), command.to()));
 
     var report = new Report(
-        command.title(), command.type(), command.format(), new UserId(command.userId()), filters);
+        command.title(), command.type(), command.format(), new UserId(userId), filters);
 
     ReportGenerationStrategy strategy = strategies.get(command.type().name());
     if (strategy == null) {
@@ -93,7 +133,7 @@ public class ReportCommandServiceImpl implements ReportCommandService {
 
       byte[] bytes = renderer.render(
           new ReportContent(command.title(), command.type(), filters, LocalDateTime.now(), kpis));
-      String key = "reports/" + command.userId() + "/" + UUID.randomUUID() + "." + renderer.fileExtension();
+      String key = "reports/" + userId + "/" + UUID.randomUUID() + "." + renderer.fileExtension();
       fileStorage.store(key, bytes, renderer.contentType());
       storedFile = new ReportFile(key, renderer.contentType(), bytes.length);
 
@@ -101,7 +141,9 @@ public class ReportCommandServiceImpl implements ReportCommandService {
     } catch (UnsupportedOperationException ex) {
       report.markAsFailed(ex.getMessage());
     } catch (RuntimeException ex) {
-      report.markAsFailed("Report generation failed: " + ex.getMessage());
+      // The failure reason is shown to the client, so it must not carry internal details.
+      log.error("Generation of a {} report failed", command.type(), ex);
+      report.markAsFailed("Report generation failed");
     }
 
     try {

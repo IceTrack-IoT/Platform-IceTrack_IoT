@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
  * @param title        display title for the report
  * @param type         the report type, by its enum name (e.g. {@code "EQUIPMENT_UPTIME"})
  * @param format       the intended output format, by its enum name (e.g. {@code "PDF"})
- * @param userId       identifier of the requesting user
+ * @param userId       deprecated and ignored: the requester is derived from the access token
  * @param siteId       identifier of the site to scope the report to, nullable
  * @param equipmentId  identifier of a single unit to scope the report to, nullable
  * @param technicianId identifier of the technician to scope a performance report to, nullable
@@ -21,7 +21,7 @@ import java.time.LocalDateTime;
     name = "RequestReportRequest",
     description = "Request to generate a new report",
     example = "{\"title\": \"Equipment uptime - October\", \"type\": \"EQUIPMENT_UPTIME\", "
-        + "\"format\": \"PDF\", \"user_id\": 42, \"site_id\": 1, \"equipment_id\": null, "
+        + "\"format\": \"PDF\", \"site_id\": 1, \"equipment_id\": null, "
         + "\"technician_id\": null, \"from\": \"2026-10-01T00:00:00\", \"to\": \"2026-10-31T23:59:59\"}"
 )
 public record RequestReportResource(
@@ -37,7 +37,9 @@ public record RequestReportResource(
         allowableValues = {"PDF", "EXCEL", "CSV"})
     String format,
 
-    @Schema(description = "Identifier of the requesting user", example = "42")
+    @Schema(description = "Deprecated and ignored: the requester is always the authenticated caller. "
+        + "Still accepted so existing clients keep working.", deprecated = true,
+        requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     Long userId,
 
     @Schema(description = "Identifier of the site to scope the report to", example = "1",

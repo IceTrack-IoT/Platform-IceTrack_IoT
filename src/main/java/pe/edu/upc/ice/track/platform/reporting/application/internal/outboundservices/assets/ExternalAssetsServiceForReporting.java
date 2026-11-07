@@ -11,8 +11,9 @@ import java.util.List;
  *
  * <p>This is the only class in {@code reporting} that knows an {@code assets} context exists. It
  * talks to it exclusively through {@link AssetContextFacade}: no Assets aggregate, repository or
- * command is reachable from here. The facade resolves a site's units whatever their owner: it
- * performs no ownership check.</p>
+ * command is reachable from here. Listing a site's units performs no ownership check by itself, so
+ * the command service checks the requested scope with {@link #isSiteOwnedBy} and
+ * {@link #isEquipmentOwnedBy} before any strategy runs.</p>
  */
 @Service
 public class ExternalAssetsServiceForReporting {
@@ -30,5 +31,23 @@ public class ExternalAssetsServiceForReporting {
    */
   public List<Long> fetchEquipmentIdsBySite(Long siteId) {
     return assetContextFacade.fetchEquipmentIdsBySite(siteId);
+  }
+
+  /**
+   * @param siteId  identifier of the site
+   * @param ownerId identifier of the owner profile
+   * @return {@code true} only when the site exists and belongs to that owner
+   */
+  public boolean isSiteOwnedBy(Long siteId, Long ownerId) {
+    return assetContextFacade.existsSiteForOwner(siteId, ownerId);
+  }
+
+  /**
+   * @param equipmentId identifier of the unit
+   * @param ownerId     identifier of the owner profile
+   * @return {@code true} only when the unit exists and its site belongs to that owner
+   */
+  public boolean isEquipmentOwnedBy(Long equipmentId, Long ownerId) {
+    return assetContextFacade.existsEquipmentForOwner(equipmentId, ownerId);
   }
 }
