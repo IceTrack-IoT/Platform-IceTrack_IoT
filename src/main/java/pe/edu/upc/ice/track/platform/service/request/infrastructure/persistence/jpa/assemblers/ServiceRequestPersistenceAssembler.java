@@ -2,17 +2,20 @@ package pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence
 
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.Intervention;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.MaintenanceWindowLink;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.StatusTransition;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.InterventionPersistenceEntity;
+import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.MaintenanceWindowLinkPersistenceEntity;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.ServiceRequestPersistenceEntity;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.StatusTransitionPersistenceEntity;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.SiteId;
 
 import java.util.ArrayList;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -60,7 +63,10 @@ public final class ServiceRequestPersistenceAssembler {
         entity.getHistory().stream()
             .map(ServiceRequestPersistenceAssembler::toTransitionFromPersistence)
             .toList(),
-        toInterventionFromPersistence(entity.getIntervention()));
+        toInterventionFromPersistence(entity.getIntervention()),
+        entity.getMaintenanceWindows().stream()
+            .map(ServiceRequestPersistenceAssembler::toLinkFromPersistence)
+            .toList());
   }
 
   /**
@@ -95,6 +101,26 @@ public final class ServiceRequestPersistenceAssembler {
     entity.setCancelReason(serviceRequest.getCancelReason());
     copyHistory(serviceRequest, entity);
     copyIntervention(serviceRequest, entity);
+    copyMaintenanceWindows(serviceRequest, entity);
+  }
+
+  /**
+   * Reconciles the maintenance window links by window identity: a link this entity does not hold yet
+   * is appended, and the end and closure reason of a held one are brought up to date. Links are never
+   * removed.
+   */
+  private static void copyMaintenanceWindows(ServiceRequest serviceRequest, ServiceRequestPersistenceEntity entity) {
+    var persistedLinks = entity.getMaintenanceWindows().stream()
+        .collect(Collectors.toMap(MaintenanceWindowLinkPersistenceEntity::getWindowId, Function.identity()));
+    for (var link : serviceRequest.getMaintenanceWindows()) {
+      var persisted = persistedLinks.get(link.getWindowId());
+      if (persisted == null) {
+        entity.addMaintenanceWindowLink(toLinkPersistence(link));
+      } else {
+        persisted.setEndedAt(link.getEndedAt());
+        persisted.setClosureReason(link.getClosureReason());
+      }
+    }
   }
 
   private static void copyHistory(ServiceRequest serviceRequest, ServiceRequestPersistenceEntity entity) {
@@ -182,6 +208,28 @@ public final class ServiceRequestPersistenceAssembler {
     entity.setPhotoEvidence(new ArrayList<>(intervention.getPhotoEvidence()));
     entity.setStartedAt(intervention.getStartedAt());
     entity.setCompletedAt(intervention.getCompletedAt());
+    return entity;
+  }
+
+  private static MaintenanceWindowLink toLinkFromPersistence(MaintenanceWindowLinkPersistenceEntity entity) {
+    return new MaintenanceWindowLink(
+        entity.getId(),
+        entity.getWindowId(),
+        entity.getOrigin(),
+        entity.getTechnicianId(),
+        entity.getStartedAt(),
+        entity.getEndedAt(),
+        entity.getClosureReason());
+  }
+
+  private static MaintenanceWindowLinkPersistenceEntity toLinkPersistence(MaintenanceWindowLink link) {
+    var entity = new MaintenanceWindowLinkPersistenceEntity();
+    entity.setWindowId(link.getWindowId());
+    entity.setOrigin(link.getOrigin());
+    entity.setTechnicianId(link.getTechnicianProfileId());
+    entity.setStartedAt(link.getStartedAt());
+    entity.setEndedAt(link.getEndedAt());
+    entity.setClosureReason(link.getClosureReason());
     return entity;
   }
 

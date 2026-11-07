@@ -4,7 +4,9 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.Ser
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.AcceptServiceRequestCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.AssignTechnicianCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.CancelServiceRequestCommand;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.CompleteMaintenanceWindowLinkCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.CreateServiceRequestCommand;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RecordMaintenanceWindowLinkCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegenerateEdgeGrantCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegisterInterventionCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RejectServiceRequestCommand;
@@ -18,9 +20,10 @@ import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 /**
  * Application service handling write operations on {@link ServiceRequest}.
  *
- * <p>Every command names its caller by username. Owner commands only reach the requests the caller
- * created, technician commands only the requests assigned to the caller; any other request is
- * reported exactly like one that does not exist.</p>
+ * <p>Every REST command names its caller by username. Owner commands only reach the requests the
+ * caller created, technician commands only the requests assigned to the caller; any other request is
+ * reported exactly like one that does not exist. The maintenance window link commands are the
+ * exception: they come from Monitoring and Alerting's events, not from a caller.</p>
  */
 public interface ServiceRequestCommandService {
 
@@ -106,4 +109,28 @@ public interface ServiceRequestCommandService {
    *         or no reason is given
    */
   Result<ServiceRequest, ApplicationError> handle(CancelServiceRequestCommand command);
+
+  /**
+   * Record on a request a maintenance window opened on its unit while the work was in progress.
+   *
+   * <p>Not caller-scoped: issued by an inbound adapter, in a transaction of its own. A request that
+   * does not exist, belongs to another unit, was not in progress when the window was attributed to
+   * it, or already holds the window, is left unchanged and the inconsistency is logged; nothing is
+   * thrown for those cases, so the event is acknowledged without retry.</p>
+   *
+   * @param command The {@link RecordMaintenanceWindowLinkCommand} Command
+   * @return {@code true} when a link was added
+   */
+  boolean handle(RecordMaintenanceWindowLinkCommand command);
+
+  /**
+   * Complete the link of a closed maintenance window with its end and closure reason.
+   *
+   * <p>Not caller-scoped and in a transaction of its own, like the recording above. A window that is
+   * not linked to the request, or whose link is already complete, changes nothing.</p>
+   *
+   * @param command The {@link CompleteMaintenanceWindowLinkCommand} Command
+   * @return {@code true} when a link was completed
+   */
+  boolean handle(CompleteMaintenanceWindowLinkCommand command);
 }

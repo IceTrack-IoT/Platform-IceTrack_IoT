@@ -121,4 +121,16 @@ public interface ServiceRequestPersistenceRepository
    * @return {@code true} when some request holds an intervention with that identifier
    */
   boolean existsByInterventionClientGeneratedId(UUID clientGeneratedId);
+
+  /**
+   * Finds the requests of a unit, in one of the given statuses, started at or before an instant,
+   * latest started first.
+   *
+   * @param equipmentId the unit
+   * @param statuses    the statuses that count
+   * @param instant     the instant the start must not follow
+   * @return the matching rows
+   */
+  List<ServiceRequestPersistenceEntity> findByEquipmentIdAndStatusInAndStartedAtLessThanEqualOrderByStartedAtDesc(
+      Long equipmentId, Collection<ServiceStatus> statuses, Instant instant);
 }

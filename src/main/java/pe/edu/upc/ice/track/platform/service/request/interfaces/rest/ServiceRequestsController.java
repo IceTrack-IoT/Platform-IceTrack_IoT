@@ -202,8 +202,9 @@ public class ServiceRequestsController {
   @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Get a service request by ID",
-      description = "Retrieves a request with its full status history. Only its owner and its "
-          + "assigned technician can read it.",
+      description = "Retrieves a request with its full status history and the maintenance windows opened on the "
+          + "unit while its work was in progress (maintenance_windows, oldest first, with origin, technician, "
+          + "start, end and closure reason). Only its owner and its assigned technician can read it.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(

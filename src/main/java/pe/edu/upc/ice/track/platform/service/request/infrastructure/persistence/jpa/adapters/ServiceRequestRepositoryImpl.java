@@ -58,6 +58,9 @@ public class ServiceRequestRepositoryImpl implements ServiceRequestRepository {
    */
   private static final Sort LISTING_ORDER = Sort.by(Sort.Order.desc("requestedAt"), Sort.Order.desc("id"));
 
+  /** Statuses of a request whose work has started: still going on, or finished since. */
+  private static final Set<ServiceStatus> STARTED_STATUSES = Set.of(ServiceStatus.IN_PROGRESS, ServiceStatus.COMPLETED);
+
   private final ServiceRequestPersistenceRepository serviceRequestPersistenceRepository;
   private final ApplicationEventPublisher eventPublisher;
 
@@ -184,6 +187,21 @@ public class ServiceRequestRepositoryImpl implements ServiceRequestRepository {
   public boolean existsByInterventionClientGeneratedId(UUID clientGeneratedId) {
     return clientGeneratedId != null
         && serviceRequestPersistenceRepository.existsByInterventionClientGeneratedId(clientGeneratedId);
+  }
+
+  // inherited javadoc
+  @Override
+  public Optional<ServiceRequest> findInProgressAt(EquipmentId equipmentId, Instant instant) {
+    if (equipmentId == null || instant == null) {
+      return Optional.empty();
+    }
+    return serviceRequestPersistenceRepository
+        .findByEquipmentIdAndStatusInAndStartedAtLessThanEqualOrderByStartedAtDesc(
+            equipmentId.equipmentId(), STARTED_STATUSES, instant)
+        .stream()
+        .filter(entity -> entity.getCompletedAt() == null || entity.getCompletedAt().isAfter(instant))
+        .findFirst()
+        .map(ServiceRequestPersistenceAssembler::toDomainFromPersistence);
   }
 
   /**

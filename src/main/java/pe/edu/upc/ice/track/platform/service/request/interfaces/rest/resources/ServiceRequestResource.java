@@ -6,8 +6,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 /**
- * Outbound REST resource representing a service request, with its status history and, once
- * completed, its intervention.
+ * Outbound REST resource representing a service request, with its status history, the maintenance
+ * windows of its work and, once completed, its intervention.
  */
 @Schema(
     name = "ServiceRequestResponse",
@@ -16,7 +16,7 @@ import java.util.List;
         + "\"type\": \"REPAIR\", \"priority\": \"HIGH\", \"description\": \"The freezer does not reach its temperature\", "
         + "\"status\": \"ACCEPTED\", \"created_at\": \"2026-10-23T13:00:00Z\", \"assigned_at\": \"2026-10-23T13:10:00Z\", "
         + "\"started_at\": null, \"completed_at\": null, \"canceled_at\": null, \"cancel_reason\": null, "
-        + "\"history\": [], \"intervention\": null}")
+        + "\"history\": [], \"intervention\": null, \"maintenance_windows\": []}")
 public record ServiceRequestResource(
     @Schema(description = "Service request unique identifier", example = "42")
     Long id,
@@ -68,6 +68,10 @@ public record ServiceRequestResource(
 
     @Schema(description = "The intervention that completed the request; null until completed", nullable = true)
     InterventionResource intervention,
+
+    @Schema(description = "Maintenance windows opened on the unit while the work was in progress, oldest first; "
+        + "empty when there were none")
+    List<MaintenanceWindowLinkResource> maintenanceWindows,
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @Schema(description = "The edge grant issued when the request was accepted, token included. Present only "

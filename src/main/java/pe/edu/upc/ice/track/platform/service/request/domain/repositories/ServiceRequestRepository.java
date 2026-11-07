@@ -142,6 +142,16 @@ public interface ServiceRequestRepository {
   boolean existsByInterventionClientGeneratedId(UUID clientGeneratedId);
 
   /**
+   * Find the request that was in progress on a unit at an instant: started at or before it and not
+   * completed before it, whatever its status is now.
+   *
+   * @param equipmentId the unit
+   * @param instant     the instant
+   * @return the latest started such request, or empty when no work was in progress then
+   */
+  Optional<ServiceRequest> findInProgressAt(EquipmentId equipmentId, Instant instant);
+
+  /**
    * Persist a request, inserting it when it is new and updating it otherwise.
    *
    * <p>An update is version-checked: a request read before another transaction changed it is

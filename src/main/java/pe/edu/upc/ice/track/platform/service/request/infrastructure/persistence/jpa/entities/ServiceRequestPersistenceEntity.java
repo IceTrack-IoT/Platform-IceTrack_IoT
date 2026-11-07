@@ -48,8 +48,9 @@ import java.util.List;
  * and a technician's assignments, both newest first - and the {@code equipment_id} index serves the
  * intervention history of a unit.</p>
  *
- * <p>Both children cascade every operation and are only changed through this entity: the
- * {@code history} through {@link #addTransition}, the {@code intervention} through its setter. The
+ * <p>Every child cascades every operation and is only changed through this entity: the
+ * {@code history} through {@link #addTransition}, the maintenance window links through
+ * {@link #addMaintenanceWindowLink}, the {@code intervention} through its setter. The
  * {@code version} has no setter at all, because JPA forbids an application from changing it.</p>
  */
 @Getter
@@ -137,7 +138,38 @@ public class ServiceRequestPersistenceEntity extends AuditableAbstractPersistenc
   @BatchSize(size = 50)
   private List<StatusTransitionPersistenceEntity> history = new ArrayList<>();
 
+  /**
+   * Links to the maintenance windows of the work. Loaded lazily, by batches, rather than through the
+   * entity graph of the detail query: fetching two bag collections in one query is refused by
+   * Hibernate.
+   */
+  @Getter(AccessLevel.NONE)
+  @Setter(AccessLevel.NONE)
+  @OneToMany(mappedBy = "serviceRequest", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+  @OrderBy("startedAt ASC, id ASC")
+  @BatchSize(size = 50)
+  private List<MaintenanceWindowLinkPersistenceEntity> maintenanceWindows = new ArrayList<>();
+
   public ServiceRequestPersistenceEntity() {
+  }
+
+  /**
+   * Returns the maintenance window links, oldest window first.
+   *
+   * @return a read-only view of the links
+   */
+  public List<MaintenanceWindowLinkPersistenceEntity> getMaintenanceWindows() {
+    return Collections.unmodifiableList(maintenanceWindows);
+  }
+
+  /**
+   * Appends a maintenance window link to this request; it is inserted when the request is saved.
+   *
+   * @param link the link to append
+   */
+  public void addMaintenanceWindowLink(MaintenanceWindowLinkPersistenceEntity link) {
+    link.setServiceRequest(this);
+    maintenanceWindows.add(link);
   }
 
   /**

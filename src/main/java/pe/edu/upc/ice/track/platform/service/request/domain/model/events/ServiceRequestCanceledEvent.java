@@ -10,6 +10,7 @@ import java.time.Instant;
  * @param serviceRequestId the request
  * @param ownerId          the owner who canceled
  * @param technicianId     the technician assigned at the time, {@code null} when there was none
+ * @param equipmentId      the unit the request was raised for
  * @param reason           why the owner canceled
  * @param canceledAt       when the request was canceled
  */
@@ -17,6 +18,7 @@ public record ServiceRequestCanceledEvent(
     Long serviceRequestId,
     Long ownerId,
     Long technicianId,
+    Long equipmentId,
     String reason,
     Instant canceledAt) {
 
@@ -31,6 +33,7 @@ public record ServiceRequestCanceledEvent(
         request.getId().serviceRequestId(),
         request.getOwnerId().ownerId(),
         request.getTechnicianId() == null ? null : request.getTechnicianId().technicianProfileId(),
+        request.getEquipmentId().equipmentId(),
         request.getCancelReason(),
         request.getCanceledAt());
   }

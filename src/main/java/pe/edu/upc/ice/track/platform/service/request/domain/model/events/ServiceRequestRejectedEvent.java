@@ -12,6 +12,7 @@ import java.time.Instant;
  * @param serviceRequestId the request
  * @param ownerId          the owner of the request, who now has to reassign it
  * @param technicianId     the technician who rejected
+ * @param equipmentId      the unit to service
  * @param reason           why the technician rejected
  * @param rejectedAt       when the request was rejected
  */
@@ -19,6 +20,7 @@ public record ServiceRequestRejectedEvent(
     Long serviceRequestId,
     Long ownerId,
     Long technicianId,
+    Long equipmentId,
     String reason,
     Instant rejectedAt) {
 
@@ -39,6 +41,7 @@ public record ServiceRequestRejectedEvent(
         request.getId().serviceRequestId(),
         request.getOwnerId().ownerId(),
         rejectingTechnicianId.technicianProfileId(),
+        request.getEquipmentId().equipmentId(),
         reason,
         rejectedAt);
   }

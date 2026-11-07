@@ -1,10 +1,12 @@
 package pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform;
 
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.MaintenanceWindowLink;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.StatusTransition;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.AcceptedServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestPage;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.IssuedEdgeGrantResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.MaintenanceWindowLinkResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.PagedServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServicePriorityResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServiceRequestResource;
@@ -65,7 +67,20 @@ public class ServiceRequestResourceFromEntityAssembler {
         entity.getIntervention() == null
             ? null
             : InterventionResourceFromEntityAssembler.toResourceFromIntervention(serviceRequestId, entity.getIntervention()),
+        entity.getMaintenanceWindows().stream()
+            .map(ServiceRequestResourceFromEntityAssembler::toResourceFromLink)
+            .toList(),
         edgeGrant);
+  }
+
+  private static MaintenanceWindowLinkResource toResourceFromLink(MaintenanceWindowLink link) {
+    return new MaintenanceWindowLinkResource(
+        link.getWindowId(),
+        link.getOrigin().name(),
+        link.getTechnicianProfileId(),
+        toIsoString(link.getStartedAt()),
+        toIsoString(link.getEndedAt()),
+        link.getClosureReason());
   }
 
   /**

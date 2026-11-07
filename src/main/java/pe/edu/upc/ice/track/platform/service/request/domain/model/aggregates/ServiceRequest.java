@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates;
 
 import lombok.Getter;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.Intervention;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.MaintenanceWindowLink;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.StatusTransition;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.events.ServiceCompletedEvent;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.events.ServiceRequestAcceptedEvent;
@@ -11,6 +12,7 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.events.Service
 import pe.edu.upc.ice.track.platform.service.request.domain.model.events.ServiceStartedEvent;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.events.TechnicianAssignedEvent;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.MaintenanceOrigin;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServicePriority;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
@@ -26,6 +28,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -54,6 +57,10 @@ import java.util.UUID;
  * again with the same device timestamp, and registering again an intervention with the same
  * {@code clientGeneratedId}, are answered as no-ops instead of conflicts, without a second
  * transition or event.</p>
+ *
+ * <p><strong>Maintenance windows.</strong> The windows Monitoring and Alerting opens on the unit while
+ * the work is in progress are traced as {@link MaintenanceWindowLink}s, so the order shows which
+ * windows the intervention involved. Linking never changes the status and raises no event.</p>
  *
  * <p>No JPA or persistence annotation is present here - the mapping lives exclusively in
  * {@code ServiceRequestPersistenceEntity}.</p>
@@ -97,6 +104,7 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
 
   private final List<StatusTransition> history;
   private Intervention intervention;
+  private final List<MaintenanceWindowLink> maintenanceWindows;
 
   /**
    * Reconstitutes a service request, typically from persistence.
@@ -122,13 +130,16 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
    * @param version      the optimistic concurrency token, may be {@code null}
    * @param history      the recorded transitions, oldest first; may be {@code null} or empty
    * @param intervention the registered intervention, may be {@code null}
+   * @param maintenanceWindows the links to the maintenance windows of the work; may be {@code null} or
+   *                     empty
    * @throws IllegalArgumentException when a required value is missing or invalid
    */
   public ServiceRequest(ServiceRequestId id, OwnerId ownerId, EquipmentId equipmentId, SiteId siteId,
                         TechnicianProfileId technicianId, ServiceType type, ServicePriority priority,
                         String description, ServiceStatus status, Instant createdAt, Instant assignedAt,
                         Instant startedAt, Instant completedAt, Instant canceledAt, String cancelReason,
-                        Long version, List<StatusTransition> history, Intervention intervention) {
+                        Long version, List<StatusTransition> history, Intervention intervention,
+                        List<MaintenanceWindowLink> maintenanceWindows) {
     this.id = id;
     this.ownerId = requireValue(ownerId, "ownerId");
     this.equipmentId = requireValue(equipmentId, "equipmentId");
@@ -150,6 +161,7 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
     this.version = version;
     this.history = new ArrayList<>(history == null ? List.of() : history);
     this.intervention = intervention;
+    this.maintenanceWindows = new ArrayList<>(maintenanceWindows == null ? List.of() : maintenanceWindows);
   }
 
   /**
@@ -171,7 +183,7 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
                                       ServicePriority priority, String description) {
     var now = currentInstant();
     var request = new ServiceRequest(null, ownerId, equipmentId, siteId, null, type, priority, description,
-        ServiceStatus.PENDING, now, null, null, null, null, null, null, List.of(), null);
+        ServiceStatus.PENDING, now, null, null, null, null, null, null, List.of(), null, List.of());
     request.history.add(StatusTransition.of(null, ServiceStatus.PENDING, ownerId.ownerId(), now, null, null));
     return request;
   }
@@ -354,6 +366,87 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
    */
   public List<StatusTransition> getHistory() {
     return Collections.unmodifiableList(history);
+  }
+
+  /**
+   * Returns the links to the maintenance windows opened during the work, oldest first.
+   *
+   * @return a read-only, chronologically ordered copy of the links
+   */
+  public List<MaintenanceWindowLink> getMaintenanceWindows() {
+    return maintenanceWindows.stream()
+        .sorted(Comparator.comparing(MaintenanceWindowLink::getStartedAt)
+            .thenComparing(MaintenanceWindowLink::getWindowId))
+        .toList();
+  }
+
+  /**
+   * Tells whether the work on this request was in progress at an instant: it had started, and had
+   * not been completed yet. A request completed since still answers {@code true} for an instant
+   * during its work.
+   *
+   * @param instant the instant to test
+   * @return {@code true} when the work had started at or before the instant and finished after it, or
+   *         has not finished
+   */
+  public boolean wasInProgressAt(Instant instant) {
+    if (instant == null || startedAt == null || instant.isBefore(startedAt)) {
+      return false;
+    }
+    if (status != ServiceStatus.IN_PROGRESS && status != ServiceStatus.COMPLETED) {
+      return false;
+    }
+    return completedAt == null || instant.isBefore(completedAt);
+  }
+
+  /**
+   * Records that a maintenance window was opened on the unit for this work.
+   *
+   * <p>Only the window's identity, origin, technician and start are kept: the window itself belongs to
+   * Monitoring and Alerting. The status of the request is not touched. A window already linked is not
+   * linked again, so a duplicated event changes nothing.</p>
+   *
+   * @param windowId            identity of the window; required
+   * @param origin              how the window was started; required
+   * @param technicianProfileId the technician attributed to the window, may be {@code null}
+   * @param windowStartedAt     when the window started; required
+   * @param attributedAt        when the window was attributed to this request - its start, or the
+   *                            moment the app took over a window started with the button; the work
+   *                            must have been in progress then
+   * @return {@code true} when the link was added, {@code false} when the window was already linked
+   * @throws IllegalArgumentException when a required value is missing
+   * @throws IllegalStateException    when the work was not in progress at {@code attributedAt}
+   */
+  public boolean linkMaintenanceWindow(Long windowId, MaintenanceOrigin origin, Long technicianProfileId,
+                                       Instant windowStartedAt, Instant attributedAt) {
+    requireValue(windowId, "maintenance window");
+    if (maintenanceWindows.stream().anyMatch(link -> link.isFor(windowId))) {
+      return false;
+    }
+    if (!wasInProgressAt(attributedAt)) {
+      throw new IllegalStateException(
+          "Service request %s was not IN_PROGRESS at %s, so maintenance window %s cannot be linked to it"
+              .formatted(id == null ? null : id.serviceRequestId(), attributedAt, windowId));
+    }
+    maintenanceWindows.add(MaintenanceWindowLink.open(windowId, origin, technicianProfileId, windowStartedAt));
+    return true;
+  }
+
+  /**
+   * Completes the link of a maintenance window with its end.
+   *
+   * @param windowId      identity of the window
+   * @param endedAt       when the window ended; required
+   * @param closureReason why it ended; required
+   * @return {@code true} when a link was completed; {@code false} when the window is not linked to this
+   *         request or its link was already completed
+   */
+  public boolean completeMaintenanceWindowLink(Long windowId, Instant endedAt, String closureReason) {
+    return maintenanceWindows.stream()
+        .filter(link -> link.isFor(windowId))
+        .findFirst()
+        .map(link -> link.close(endedAt, closureReason))
+        .orElse(false);
   }
 
   /**

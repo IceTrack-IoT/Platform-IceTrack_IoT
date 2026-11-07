@@ -14,6 +14,7 @@ import pe.edu.upc.ice.track.platform.service.request.domain.repositories.Service
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -22,13 +23,14 @@ import java.util.Set;
  *
  * <p>This class is the published contract of the Anti-Corruption Layer of the
  * {@code service.request} context. Every parameter and return type is a primitive, a boxed
- * primitive, a {@link List} of them, an {@link Instant} or a value record of this package such as
- * {@link ActiveEdgeGrant} - no {@code ServiceRequest} or
+ * primitive, a {@link List} or {@link Optional} of them, an {@link Instant} or a value record of this
+ * package such as {@link ActiveEdgeGrant} - no {@code ServiceRequest} or
  * {@code Review} aggregate, value object, repository or JPA entity appears in its signature.
  * Callers depend on this class alone and must never reach into
  * {@code service.request.domain.*}, {@code service.request.application.*} or
- * {@code service.request.infrastructure.*}. Consumed synchronously by Reporting, and by Assets and
- * Monitoring to decide whether a technician may read a unit or a site.</p>
+ * {@code service.request.infrastructure.*}. Consumed synchronously by Reporting, by Assets and
+ * Monitoring to decide whether a technician may read a unit or a site, and by Monitoring to attribute
+ * a maintenance window to the order in progress on its unit.</p>
  *
  * <p>Like {@code AssetContextFacade}, every method answers empty rather than throwing: a
  * {@code null} or non-positive identifier, or an incomplete or inverted window, is answered as
@@ -194,6 +196,29 @@ public class ServiceRequestContextFacade {
     }
     return serviceRequestRepository.existsByOwnerIdAndTechnicianIdAndStatusIn(
         new OwnerId(ownerProfileId), new TechnicianProfileId(technicianProfileId), ACTIVE_ASSIGNMENT_STATUSES);
+  }
+
+  /**
+   * Finds the request that was in progress on a unit at an instant.
+   *
+   * <p>Monitoring and Alerting uses it to attribute a maintenance window started with the gateway's
+   * hardware button to the order a technician was working on. The request may have been completed
+   * since: what counts is that its work had started and not yet finished at that instant.</p>
+   *
+   * @param equipmentId identifier of the unit
+   * @param instant     the instant
+   * @return the request and its technician, or empty when no work was in progress then, or for a
+   *         missing or non-positive identifier or a missing instant
+   */
+  @Transactional(readOnly = true)
+  public Optional<InProgressServiceRequest> findInProgressServiceRequestAt(Long equipmentId, Instant instant) {
+    if (!isValidIdentifier(equipmentId) || instant == null) {
+      return Optional.empty();
+    }
+    return serviceRequestRepository.findInProgressAt(new EquipmentId(equipmentId), instant)
+        .filter(request -> request.getTechnicianId() != null)
+        .map(request -> new InProgressServiceRequest(
+            request.getId().serviceRequestId(), request.getTechnicianId().technicianProfileId()));
   }
 
   private static boolean isValidIdentifier(Long identifier) {

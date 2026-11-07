@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.service.request.application.internal.comma
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.service.request.application.commandservices.ServiceRequestCommandService;
 import pe.edu.upc.ice.track.platform.service.request.application.internal.outboundservices.acl.ExternalEquipmentService;
@@ -13,7 +14,9 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.Ser
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.AcceptServiceRequestCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.AssignTechnicianCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.CancelServiceRequestCommand;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.CompleteMaintenanceWindowLinkCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.CreateServiceRequestCommand;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RecordMaintenanceWindowLinkCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegenerateEdgeGrantCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegisterInterventionCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RejectServiceRequestCommand;
@@ -61,6 +64,10 @@ import java.util.function.Supplier;
  * transaction, and the assigned technician may regenerate a lost grant while the request is
  * {@code ACCEPTED} or {@code IN_PROGRESS}. Grants live for
  * {@code service-request.edge-grant.ttl-hours} (24 by default).</p>
+ *
+ * <p><strong>Maintenance window links.</strong> The two link commands come from Monitoring and
+ * Alerting's events after their transaction committed, so each runs in a transaction of its own and
+ * reports a rejected link by logging it and answering {@code false} instead of throwing.</p>
  */
 @Service
 @Slf4j
@@ -285,6 +292,70 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
               revokeEdgeGrants(saved, GRANT_CANCELED);
               return saved;
             })));
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public boolean handle(RecordMaintenanceWindowLinkCommand command) {
+    var request = findServiceRequest(command.serviceRequestId());
+    if (request.isEmpty()) {
+      log.warn("Maintenance window {} names service request {}, which does not exist; not linked",
+          command.windowId(), command.serviceRequestId());
+      return false;
+    }
+    var serviceRequest = request.get();
+    if (!serviceRequest.getEquipmentId().equals(new EquipmentId(command.equipmentId()))) {
+      log.warn("Maintenance window {} of equipment {} names service request {} of equipment {}; not linked",
+          command.windowId(), command.equipmentId(), command.serviceRequestId(),
+          serviceRequest.getEquipmentId().equipmentId());
+      return false;
+    }
+    final boolean linked;
+    try {
+      linked = serviceRequest.linkMaintenanceWindow(command.windowId(), command.origin(),
+          command.technicianProfileId(), command.windowStartedAt(), command.attributedAt());
+    } catch (IllegalStateException | IllegalArgumentException e) {
+      log.warn("Maintenance window {} not linked to service request {}: {}",
+          command.windowId(), command.serviceRequestId(), e.getMessage());
+      return false;
+    }
+    if (!linked) {
+      log.info("Maintenance window {} is already linked to service request {}",
+          command.windowId(), command.serviceRequestId());
+      return false;
+    }
+    persist("Linked maintenance window %s to".formatted(command.windowId()), serviceRequest);
+    return true;
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public boolean handle(CompleteMaintenanceWindowLinkCommand command) {
+    var request = findServiceRequest(command.serviceRequestId());
+    if (request.isEmpty()) {
+      log.warn("Closed maintenance window {} names service request {}, which does not exist",
+          command.windowId(), command.serviceRequestId());
+      return false;
+    }
+    var serviceRequest = request.get();
+    final boolean completed;
+    try {
+      completed = serviceRequest.completeMaintenanceWindowLink(
+          command.windowId(), command.endedAt(), command.closureReason());
+    } catch (IllegalArgumentException e) {
+      log.warn("Link of maintenance window {} on service request {} not completed: {}",
+          command.windowId(), command.serviceRequestId(), e.getMessage());
+      return false;
+    }
+    if (!completed) {
+      log.info("Service request {} holds no open link to maintenance window {}; nothing to complete",
+          command.serviceRequestId(), command.windowId());
+      return false;
+    }
+    persist("Completed the link of maintenance window %s on".formatted(command.windowId()), serviceRequest);
+    return true;
   }
 
   /**
