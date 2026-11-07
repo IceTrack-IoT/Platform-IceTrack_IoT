@@ -3,26 +3,32 @@ package pe.edu.upc.ice.track.platform.monitoring.interfaces.acl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.AlertPolicy;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.SensorReading;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertStatus;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertPolicyRepository;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertRepository;
+import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.MaintenanceWindowRepository;
+import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadingRepository;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
  * ACL facade that exposes Monitoring and Alerting capabilities to other bounded contexts.
  *
- * <p>Every parameter and return type is a primitive or a {@link String} — no monitoring
- * aggregate, value object or repository is reachable from here. The primitives-only signature is
- * translated into calls against the monitoring application layer, and the results back into
- * primitives before returning. Consumed synchronously by Reporting &amp; Análisis; consumed
- * asynchronously, via {@code AlertRaisedIntegrationEvent}, by Notifications.</p>
+ * <p>Every parameter and return type is a primitive, a boxed primitive, a {@link String} or an array
+ * of those; no monitoring aggregate, value object or repository is reachable from here.</p>
  *
- * <p>Reads go straight to the repositories rather than through the query services: those are
- * scoped to an authenticated caller, while a cross-context caller asks about a unit it already
- * resolved on its own terms.</p>
+ * <p>The range queries used by Reporting exclude what is not part of the unit's operating time:
+ * alerts judged false alarms ({@code DISMISSED}) are ignored, and so is every interval a maintenance
+ * window covered. Alerts opened inside a window are not counted, alert durations lose the part that
+ * overlaps a window, and telemetry recorded during maintenance is not returned.</p>
  */
 @Service
 public class MonitoringContextFacade {
@@ -31,12 +37,26 @@ public class MonitoringContextFacade {
 
   private static final List<AlertStatus> ACTIVE_STATUSES = List.of(AlertStatus.OPEN, AlertStatus.ACKNOWLEDGED);
 
+  /**
+   * How far before a range a maintenance window may have started and still overlap the range. Windows
+   * are closed by the expiry sweep soon after their expiration, so a week is a generous bound.
+   */
+  private static final Duration MAINTENANCE_LOOKBACK = Duration.ofDays(7);
+
   private final AlertRepository alertRepository;
   private final AlertPolicyRepository alertPolicyRepository;
+  private final MaintenanceWindowRepository maintenanceWindowRepository;
+  private final SensorReadingRepository sensorReadingRepository;
 
-  public MonitoringContextFacade(AlertRepository alertRepository, AlertPolicyRepository alertPolicyRepository) {
+  public MonitoringContextFacade(
+      AlertRepository alertRepository,
+      AlertPolicyRepository alertPolicyRepository,
+      MaintenanceWindowRepository maintenanceWindowRepository,
+      SensorReadingRepository sensorReadingRepository) {
     this.alertRepository = alertRepository;
     this.alertPolicyRepository = alertPolicyRepository;
+    this.maintenanceWindowRepository = maintenanceWindowRepository;
+    this.sensorReadingRepository = sensorReadingRepository;
   }
 
   /**
@@ -87,17 +107,144 @@ public class MonitoringContextFacade {
         .orElse(NO_ALERT);
   }
 
-  /** @return how many alerts of the type were opened for the equipment within the range. */
+  /**
+   * Counts the alerts of one type that were opened within a range.
+   *
+   * <p>Dismissed alerts are not counted, and neither are alerts opened while a maintenance window of
+   * the unit was open.</p>
+   *
+   * @param equipmentId identifier of the unit
+   * @param alertType   the alert type, by its enum name
+   * @param from        inclusive start of the range
+   * @param to          inclusive end of the range
+   * @return how many alerts of the type were opened for the equipment within the range, outside maintenance
+   */
   public long countAlertsByEquipmentAndTypeInRange(
       Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
-    return alertRepository.countByEquipmentIdAndTypeInRange(
-        equipmentId, AlertType.valueOf(alertType.toUpperCase()), from, to);
+    var type = AlertType.valueOf(alertType.toUpperCase());
+    var windows = maintenanceIntervals(equipmentId, from, to);
+    return alertRepository.findByEquipmentIdAndTypeOpenedBetween(equipmentId, type, from, to).stream()
+        .filter(alert -> alert.getStatus() != AlertStatus.DISMISSED)
+        .filter(alert -> windows.stream().noneMatch(window -> window.contains(alert.getOpenedAt())))
+        .count();
   }
 
-  /** @return total hours the equipment spent under alerts of the type within the range. */
+  /**
+   * Totals the hours a unit spent under alerts of one type within a range.
+   *
+   * <p>Each alert contributes the part of its duration that falls inside the range, minus the part
+   * that falls inside a maintenance window. Dismissed alerts contribute nothing.</p>
+   *
+   * @param equipmentId identifier of the unit
+   * @param alertType   the alert type, by its enum name
+   * @param from        inclusive start of the range
+   * @param to          inclusive end of the range
+   * @return total hours under alerts of the type within the range, excluding maintenance
+   */
   public double fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
       Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
-    return alertRepository.totalDurationHoursByEquipmentIdAndTypeInRange(
-        equipmentId, AlertType.valueOf(alertType.toUpperCase()), from, to);
+    var type = AlertType.valueOf(alertType.toUpperCase());
+    var windows = maintenanceIntervals(equipmentId, from, to);
+    return alertRepository.findByEquipmentIdAndTypeOpenedBetween(equipmentId, type, from, to).stream()
+        .filter(alert -> alert.getStatus() != AlertStatus.DISMISSED)
+        .mapToDouble(alert -> {
+          var start = alert.getOpenedAt().isBefore(from) ? from : alert.getOpenedAt();
+          var end = alert.getResolvedAt() == null || alert.getResolvedAt().isAfter(to) ? to : alert.getResolvedAt();
+          if (!end.isAfter(start)) {
+            return 0d;
+          }
+          var seconds = Duration.between(start, end).toSeconds();
+          for (var window : windows) {
+            seconds -= window.overlapSeconds(start, end);
+          }
+          return Math.max(0, seconds) / 3600.0;
+        })
+        .sum();
+  }
+
+  /**
+   * Returns the temperature samples a unit recorded within a range, outside maintenance.
+   *
+   * <p>Each row is {@code {celsius, epochSeconds}}: the calibrated average temperature of one reading
+   * and the moment it was recorded, in seconds since the epoch as read in UTC. Rows come in time order.</p>
+   *
+   * @param equipmentId identifier of the unit
+   * @param from        inclusive start of the range
+   * @param to          inclusive end of the range
+   * @return the samples, empty when the unit recorded none in the range
+   */
+  public List<double[]> fetchTemperatureSamplesByEquipmentInRange(
+      Long equipmentId, LocalDateTime from, LocalDateTime to) {
+    if (equipmentId == null) {
+      return List.of();
+    }
+    return sensorReadingRepository.findByEquipmentIdAndRecordedAtBetween(equipmentId, from, to).stream()
+        .filter(reading -> !reading.isUnderMaintenance())
+        .filter(reading -> reading.getAvgTemperature() != null && reading.getAvgTemperature().celsius() != null)
+        .sorted(Comparator.comparing(SensorReading::getRecordedAt))
+        .map(reading -> new double[] {
+            reading.getAvgTemperature().celsius(),
+            reading.getRecordedAt().toEpochSecond(ZoneOffset.UTC)})
+        .toList();
+  }
+
+  /**
+   * Loads the maintenance windows of a unit that overlap a range, clipped to it and merged.
+   *
+   * @param equipmentId identifier of the unit; {@code null} yields no intervals
+   * @param from        inclusive start of the range
+   * @param to          inclusive end of the range
+   * @return the merged maintenance intervals, sorted by start
+   */
+  private List<Interval> maintenanceIntervals(Long equipmentId, LocalDateTime from, LocalDateTime to) {
+    if (equipmentId == null) {
+      return List.of();
+    }
+    var zone = ZoneId.systemDefault();
+    var searchFrom = from.atZone(zone).toInstant().minus(MAINTENANCE_LOOKBACK);
+    var searchTo = to.atZone(zone).toInstant();
+    var raw = new ArrayList<Interval>();
+    for (var window : maintenanceWindowRepository.findByEquipmentIdAndStartedAtBetween(equipmentId, searchFrom, searchTo)) {
+      var start = LocalDateTime.ofInstant(window.getStartedAt(), zone);
+      var end = window.getEndedAt() == null ? to : LocalDateTime.ofInstant(window.getEndedAt(), zone);
+      var clipped = new Interval(start.isBefore(from) ? from : start, end.isAfter(to) ? to : end);
+      if (clipped.end().isAfter(clipped.start())) {
+        raw.add(clipped);
+      }
+    }
+    return Interval.merge(raw);
+  }
+
+  /**
+   * A half-open span of time, {@code [start, end)}.
+   *
+   * @param start inclusive start
+   * @param end   exclusive end
+   */
+  private record Interval(LocalDateTime start, LocalDateTime end) {
+
+    boolean contains(LocalDateTime instant) {
+      return instant != null && !instant.isBefore(start) && instant.isBefore(end);
+    }
+
+    long overlapSeconds(LocalDateTime from, LocalDateTime to) {
+      var overlapStart = start.isAfter(from) ? start : from;
+      var overlapEnd = end.isBefore(to) ? end : to;
+      return overlapEnd.isAfter(overlapStart) ? Duration.between(overlapStart, overlapEnd).toSeconds() : 0L;
+    }
+
+    static List<Interval> merge(List<Interval> intervals) {
+      var sorted = intervals.stream().sorted(Comparator.comparing(Interval::start)).toList();
+      var merged = new ArrayList<Interval>();
+      for (var interval : sorted) {
+        var last = merged.isEmpty() ? null : merged.getLast();
+        if (last != null && !interval.start().isAfter(last.end())) {
+          merged.set(merged.size() - 1, new Interval(last.start(), interval.end().isAfter(last.end()) ? interval.end() : last.end()));
+        } else {
+          merged.add(interval);
+        }
+      }
+      return merged;
+    }
   }
 }

@@ -9,7 +9,6 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertReposit
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.assemblers.AlertPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.repositories.AlertPersistenceRepository;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -59,25 +58,11 @@ public class AlertRepositoryImpl implements AlertRepository {
         .map(AlertPersistenceAssembler::toDomainFromPersistenceEntity);
   }
 
-  // Dismissed alerts were judged false alarms, so they never count toward excursion reports.
   @Override
-  public long countByEquipmentIdAndTypeInRange(Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to) {
+  public List<Alert> findByEquipmentIdAndTypeOpenedBetween(
+      Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to) {
     return persistenceRepository.findByEquipmentIdAndTypeAndOpenedAtBetween(equipmentId, type.name(), from, to).stream()
-        .filter(a -> !AlertStatus.DISMISSED.name().equals(a.getStatus()))
-        .count();
-  }
-
-  // Dismissed alerts were judged false alarms, so they never count toward excursion reports.
-  @Override
-  public double totalDurationHoursByEquipmentIdAndTypeInRange(Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to) {
-    return persistenceRepository
-        .findByEquipmentIdAndTypeAndOpenedAtBetween(equipmentId, type.name(), from, to).stream()
-        .filter(a -> !AlertStatus.DISMISSED.name().equals(a.getStatus()))
-        .mapToDouble(a -> {
-          var start = a.getOpenedAt().isBefore(from) ? from : a.getOpenedAt();
-          var end = (a.getResolvedAt() == null || a.getResolvedAt().isAfter(to)) ? to : a.getResolvedAt();
-          return Math.max(0, Duration.between(start, end).toMinutes()) / 60.0;
-        })
-        .sum();
+        .map(AlertPersistenceAssembler::toDomainFromPersistenceEntity)
+        .toList();
   }
 }
