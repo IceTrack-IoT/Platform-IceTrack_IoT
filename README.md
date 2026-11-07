@@ -74,9 +74,9 @@ Defaults come from `src/main/resources/application.properties`:
 |---|---|---|
 | `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/icetrack` | JDBC URL (override in `.env` for Docker networking, e.g. `jdbc:postgresql://db:5432/icetrack`) |
 | `SPRING_DATASOURCE_USERNAME` | `postgres` | DB user |
-| `SPRING_DATASOURCE_PASSWORD` | `postgres` | DB password |
+| `SPRING_DATASOURCE_PASSWORD` | none (required) | DB password; startup fails without it |
 | `SPRING_PROFILES_ACTIVE` | `dev` | Set to `dev` by `docker-compose.dev.yml` |
-| `JWT_SECRET` | dev-only default | Internal bearer-token signing key |
+| `JWT_SECRET` | none (required) | Base64-encoded HS512 signing key of at least 64 decoded bytes, e.g. `openssl rand -base64 64`; startup fails when it is missing, blank, not Base64 or too short |
 | `JWT_EXPIRATION_MINUTES` | `30` | Access token TTL |
 | `REFRESH_TOKEN_EXPIRATION_DAYS` | `7` | Refresh token TTL (each refresh rotates the token) |
 | `REFRESH_TOKEN_REUSE_GRACE_SECONDS` | `20` | Window in which re-presenting a just-rotated refresh token is a concurrent refresh (`401 REFRESH_TOKEN_RECENTLY_ROTATED`, retry once) instead of a replay (`401 REFRESH_TOKEN_REPLAY_DETECTED`, revokes all sessions); `0` disables it |
