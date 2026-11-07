@@ -135,8 +135,10 @@ public final class ErrorResponseAssembler {
    * Determines the appropriate HTTP status code for a given error code.
    *
    * <p>Conflicts are recognized by their {@code _CONFLICT} suffix, except for the state machine
-   * codes of the {@code service.request} context, whose names describe the rule that was broken
-   * rather than the resource, and which are listed explicitly.</p>
+   * codes, whose names describe the rule that was broken rather than the resource, and which are
+   * listed explicitly. The authentication codes are listed explicitly too: {@code BAD_CREDENTIALS}
+   * and {@code INVALID_TOKEN} are 401, {@code ROLE_CHANNEL_MISMATCH} is 403,
+   * {@code ACCOUNT_LINK_REQUIRED} is 409 and {@code TOO_MANY_REQUESTS} is 429.</p>
    *
    * @param errorCode the error code string (e.g., "PROFILE_NOT_FOUND", "VALIDATION_ERROR")
    * @return the corresponding HttpStatus
@@ -144,11 +146,13 @@ public final class ErrorResponseAssembler {
   public static HttpStatusCode toStatusFromErrorCode(String errorCode) {
     return switch (errorCode) {
       case "VALIDATION_ERROR" -> HttpStatus.BAD_REQUEST;
-      case "INVALID_STATUS_TRANSITION", "TECHNICIAN_NOT_ELIGIBLE", "REVIEW_NOT_ALLOWED" -> HttpStatus.CONFLICT;
+      case "INVALID_STATUS_TRANSITION", "TECHNICIAN_NOT_ELIGIBLE", "REVIEW_NOT_ALLOWED", "ACCOUNT_LINK_REQUIRED" ->
+          HttpStatus.CONFLICT;
       case String s when s.endsWith("_NOT_FOUND") -> HttpStatus.NOT_FOUND;
       case "BUSINESS_RULE_VIOLATION" -> HttpStatusCode.valueOf(422);
-      case "UNAUTHORIZED" -> HttpStatus.UNAUTHORIZED;
-      case "ACCESS_DENIED" -> HttpStatus.FORBIDDEN;
+      case "UNAUTHORIZED", "BAD_CREDENTIALS", "INVALID_TOKEN" -> HttpStatus.UNAUTHORIZED;
+      case "ACCESS_DENIED", "ROLE_CHANNEL_MISMATCH" -> HttpStatus.FORBIDDEN;
+      case "TOO_MANY_REQUESTS" -> HttpStatus.TOO_MANY_REQUESTS;
       case String s when s.endsWith("_CONFLICT") -> HttpStatus.CONFLICT;
       default -> HttpStatus.INTERNAL_SERVER_ERROR;
     };

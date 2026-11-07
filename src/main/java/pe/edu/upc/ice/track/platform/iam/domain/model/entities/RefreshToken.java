@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.iam.domain.model.entities;
 
 import lombok.Getter;
+import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ClientChannel;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -26,6 +27,10 @@ import java.time.Instant;
  *
  * <p>All instants are UTC {@link Instant}s taken from the server clock, so no time zone enters
  * the comparisons.</p>
+ *
+ * <p>The token also records the {@link ClientChannel} its session was opened from. A refresh
+ * keeps that channel, so a session opened on the web application can never be continued on the
+ * mobile application.</p>
  */
 @Getter
 public class RefreshToken {
@@ -37,6 +42,7 @@ public class RefreshToken {
   private boolean revoked;
   private Instant revokedAt;
   private String replacedByToken;
+  private final ClientChannel channel;
 
   /**
    * Reconstitutes a refresh token, typically from persistence.
@@ -52,6 +58,8 @@ public class RefreshToken {
    *                        is active or when it was revoked before the instant was recorded
    * @param replacedByToken the digest of the token that replaced this one, or {@code null} when it
    *                        was not rotated
+   * @param channel         the client application the session was opened from, or {@code null}
+   *                        for a token issued before the channel was recorded
    * @throws IllegalArgumentException when a required value is missing
    */
   public RefreshToken(
@@ -61,7 +69,8 @@ public class RefreshToken {
       Instant expiryDate,
       boolean revoked,
       Instant revokedAt,
-      String replacedByToken) {
+      String replacedByToken,
+      ClientChannel channel) {
     if (userId == null) {
       throw new IllegalArgumentException("userId must not be null");
     }
@@ -75,6 +84,7 @@ public class RefreshToken {
     this.revoked = revoked;
     this.revokedAt = revokedAt;
     this.replacedByToken = replacedByToken;
+    this.channel = channel;
   }
 
   /**
@@ -83,11 +93,15 @@ public class RefreshToken {
    * @param userId      the identifier of the persisted account; required
    * @param tokenDigest the digest of the raw token handed to the client; required
    * @param expiryDate  the instant after which the token is no longer accepted; required
+   * @param channel     the client application the session is opened from; required
    * @return the newly built refresh token, not yet persisted
    * @throws IllegalArgumentException when a required value is missing
    */
-  public static RefreshToken issue(Long userId, String tokenDigest, Instant expiryDate) {
-    return new RefreshToken(null, userId, tokenDigest, expiryDate, false, null, null);
+  public static RefreshToken issue(Long userId, String tokenDigest, Instant expiryDate, ClientChannel channel) {
+    if (channel == null) {
+      throw new IllegalArgumentException("channel must not be null");
+    }
+    return new RefreshToken(null, userId, tokenDigest, expiryDate, false, null, null, channel);
   }
 
   /**

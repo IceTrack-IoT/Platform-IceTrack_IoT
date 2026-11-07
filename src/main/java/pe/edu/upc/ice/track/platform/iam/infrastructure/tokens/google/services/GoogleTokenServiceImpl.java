@@ -12,6 +12,8 @@ import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.g
 import pe.edu.upc.ice.track.platform.iam.application.internal.outboundservices.google.GoogleUserInfo;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.tokens.google.configuration.GoogleTokenDecoderConfiguration;
 
+import java.util.Locale;
+
 /**
  * Infrastructure adapter that validates Google OIDC id_tokens with Spring Security's
  * {@link JwtDecoder}.
@@ -24,7 +26,8 @@ import pe.edu.upc.ice.track.platform.iam.infrastructure.tokens.google.configurat
  * and that email must be verified by Google.</p>
  *
  * <p>Every failure is surfaced as an {@link IllegalArgumentException} so that the application
- * layer can reject the exchange without ever seeing a Spring Security type.</p>
+ * layer can reject the exchange without ever seeing a Spring Security type; it answers every such
+ * rejection with {@code 401 INVALID_TOKEN}. The email is trimmed and lowercased.</p>
  */
 @Service
 @Slf4j
@@ -85,9 +88,11 @@ public class GoogleTokenServiceImpl implements GoogleTokenService {
       throw new IllegalArgumentException("Google account email is not verified");
     }
 
+    // Normalized like every other email of the platform, so the lookup of the matching profile
+    // never depends on the case Google reports.
     return new GoogleUserInfo(
         subject,
-        email.trim(),
+        email.trim().toLowerCase(Locale.ROOT),
         emailVerified,
         jwt.getClaimAsString(NAME_CLAIM),
         jwt.getClaimAsString(GIVEN_NAME_CLAIM),

@@ -15,6 +15,6 @@ public class SignInByGoogleCommandFromResourceAssembler {
    * @return the {@link SignInByGoogleCommand} command
    */
   public static SignInByGoogleCommand toCommandFromResource(SignInWithGoogleResource resource) {
-    return new SignInByGoogleCommand(resource.idToken());
+    return new SignInByGoogleCommand(resource.idToken(), resource.channel().toDomain());
   }
 }

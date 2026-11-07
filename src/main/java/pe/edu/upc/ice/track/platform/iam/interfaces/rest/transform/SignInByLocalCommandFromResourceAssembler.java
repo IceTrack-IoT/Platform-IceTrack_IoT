@@ -15,6 +15,6 @@ public class SignInByLocalCommandFromResourceAssembler {
    * @return the {@link SignInByLocalCommand} command
    */
   public static SignInByLocalCommand toCommandFromResource(SignInWithLocalResource resource) {
-    return new SignInByLocalCommand(resource.username(), resource.password());
+    return new SignInByLocalCommand(resource.username(), resource.password(), resource.channel().toDomain());
   }
 }

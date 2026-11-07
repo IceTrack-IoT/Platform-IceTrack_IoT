@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ClientChannel;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
 
 import java.time.Instant;
@@ -57,4 +58,12 @@ public class RefreshTokenPersistenceEntity extends AuditableAbstractPersistenceE
    */
   @Column(name = "replaced_by_token", length = 64)
   private String replacedByToken;
+
+  /**
+   * Client application the session was opened from. Nullable only for rows issued before the
+   * column was introduced; the channel of such a session is derived from the account's role.
+   */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "channel", length = 10)
+  private ClientChannel channel;
 }

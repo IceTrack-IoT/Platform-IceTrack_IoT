@@ -99,9 +99,9 @@ public class User extends AbstractDomainAggregateRoot<User> {
   /**
    * Links an already existing local account to a Google identity.
    *
-   * <p>Used when a user who first registered locally signs in with a Google account carrying
-   * the same email: the account keeps its identifier, credentials and role, and simply starts
-   * accepting the federated provider as well.</p>
+   * <p>Used once the holder of an account registered locally has authorized the link by
+   * confirming its password: the account keeps its identifier, credentials and role, and simply
+   * starts accepting the federated provider as well.</p>
    *
    * @param googleSub the Google {@code sub} claim identifying the account; required
    */
@@ -117,6 +117,18 @@ public class User extends AbstractDomainAggregateRoot<User> {
    */
   public boolean isFederated() {
     return provider != null && provider != AuthProvider.LOCAL;
+  }
+
+  /**
+   * Indicates whether this account can authenticate with a local password.
+   *
+   * <p>Accounts registered through Google carry no password; an account registered locally keeps
+   * its password after it is linked to Google.</p>
+   *
+   * @return {@code true} when the account has an encoded password
+   */
+  public boolean hasLocalPassword() {
+    return password != null && !password.isBlank();
   }
 
   /**

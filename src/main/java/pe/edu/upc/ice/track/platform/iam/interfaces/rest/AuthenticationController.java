@@ -30,6 +30,7 @@ import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.Authenticated
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.CompleteGoogleOwnerRegistrationResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.CompleteGoogleTechnicianRegistrationResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.CurrentUserResource;
+import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.LinkGoogleAccountResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.RefreshTokenResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.SignInWithGoogleResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.SignInWithLocalResource;
@@ -40,6 +41,7 @@ import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.Authenticated
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.CompleteGoogleOwnerRegistrationCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.CompleteGoogleTechnicianRegistrationCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.CurrentUserResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.LinkGoogleAccountCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.RefreshTokenCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.SignInByGoogleCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.SignInByLocalCommandFromResourceAssembler;
@@ -48,6 +50,7 @@ import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.SignUpOwnerCo
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.SignUpTechnicianCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.UserResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
@@ -55,12 +58,13 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  * AuthenticationController
  * <p>
  *     This controller is responsible for handling authentication requests.
- *     It exposes nine endpoints:
+ *     It exposes ten endpoints:
  *     <ul>
  *         <li>POST /api/v1/authentication/sign-in/local</li>
  *         <li>POST /api/v1/authentication/sign-up/owner</li>
  *         <li>POST /api/v1/authentication/sign-up/technician</li>
  *         <li>POST /api/v1/authentication/google/verify</li>
+ *         <li>POST /api/v1/authentication/google/link</li>
  *         <li>POST /api/v1/authentication/google/complete-registration/owner</li>
  *         <li>POST /api/v1/authentication/google/complete-registration/technician</li>
  *         <li>POST /api/v1/authentication/refresh-token</li>
@@ -85,7 +89,18 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  *     Google login and posts the resulting OIDC {@code id_token} to {@code /google/verify}. A
  *     registered account receives the platform's own bearer token; an unknown one receives a 404
  *     and must submit the onboarding form of the chosen role to
- *     {@code /google/complete-registration/{owner|technician}}.
+ *     {@code /google/complete-registration/{owner|technician}}. A verified Google email that
+ *     belongs to an account registered with a password receives a 409
+ *     {@code ACCOUNT_LINK_REQUIRED}, and is only linked through {@code /google/link} with that
+ *     account's password. Every rejected id_token is a 401 {@code INVALID_TOKEN}.
+ * </p>
+ * <p>
+ *     Authentication contract: credential failures are a uniform 401 {@code BAD_CREDENTIALS},
+ *     whether the account exists or not. Sign-ins state their client channel, {@code WEB} (owners)
+ *     or {@code MOBILE} (technicians); valid credentials on the other channel are a 403
+ *     {@code ROLE_CHANNEL_MISMATCH} and no token is issued. The endpoints that verify a credential
+ *     answer 429 {@code TOO_MANY_REQUESTS} after too many failures from one address or for one
+ *     account.
  * </p>
  */
 @RestController
@@ -110,7 +125,10 @@ public class AuthenticationController {
   @PostMapping(value = "/sign-in/local", consumes = MediaType.APPLICATION_JSON_VALUE)
   @Operation(
       summary = "Sign in with local credentials",
-      description = "Authenticates a user with username and password and returns the platform bearer token."
+      description = "Authenticates a user with username (or profile email, matched case-insensitively) and "
+          + "password, on the client channel the request comes from, and returns the platform bearer token. "
+          + "An unknown account and a wrong password are answered identically, in the same time. WEB admits "
+          + "only OWNER_ROLE accounts and MOBILE only TECHNICIAN_ROLE accounts."
   )
   @ApiResponses(value = {
       @ApiResponse(
@@ -118,9 +136,27 @@ public class AuthenticationController {
           description = "User authenticated successfully",
           content = @Content(schema = @Schema(implementation = AuthenticatedUserResource.class))
       ),
-      @ApiResponse(responseCode = "400", description = "Invalid credentials or malformed request"),
-      @ApiResponse(responseCode = "404", description = "User not found"),
-      @ApiResponse(responseCode = "422", description = "Account is federated and cannot use local credentials")
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - username, password or channel missing, or an unknown channel",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "401",
+          description = "BAD_CREDENTIALS - invalid username, email, or password",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "403",
+          description = "ROLE_CHANNEL_MISMATCH - valid credentials, but the account must use the other application",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "429",
+          description = "TOO_MANY_REQUESTS - too many failed attempts from this address or for this account; "
+              + "see the Retry-After header",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      )
   })
   public ResponseEntity<?> signIn(@Valid @RequestBody SignInWithLocalResource resource) {
     var signInByLocalCommand = SignInByLocalCommandFromResourceAssembler.toCommandFromResource(resource);
@@ -197,11 +233,13 @@ public class AuthenticationController {
    * registration flow.
    *
    * <p>The token is validated against Google's JWKS with Spring Security's {@code NimbusJwtDecoder}.
-   * A registered Google account is signed in. An unknown one is answered with
-   * {@code 404 GOOGLE_ACCOUNT_NOT_FOUND} and nothing is persisted: the frontend must then show the
-   * role selection onboarding form.</p>
+   * A Google account already bound to a platform account is signed in, provided the stated channel
+   * admits its role. An unknown one is answered with {@code 404 GOOGLE_ACCOUNT_NOT_FOUND} and
+   * nothing is persisted: the frontend must then show the role selection onboarding form. A
+   * verified email used by an account registered with a password is answered with
+   * {@code 409 ACCOUNT_LINK_REQUIRED}; it is never linked silently.</p>
    *
-   * @param resource the payload carrying the Google id_token
+   * @param resource the payload carrying the Google id_token and the client channel
    * @return the authenticated user together with the issued bearer token
    * @see AuthenticatedUserResource
    */
@@ -209,8 +247,11 @@ public class AuthenticationController {
   @Operation(
       summary = "Verify a Google id_token and sign in a registered account",
       description = "Validates the Google OIDC id_token obtained by the frontend. Returns the platform bearer "
-          + "token when the Google account is registered, or 404 GOOGLE_ACCOUNT_NOT_FOUND when the onboarding "
-          + "form must be completed first."
+          + "token when the Google account is registered and its role matches the channel, 404 "
+          + "GOOGLE_ACCOUNT_NOT_FOUND when the onboarding form must be completed first, or 409 "
+          + "ACCOUNT_LINK_REQUIRED when the verified email belongs to an account registered with a password, "
+          + "which must then be linked through /google/link. An email Google has not verified is never "
+          + "matched against existing accounts."
   )
   @ApiResponses(value = {
       @ApiResponse(
@@ -218,12 +259,97 @@ public class AuthenticationController {
           description = "Google account registered; user signed in",
           content = @Content(schema = @Schema(implementation = AuthenticatedUserResource.class))
       ),
-      @ApiResponse(responseCode = "400", description = "The Google id_token is missing, malformed, expired or not addressed to this application"),
-      @ApiResponse(responseCode = "404", description = "GOOGLE_ACCOUNT_NOT_FOUND - onboarding completion is required")
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - id_token or channel missing, or an unknown channel",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "401",
+          description = "INVALID_TOKEN - the id_token is forged, expired, malformed, not addressed to this "
+              + "application, or its email is not verified",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "403",
+          description = "ROLE_CHANNEL_MISMATCH - the account must use the other application",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "404",
+          description = "GOOGLE_ACCOUNT_NOT_FOUND - onboarding completion is required",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "409",
+          description = "ACCOUNT_LINK_REQUIRED - confirm the existing account's password through /google/link",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "429",
+          description = "TOO_MANY_REQUESTS - too many failed attempts from this address; see the Retry-After header",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      )
   })
   public ResponseEntity<?> verifyGoogleAccount(@Valid @RequestBody SignInWithGoogleResource resource) {
     var signInByGoogleCommand = SignInByGoogleCommandFromResourceAssembler.toCommandFromResource(resource);
     var result = userCommandService.handle(signInByGoogleCommand);
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        result,
+        AuthenticationController::toAuthenticatedUserResource,
+        HttpStatus.OK);
+  }
+
+  /**
+   * Links a Google identity to the account registered with a password whose profile uses the
+   * verified Google email, then signs it in.
+   *
+   * <p>The account holder authorizes the link by presenting the account's current password. The
+   * account is resolved from the verified Google email, never from the request.</p>
+   *
+   * @param resource the payload carrying the Google id_token, the password and the client channel
+   * @return the authenticated user together with the issued bearer token
+   * @see AuthenticatedUserResource
+   */
+  @PostMapping(value = "/google/link", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @Operation(
+      summary = "Link a Google account to an existing password account",
+      description = "Answers 409 ACCOUNT_LINK_REQUIRED from /google/verify: re-verifies the Google id_token, "
+          + "checks the password of the account whose profile uses the verified Google email, links the Google "
+          + "identity to it and returns the platform bearer token. A missing account and a wrong password are "
+          + "both 401 BAD_CREDENTIALS. A Google identity already linked simply signs its account in."
+  )
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Google identity linked; user signed in",
+          content = @Content(schema = @Schema(implementation = AuthenticatedUserResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - id_token, password or channel missing, or an unknown channel",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "401",
+          description = "INVALID_TOKEN - the id_token is rejected; or BAD_CREDENTIALS - no password account "
+              + "uses the email, or the password is wrong",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "403",
+          description = "ROLE_CHANNEL_MISMATCH - the account must use the other application; nothing is linked",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "429",
+          description = "TOO_MANY_REQUESTS - too many failed attempts from this address; see the Retry-After header",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      )
+  })
+  public ResponseEntity<?> linkGoogleAccount(@Valid @RequestBody LinkGoogleAccountResource resource) {
+    var linkGoogleAccountCommand = LinkGoogleAccountCommandFromResourceAssembler.toCommandFromResource(resource);
+    var result = userCommandService.handle(linkGoogleAccountCommand);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         result,
         AuthenticationController::toAuthenticatedUserResource,
@@ -243,7 +369,7 @@ public class AuthenticationController {
       summary = "Complete the registration of a Google account as an owner",
       description = "Re-verifies the Google id_token, creates the account with OWNER_ROLE and its owner profile "
           + "atomically, then returns the platform bearer token. An already registered Google account is signed "
-          + "in with its existing role."
+          + "in only when it holds OWNER_ROLE; otherwise 403 ROLE_CHANNEL_MISMATCH."
   )
   @ApiResponses(value = {
       @ApiResponse(
@@ -251,8 +377,11 @@ public class AuthenticationController {
           description = "Owner account and profile created; user signed in",
           content = @Content(schema = @Schema(implementation = AuthenticatedUserResource.class))
       ),
-      @ApiResponse(responseCode = "400", description = "Invalid id_token or onboarding form, such as a RUC that is not 11 digits"),
-      @ApiResponse(responseCode = "409", description = "Conflict - username, email or profile already taken")
+      @ApiResponse(responseCode = "400", description = "Invalid onboarding form, such as a RUC that is not 11 digits"),
+      @ApiResponse(responseCode = "401", description = "INVALID_TOKEN - the Google id_token is rejected"),
+      @ApiResponse(responseCode = "403", description = "ROLE_CHANNEL_MISMATCH - the Google account is already registered as a technician"),
+      @ApiResponse(responseCode = "409", description = "Conflict - username, email or profile already taken; or "
+          + "ACCOUNT_LINK_REQUIRED - the verified email belongs to an account registered with a password")
   })
   public ResponseEntity<?> completeGoogleOwnerRegistration(@Valid @RequestBody CompleteGoogleOwnerRegistrationResource resource) {
     var command = CompleteGoogleOwnerRegistrationCommandFromResourceAssembler.toCommandFromResource(resource);
@@ -276,7 +405,7 @@ public class AuthenticationController {
       summary = "Complete the registration of a Google account as a technician",
       description = "Re-verifies the Google id_token, creates the account with TECHNICIAN_ROLE and its technician "
           + "profile atomically, then returns the platform bearer token. An already registered Google account is "
-          + "signed in with its existing role."
+          + "signed in only when it holds TECHNICIAN_ROLE; otherwise 403 ROLE_CHANNEL_MISMATCH."
   )
   @ApiResponses(value = {
       @ApiResponse(
@@ -284,8 +413,11 @@ public class AuthenticationController {
           description = "Technician account and profile created; user signed in",
           content = @Content(schema = @Schema(implementation = AuthenticatedUserResource.class))
       ),
-      @ApiResponse(responseCode = "400", description = "Invalid id_token or onboarding form, such as a missing speciality or certification number"),
-      @ApiResponse(responseCode = "409", description = "Conflict - username, email or profile already taken")
+      @ApiResponse(responseCode = "400", description = "Invalid onboarding form, such as a missing speciality or certification number"),
+      @ApiResponse(responseCode = "401", description = "INVALID_TOKEN - the Google id_token is rejected"),
+      @ApiResponse(responseCode = "403", description = "ROLE_CHANNEL_MISMATCH - the Google account is already registered as an owner"),
+      @ApiResponse(responseCode = "409", description = "Conflict - username, email or profile already taken; or "
+          + "ACCOUNT_LINK_REQUIRED - the verified email belongs to an account registered with a password")
   })
   public ResponseEntity<?> completeGoogleTechnicianRegistration(
       @Valid @RequestBody CompleteGoogleTechnicianRegistrationResource resource) {
@@ -316,7 +448,8 @@ public class AuthenticationController {
           + "REFRESH_TOKEN_RECENTLY_ROTATED - a concurrent request already rotated it; retry once with the latest "
           + "refresh token. REFRESH_TOKEN_REPLAY_DETECTED - reused after the grace period; every session of the "
           + "account has been revoked. REFRESH_TOKEN_EXPIRED, REFRESH_TOKEN_REVOKED, REFRESH_TOKEN_INVALID - sign "
-          + "in again."
+          + "in again. The new session keeps the channel the original one was opened from; an optional `channel` "
+          + "must match it, otherwise 403 ROLE_CHANNEL_MISMATCH and the presented token stays valid."
   )
   @ApiResponses(value = {
       @ApiResponse(
@@ -324,11 +457,16 @@ public class AuthenticationController {
           description = "Session refreshed",
           content = @Content(schema = @Schema(implementation = AuthenticatedUserResource.class))
       ),
-      @ApiResponse(responseCode = "400", description = "The refresh token is missing"),
+      @ApiResponse(responseCode = "400", description = "The refresh token is missing, or the channel is unknown"),
       @ApiResponse(
           responseCode = "401",
           description = "The refresh token was rejected; see `code`",
           content = @Content(schema = @Schema(implementation = AuthErrorResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "403",
+          description = "ROLE_CHANNEL_MISMATCH - the session belongs to the other application",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
       )
   })
   public ResponseEntity<?> refreshToken(@Valid @RequestBody RefreshTokenResource resource) {

@@ -109,6 +109,16 @@ public record ApplicationError(
   }
 
   /**
+   * Too many requests error: the caller exceeded a rate limit and must wait before retrying
+   */
+  public static ApplicationError tooManyRequests(String reason) {
+    return new ApplicationError(
+        "TOO_MANY_REQUESTS",
+        "Too many requests",
+        reason);
+  }
+
+  /**
    * Unexpected error: something went wrong that shouldn't have
    */
   public static ApplicationError unexpected(String context, String reason) {

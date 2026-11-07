@@ -15,6 +15,7 @@ public class RefreshTokenCommandFromResourceAssembler {
    * @return the {@link RefreshTokenCommand} command
    */
   public static RefreshTokenCommand toCommandFromResource(RefreshTokenResource resource) {
-    return new RefreshTokenCommand(resource.refreshToken());
+    var channel = resource.channel() == null ? null : resource.channel().toDomain();
+    return new RefreshTokenCommand(resource.refreshToken(), channel);
   }
 }
