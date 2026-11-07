@@ -19,6 +19,8 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - [Prerequisites](#prerequisites)
 - [Services (Compose)](#services-compose)
 - [Configuration](#configuration)
+- [User authentication](#user-authentication)
+- [Alerts and notifications](#alerts-and-notifications)
 - [Edge devices](#edge-devices)
 - [Run locally with Docker](#run-locally-with-docker)
 - [Access](#access)
@@ -29,7 +31,9 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 
 ## Features
 
-- **Auth built-in** — local sign-up/sign-in + Google OIDC deferred registration (`/google/verify` → `/google/complete-registration/{owner|technician}`), role explicit local sign-up (`/sign-up/{owner|technician}`), JWT bearer auth with a `role` claim (JJWT 0.13.0), rotating refresh tokens (`/refresh-token`), `/logout` and `/me`
+- **Auth built-in** — local sign-up/sign-in + Google OIDC deferred registration (`/google/verify` → `/google/complete-registration/{owner|technician}`), explicit Google account linking (`/google/link`), role explicit local sign-up (`/sign-up/{owner|technician}`), JWT bearer auth with a `role` claim (JJWT 0.13.0), rotating refresh tokens (`/refresh-token`), `/logout` and `/me`; see [User authentication](#user-authentication)
+- **Role-channel authorization** — owners sign in only through the `WEB` channel and technicians only through `MOBILE`; uniform `401` on bad credentials and per-address/per-account sign-in throttling (`429`)
+- **Alert lifecycle** — `OPEN` → `ACKNOWLEDGED` → `RESOLVED` / `DISMISSED`, recording who did each transition and when; dismissal requires a reason; see [Alerts and notifications](#alerts-and-notifications)
 - **Immutable roles** — every account is `OWNER_ROLE` or `TECHNICIAN_ROLE`, chosen once at registration, and gets its `OwnerProfile` / `TechnicianProfile` in the same transaction
 - **IAM + Profiles** bounded contexts (`/api/v1/authentication`, `/api/v1/users`, `/api/v1/roles`, `/api/v1/profiles/owners`, `/api/v1/profiles/technicians`)
 - **Edge device authentication** — IoT boards call the edge routes (`POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`, `/api/v1/devices/me/**`) with an `X-API-Key` header and no user JWT; see [Edge devices](#edge-devices)
@@ -84,8 +88,52 @@ Defaults come from `src/main/resources/application.properties`:
 | `REFRESH_TOKEN_REUSE_GRACE_SECONDS` | `20` | Window in which re-presenting a just-rotated refresh token is a concurrent refresh (`401 REFRESH_TOKEN_RECENTLY_ROTATED`, retry once) instead of a replay (`401 REFRESH_TOKEN_REPLAY_DETECTED`, revokes all sessions); `0` disables it |
 | `REFRESH_TOKEN_PURGE_CRON` | `0 0 3 * * *` | Schedule of the purge of expired refresh tokens (Spring cron) |
 | `GOOGLE_CLIENT_ID` | `google-client-id` | Google OIDC client ID for `id_token` validation |
+| `SIGN_IN_RATE_LIMIT_MAX_FAILURES` | `5` | `401` answers a client address or an account may collect within one window before sign-in answers `429` |
+| `SIGN_IN_RATE_LIMIT_WINDOW_MINUTES` | `5` | Length of the sign-in throttling window |
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.
+
+## User authentication
+
+All endpoints live under `/api/v1/authentication`. Errors use the standard `{code, message, details}` body.
+
+**Client channel.** `sign-in/local`, `google/verify` and `google/link` require `"channel": "WEB" | "MOBILE"`. `WEB` admits only `OWNER_ROLE`, `MOBILE` only `TECHNICIAN_ROLE`. Valid credentials on the wrong channel answer `403 ROLE_CHANNEL_MISMATCH` (the message names the application to use) and issue no token. The channel is checked after the credentials, so it never reveals an account's role to someone without its password. A session keeps its channel: `/refresh-token` accepts an optional `channel`, and one that differs from the session's answers `403 ROLE_CHANNEL_MISMATCH` without consuming the refresh token. `google/complete-registration/owner` implies `WEB` and `/technician` implies `MOBILE`, so an existing Google account of the other role gets `403` there too.
+
+**Local sign-in** (`POST /sign-in/local`, body `username`, `password`, `channel`). `username` accepts a username or the profile's email (matched case-insensitively). An unknown account, a Google-only account and a wrong password all answer the same `401 BAD_CREDENTIALS` ("Invalid username, email, or password"). When no stored hash exists, the password is still compared against a dummy hash of the same cost, so response time does not reveal whether an account exists. Missing fields answer `400 VALIDATION_ERROR` naming the field.
+
+**Google** (`POST /google/verify`, body `id_token`, `channel`):
+
+| Situation | Answer |
+|---|---|
+| Token forged, expired, malformed, wrong audience, or email not verified | `401 INVALID_TOKEN` ("Unable to authenticate with Google"); the same on `/google/link` and `/google/complete-registration/*` |
+| Google identity already bound to an account | `200` with tokens (subject to the channel) |
+| Verified email unknown to the platform | `404 GOOGLE_ACCOUNT_NOT_FOUND`; complete the onboarding |
+| Verified email belongs to an account registered with a password | `409 ACCOUNT_LINK_REQUIRED`; never linked silently |
+
+`POST /google/link` (body `id_token`, `password`, `channel`) links the Google identity to the password account whose profile uses the verified Google email, after checking that account's password (`401 BAD_CREDENTIALS` otherwise), then signs it in. An email Google has not verified is never matched against existing accounts. A linked account keeps its password and can still sign in locally.
+
+**Email normalization.** Emails are trimmed and lowercased at sign-up, at sign-in and from Google, and by the profiles `EmailAddress` value object, so `Ana@x.com` and `ana@x.com` are the same account. Rows stored before this change keep their original case; normalize them once with `UPDATE profiles SET email_address = lower(trim(email_address));` (check first that no two rows collide).
+
+**Throttling.** `sign-in/local`, `google/verify` and `google/link` count every `401` against the client address, and `sign-in/local` also against the submitted username or email. After `SIGN_IN_RATE_LIMIT_MAX_FAILURES` failures within `SIGN_IN_RATE_LIMIT_WINDOW_MINUTES`, further requests answer `429 TOO_MANY_REQUESTS` with a `Retry-After` header until the window ends. A successful sign-in clears the account's count, not the address's. Counters are in memory, per instance. Behind a reverse proxy, set `server.forward-headers-strategy` so the client address is not the proxy's.
+
+## Alerts and notifications
+
+**Alert lifecycle** (`/api/v1/alerts`, owner JWT for transitions):
+
+| Transition | Endpoint | Allowed from | Records |
+|---|---|---|---|
+| Acknowledge | `PUT /{alertId}/acknowledge` | `OPEN` | `acknowledged_by`, `acknowledged_at` |
+| Resolve | `PUT /{alertId}/resolve` | `OPEN`, `ACKNOWLEDGED` | `resolved_by`, `resolved_at` |
+| Dismiss | `PUT /{alertId}/dismiss`, body `{"reason": "...", "evidence": "..."}` | `OPEN`, `ACKNOWLEDGED` | `dismissed_by`, `dismissed_at`, `dismiss_reason`, `dismiss_evidence` |
+
+The actor is always the authenticated caller (IAM user id). `reason` is mandatory, at most 500 characters; `evidence` is optional, at most 1000. A missing or blank reason answers `400 VALIDATION_ERROR`. A transition the status forbids answers `409 INVALID_STATUS_TRANSITION`; an alert the caller does not own answers `404 ALERT_NOT_FOUND`. An alert resolved automatically, because readings returned within range, has `resolved_by: null`. Dismissed alerts are excluded from the thermal excursion report figures.
+
+Thermal excursion alerts are raised with severity `CRITICAL`. Every alert response also carries the triggering reading (`triggering_reading_id`, `triggering_temperature`, `triggering_recorded_at`: the batch maximum when above range, the minimum when below) and `total_duration_seconds` once closed.
+
+**Notifications** (`/api/v1/notifications`, the recipient is always the authenticated caller):
+
+- `GET /api/v1/notifications?page=0&size=20&unreadOnly=false` returns `{items, page, size, total_elements, total_pages}`, most recent first. Dismissed notifications are never listed. `size` defaults to `20` and is capped at `100`; a negative `page` or a `size` below `1` answers `400`.
+- `GET /api/v1/notifications/unread-count` returns `{"unread_count": 7}`: notifications neither read nor dismissed.
 
 ## Edge devices
 
