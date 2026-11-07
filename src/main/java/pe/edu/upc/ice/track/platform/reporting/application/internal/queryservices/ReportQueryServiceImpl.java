@@ -11,7 +11,6 @@ import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportsBy
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportDownloadLink;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 import pe.edu.upc.ice.track.platform.reporting.domain.repositories.ReportRepository;
-import org.springframework.beans.factory.annotation.Value;
 
 import java.time.Duration;
 import java.util.List;
@@ -27,6 +26,9 @@ import java.util.Optional;
 @Service
 public class ReportQueryServiceImpl implements ReportQueryService {
 
+  /** How long a download link stays valid. */
+  static final Duration SIGNED_URL_TTL = Duration.ofMinutes(15);
+
   private final ReportRepository reportRepository;
   private final ReportFileStorage fileStorage;
   private final Duration linkTtl;
@@ -35,11 +37,10 @@ public class ReportQueryServiceImpl implements ReportQueryService {
   public ReportQueryServiceImpl(
       ReportRepository reportRepository,
       ReportFileStorage fileStorage,
-      @Value("${reporting.storage.signed-url-ttl-minutes:10}") long ttlMinutes,
       ExternalProfilesServiceForReporting externalProfilesService) {
     this.reportRepository = reportRepository;
     this.fileStorage = fileStorage;
-    this.linkTtl = Duration.ofMinutes(ttlMinutes);
+    this.linkTtl = SIGNED_URL_TTL;
     this.externalProfilesService = externalProfilesService;
   }
 

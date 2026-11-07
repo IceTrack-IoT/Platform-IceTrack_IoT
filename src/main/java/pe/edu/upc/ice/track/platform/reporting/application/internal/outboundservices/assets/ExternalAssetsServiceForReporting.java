@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.assets.interfaces.acl.AssetContextFacade;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Outbound service (of the Anti-Corruption Layer between {@code reporting} and {@code assets})
@@ -49,5 +50,14 @@ public class ExternalAssetsServiceForReporting {
    */
   public boolean isEquipmentOwnedBy(Long equipmentId, Long ownerId) {
     return assetContextFacade.existsEquipmentForOwner(equipmentId, ownerId);
+  }
+
+  /**
+   * @param equipmentId identifier of the unit
+   * @return the acceptable temperature band of the unit as {@code [minCelsius, maxCelsius]}, or empty
+   *         when the unit does not exist
+   */
+  public Optional<double[]> fetchTemperatureThresholdRange(Long equipmentId) {
+    return assetContextFacade.getEquipmentThresholdRange(equipmentId);
   }
 }

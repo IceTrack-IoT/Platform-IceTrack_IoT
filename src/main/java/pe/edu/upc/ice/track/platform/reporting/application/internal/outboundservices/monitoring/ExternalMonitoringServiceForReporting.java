@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.acl.MonitoringContextFacade;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Outbound service (of the Anti-Corruption Layer between {@code reporting} and {@code monitoring})
@@ -50,5 +51,16 @@ public class ExternalMonitoringServiceForReporting {
       Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
     return monitoringContextFacade.fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
         equipmentId, alertType, from, to);
+  }
+
+  /**
+   * @param equipmentId identifier of the unit; required
+   * @param from        inclusive start of the window
+   * @param to          inclusive end of the window
+   * @return the unit's temperature samples within the window, outside maintenance, as
+   *         {@code {celsius, epochSeconds}} rows in time order; empty when there are none
+   */
+  public List<double[]> fetchTemperatureSamplesByEquipmentInRange(Long equipmentId, LocalDateTime from, LocalDateTime to) {
+    return monitoringContextFacade.fetchTemperatureSamplesByEquipmentInRange(equipmentId, from, to);
   }
 }

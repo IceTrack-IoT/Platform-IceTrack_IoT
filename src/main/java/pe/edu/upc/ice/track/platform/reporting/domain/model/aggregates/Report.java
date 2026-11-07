@@ -6,7 +6,6 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDoma
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
@@ -42,7 +41,7 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
   private final UserId userId;
   private final ReportFilters filters;
   private LocalDateTime requestedAt;
-  private LocalDate completedAt;
+  private LocalDateTime completedAt;
   private ReportFile file;
 
   public Report(String title, ReportType type, ReportFormat format, UserId userId, ReportFilters filters) {
@@ -65,7 +64,7 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
   public static Report rehydrate(
       Long id, String title, ReportType type, ReportFormat format, ReportStatus status,
       String resultPayload, UserId userId, ReportFilters filters, LocalDateTime requestedAt,
-      LocalDate completedAt, ReportFile file) {
+      LocalDateTime completedAt, ReportFile file) {
     var report = new Report(title, type, format, userId, filters);
     report.id = id;
     report.status = status;
@@ -100,7 +99,7 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
     this.resultPayload = Objects.requireNonNull(payload, "payload must not be null");
     this.file = Objects.requireNonNull(file, "file must not be null");
     this.status = ReportStatus.COMPLETED;
-    this.completedAt = LocalDate.now();
+    this.completedAt = LocalDateTime.now();
   }
 
   /**
@@ -114,7 +113,7 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
     }
     this.resultPayload = Objects.requireNonNull(reason, "reason must not be null");
     this.status = ReportStatus.FAILED;
-    this.completedAt = LocalDate.now();
+    this.completedAt = LocalDateTime.now();
   }
 
   /**

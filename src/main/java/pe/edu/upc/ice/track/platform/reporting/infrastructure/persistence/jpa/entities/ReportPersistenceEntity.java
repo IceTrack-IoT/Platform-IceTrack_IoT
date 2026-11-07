@@ -9,7 +9,7 @@ import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportF
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportStatus;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportType;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalDateTime;
 
 /**
@@ -73,7 +73,7 @@ public class ReportPersistenceEntity {
   private LocalDateTime requestedAt;
 
   @Column(name = "completed_at")
-  private LocalDate completedAt;
+  private LocalDateTime completedAt;
 
   @Column(name = "file_key", length = 255)
   private String fileKey;

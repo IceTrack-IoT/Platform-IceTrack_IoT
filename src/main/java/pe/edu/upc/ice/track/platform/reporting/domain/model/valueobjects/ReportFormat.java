@@ -9,6 +9,6 @@ package pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects;
  */
 public enum ReportFormat {
   PDF,
-  EXCEL,
+  XLSX,
   CSV
 }

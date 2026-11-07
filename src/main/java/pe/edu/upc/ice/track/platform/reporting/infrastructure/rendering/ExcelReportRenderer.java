@@ -14,14 +14,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
 /**
- * Realizes {@link ReportRenderer} for {@code ReportFormat.EXCEL} using Apache POI.
+ * Realizes {@link ReportRenderer} for {@code ReportFormat.XLSX} using Apache POI.
  *
  * <p>Produces an {@code .xlsx} workbook with one sheet: a metadata block followed by a KPI table
  * whose value column holds real numbers (not text), so the user can sum, chart or filter them
  * directly in Excel. Text cells are written as strings, so a user-supplied title is never
  * interpreted as a formula.</p>
  */
-@Service("EXCEL")
+@Service("XLSX")
 public class ExcelReportRenderer implements ReportRenderer {
 
   @Override
