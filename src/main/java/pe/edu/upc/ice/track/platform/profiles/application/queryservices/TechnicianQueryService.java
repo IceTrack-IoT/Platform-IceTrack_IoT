@@ -4,6 +4,8 @@ import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Technician
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetAllTechniciansQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByUserIdQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianMetricsQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.readmodels.TechnicianMetrics;
 
 import java.util.List;
 import java.util.Optional;
@@ -36,4 +38,12 @@ public interface TechnicianQueryService {
    * @return every technician profile
    */
   List<TechnicianProfile> handle(GetAllTechniciansQuery query);
+
+  /**
+   * Handle Get Technician Metrics Query.
+   *
+   * @param query the query
+   * @return the technician's projected metrics, or empty when nothing was projected for it yet
+   */
+  Optional<TechnicianMetrics> handle(GetTechnicianMetricsQuery query);
 }

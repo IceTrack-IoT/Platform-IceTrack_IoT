@@ -26,12 +26,15 @@ import pe.edu.upc.ice.track.platform.profiles.application.queryservices.Technici
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetAllTechniciansQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByUserIdQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianMetricsQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.TechnicianProfile;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.ProfileAccessEvaluator;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.ProfileView;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.TechnicianProfileResource;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.TechnicianPublicProfileResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateTechnicianResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.TechnicianProfileResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.TechnicianPublicProfileResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.UpdateTechnicianCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
@@ -137,6 +140,48 @@ public class TechnicianProfilesController {
   ) {
     return toVisibleResource(technicianQueryService.handle(new GetTechnicianByIdQuery(technicianId)), authentication)
         .<ResponseEntity<?>>map(ResponseEntity::ok)
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound(TECHNICIAN_RESOURCE, technicianId.toString())));
+  }
+
+  /**
+   * Get the public profile of a technician
+   *
+   * <p>What any owner may see of a technician when choosing whom to assign work to: professional
+   * data plus the completed services and average rating projected from Service Request Management.
+   * Personal data - email, phone, home address - is never part of it.</p>
+   *
+   * @param technicianId The technician profile ID
+   * @return A {@link TechnicianPublicProfileResource}, or 404 when no technician carries that ID
+   */
+  @GetMapping("/{technicianId}/public")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(
+      summary = "Get the public profile of a technician",
+      description = "Retrieves a technician's name, speciality and certification number together with "
+          + "completed_services and average_rating. average_rating is null, and rating_available false, until the "
+          + "technician's first review. Email, phone and address are never included. The statistics are a read "
+          + "model updated shortly after each completion or review, so they may lag a few seconds behind.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Technician found",
+          content = @Content(schema = @Schema(implementation = TechnicianPublicProfileResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not an owner"),
+      @ApiResponse(responseCode = "404", description = "TECHNICIAN_NOT_FOUND - no technician carries that ID")
+  })
+  public ResponseEntity<?> getTechnicianPublicProfile(
+      @PathVariable
+      @Parameter(description = "Technician profile unique identifier", example = "7", required = true)
+      Long technicianId
+  ) {
+    return technicianQueryService.handle(new GetTechnicianByIdQuery(technicianId))
+        .<ResponseEntity<?>>map(profile -> ResponseEntity.ok(
+            TechnicianPublicProfileResourceFromEntityAssembler.toResourceFromEntity(
+                profile, technicianQueryService.handle(new GetTechnicianMetricsQuery(technicianId)))))
         .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
             ApplicationError.notFound(TECHNICIAN_RESOURCE, technicianId.toString())));
   }

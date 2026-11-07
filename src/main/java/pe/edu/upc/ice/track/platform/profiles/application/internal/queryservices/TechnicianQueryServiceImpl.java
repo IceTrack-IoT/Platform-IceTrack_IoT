@@ -6,6 +6,9 @@ import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Technician
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetAllTechniciansQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByUserIdQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianMetricsQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.readmodels.TechnicianMetrics;
+import pe.edu.upc.ice.track.platform.profiles.domain.repositories.TechnicianMetricsRepository;
 import pe.edu.upc.ice.track.platform.profiles.domain.repositories.TechnicianProfileRepository;
 
 import java.util.List;
@@ -17,14 +20,24 @@ import java.util.Optional;
 @Service
 public class TechnicianQueryServiceImpl implements TechnicianQueryService {
   private final TechnicianProfileRepository technicianProfileRepository;
+  private final TechnicianMetricsRepository technicianMetricsRepository;
 
   /**
-   * Creates the query service with the technician profile repository dependency.
+   * Creates the query service with its repository dependencies.
    *
    * @param technicianProfileRepository technician profile repository port
+   * @param technicianMetricsRepository technician metrics read model repository port
    */
-  public TechnicianQueryServiceImpl(TechnicianProfileRepository technicianProfileRepository) {
+  public TechnicianQueryServiceImpl(TechnicianProfileRepository technicianProfileRepository,
+                                    TechnicianMetricsRepository technicianMetricsRepository) {
     this.technicianProfileRepository = technicianProfileRepository;
+    this.technicianMetricsRepository = technicianMetricsRepository;
+  }
+
+  // inherited javadoc
+  @Override
+  public Optional<TechnicianMetrics> handle(GetTechnicianMetricsQuery query) {
+    return technicianMetricsRepository.findByTechnicianProfileId(query.technicianId());
   }
 
   // inherited javadoc
