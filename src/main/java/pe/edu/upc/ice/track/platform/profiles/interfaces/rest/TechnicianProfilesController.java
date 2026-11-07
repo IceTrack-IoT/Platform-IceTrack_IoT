@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -25,6 +26,9 @@ import pe.edu.upc.ice.track.platform.profiles.application.queryservices.Technici
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetAllTechniciansQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByUserIdQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.TechnicianProfile;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.ProfileAccessEvaluator;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.ProfileView;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.TechnicianProfileResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateTechnicianResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.TechnicianProfileResourceFromEntityAssembler;
@@ -36,6 +40,7 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorRespo
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * REST controller that exposes the technician profiles.
@@ -55,26 +60,38 @@ public class TechnicianProfilesController {
 
   private final TechnicianQueryService technicianQueryService;
   private final TechnicianCommandService technicianCommandService;
+  private final ProfileAccessEvaluator profileAccessEvaluator;
 
   /**
    * Constructor
    * @param technicianQueryService   The {@link TechnicianQueryService} instance
    * @param technicianCommandService The {@link TechnicianCommandService} instance
+   * @param profileAccessEvaluator   The {@link ProfileAccessEvaluator} deciding what a caller may read
    */
   public TechnicianProfilesController(
-      TechnicianQueryService technicianQueryService, TechnicianCommandService technicianCommandService) {
+      TechnicianQueryService technicianQueryService,
+      TechnicianCommandService technicianCommandService,
+      ProfileAccessEvaluator profileAccessEvaluator) {
     this.technicianQueryService = technicianQueryService;
     this.technicianCommandService = technicianCommandService;
+    this.profileAccessEvaluator = profileAccessEvaluator;
   }
 
   /**
-   * Get all technician profiles
-   * @return A list of {@link TechnicianProfileResource} resources
+   * Get the technician directory
+   *
+   * <p>Owners browse it to choose whom to assign work to. Personal data (email, phone, home
+   * address) is only included for technicians currently working on one of the caller's requests
+   *
+   * @param authentication The authenticated principal
+   * @return A list of {@link TechnicianProfileResource} resources, trimmed to what the caller may see
    */
   @GetMapping
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Get all technicians",
-      description = "Retrieves every ice track maintenance technician profile.",
+      description = "Retrieves the technician directory for owners. Email, phone and address are null "
+          + "except for technicians actively assigned to one of the caller's service requests.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
@@ -83,10 +100,11 @@ public class TechnicianProfilesController {
           content = @Content(array = @ArraySchema(schema = @Schema(implementation = TechnicianProfileResource.class)))
       )
   })
-  public ResponseEntity<List<TechnicianProfileResource>> getAllTechnicians() {
+  public ResponseEntity<List<TechnicianProfileResource>> getAllTechnicians(Authentication authentication) {
     var technicians = technicianQueryService.handle(new GetAllTechniciansQuery());
     var technicianResources = technicians.stream()
-        .map(TechnicianProfileResourceFromEntityAssembler::toResourceFromEntity)
+        .map(technician -> toVisibleResource(Optional.of(technician), authentication))
+        .flatMap(Optional::stream)
         .toList();
     return ResponseEntity.ok(technicianResources);
   }
@@ -94,7 +112,9 @@ public class TechnicianProfilesController {
   /**
    * Get a technician profile by ID
    * @param technicianId The technician profile ID
-   * @return A {@link TechnicianProfileResource} resource for the technician
+   * @param authentication The authenticated principal
+   * @return A {@link TechnicianProfileResource} resource for the technician, trimmed to what the
+   *         caller may see, or 404 when the caller may not see it at all
    */
   @GetMapping("/{technicianId}")
   @Operation(
@@ -112,20 +132,21 @@ public class TechnicianProfilesController {
   public ResponseEntity<?> getTechnicianById(
       @PathVariable
       @Parameter(description = "Technician profile unique identifier", example = "1", required = true)
-      Long technicianId
+      Long technicianId,
+      Authentication authentication
   ) {
-    var technician = technicianQueryService.handle(new GetTechnicianByIdQuery(technicianId));
-    if (technician.isEmpty()) {
-      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
-          ApplicationError.notFound(TECHNICIAN_RESOURCE, technicianId.toString()));
-    }
-    return ResponseEntity.ok(TechnicianProfileResourceFromEntityAssembler.toResourceFromEntity(technician.get()));
+    return toVisibleResource(technicianQueryService.handle(new GetTechnicianByIdQuery(technicianId)), authentication)
+        .<ResponseEntity<?>>map(ResponseEntity::ok)
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound(TECHNICIAN_RESOURCE, technicianId.toString())));
   }
 
   /**
    * Get the technician profile bound to a platform account
    * @param userId The platform account ID
-   * @return A {@link TechnicianProfileResource} resource for the technician
+   * @param authentication The authenticated principal
+   * @return A {@link TechnicianProfileResource} resource for the technician, trimmed to what the
+   *         caller may see, or 404 when the caller may not see it at all
    */
   @GetMapping("/user/{userId}")
   @Operation(
@@ -143,14 +164,29 @@ public class TechnicianProfilesController {
   public ResponseEntity<?> getTechnicianByUserId(
       @PathVariable
       @Parameter(description = "Platform account unique identifier", example = "43", required = true)
-      Long userId
+      Long userId,
+      Authentication authentication
   ) {
-    var technician = technicianQueryService.handle(new GetTechnicianByUserIdQuery(new UserId(userId)));
-    if (technician.isEmpty()) {
-      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
-          ApplicationError.notFound(TECHNICIAN_RESOURCE, "user " + userId));
-    }
-    return ResponseEntity.ok(TechnicianProfileResourceFromEntityAssembler.toResourceFromEntity(technician.get()));
+    return toVisibleResource(
+            technicianQueryService.handle(new GetTechnicianByUserIdQuery(new UserId(userId))), authentication)
+        .<ResponseEntity<?>>map(ResponseEntity::ok)
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound(TECHNICIAN_RESOURCE, "user " + userId)));
+  }
+
+  /**
+   * Trims a technician profile to what the caller may see: all of it for the
+   * technician itself, contact channels for an owner it is working for, professional data only for
+   * any other owner, nothing for another technician.
+   */
+  private Optional<TechnicianProfileResource> toVisibleResource(
+      Optional<TechnicianProfile> technician, Authentication authentication) {
+    return technician.flatMap(profile -> {
+      var view = profileAccessEvaluator.technicianProfileViewFor(profile, authentication);
+      return view == ProfileView.NONE
+          ? Optional.empty()
+          : Optional.of(TechnicianProfileResourceFromEntityAssembler.toResourceFromEntity(profile, view));
+    });
   }
 
   /**
