@@ -13,7 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(
     name = "EquipmentResponse",
     description = "Equipment information response",
-    example = "{\"id\": 10, \"site_id\": 1, \"uid\": \"ESP32-0001\", \"name\": \"Congelador 1\", \"equipment_type\": \"FREEZER\", \"status\": \"ACTIVE\", \"online\": true, \"min_celsius\": -25.0, \"max_celsius\": -15.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30\", \"last_known_temperature\": -20.5}")
+    example = "{\"id\": 10, \"site_id\": 1, \"uid\": \"ESP32-0001\", \"name\": \"Refrigerador 1\", \"equipment_type\": \"REFRIGERATOR\", \"status\": \"ACTIVE\", \"online\": true, \"min_celsius\": 2.0, \"max_celsius\": 8.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30\", \"last_known_temperature\": 4.5}")
 public record EquipmentResource(
     @Schema(description = "Equipment unique identifier", example = "10")
     Long id,
@@ -24,10 +24,10 @@ public record EquipmentResource(
     @Schema(description = "The unit's own identifier, unique across the platform", example = "ESP32-0001")
     String uid,
 
-    @Schema(description = "Name assigned to the unit", example = "Congelador 1")
+    @Schema(description = "Name assigned to the unit", example = "Refrigerador 1")
     String name,
 
-    @Schema(description = "Kind of refrigeration unit", example = "FREEZER")
+    @Schema(description = "Kind of refrigeration unit", example = "REFRIGERATOR")
     EquipmentTypeResource equipmentType,
 
     @Schema(description = "Current lifecycle status", example = "ACTIVE")
@@ -36,10 +36,10 @@ public record EquipmentResource(
     @Schema(description = "Whether the unit is currently connected", example = "true")
     boolean online,
 
-    @Schema(description = "Lowest acceptable temperature in Celsius", example = "-25.0")
+    @Schema(description = "Lowest acceptable temperature in Celsius", example = "2.0")
     Double minCelsius,
 
-    @Schema(description = "Highest acceptable temperature in Celsius", example = "-15.0")
+    @Schema(description = "Highest acceptable temperature in Celsius", example = "8.0")
     Double maxCelsius,
 
     @Schema(description = "Preventive maintenance interval in days", example = "90")
@@ -53,7 +53,7 @@ public record EquipmentResource(
 
     @Schema(
         description = "Last temperature known for this unit, in Celsius; null when the unit has not reported yet",
-        example = "-20.5",
+        example = "4.5",
         nullable = true)
     Double lastKnownTemperature
 ) {

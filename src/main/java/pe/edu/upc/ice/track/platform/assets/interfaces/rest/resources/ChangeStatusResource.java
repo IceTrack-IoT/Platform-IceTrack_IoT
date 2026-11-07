@@ -17,9 +17,9 @@ import jakarta.validation.constraints.NotNull;
 public record ChangeStatusResource(
     @NotNull(message = "{validation.not-null}")
     @Schema(
-        description = "Status to move to. Allowed transitions: ACTIVE to DESACTIVATE/MAINTENANCE/REPAIR, "
-            + "DESACTIVATE to ACTIVE/REPAIR, MAINTENANCE to ACTIVE/DESACTIVATE/REPAIR, "
-            + "REPAIR to ACTIVE/DESACTIVATE",
+        description = "Status to move to. Allowed transitions: ACTIVE to MAINTENANCE/REPAIR/DEACTIVATED, "
+            + "MAINTENANCE to ACTIVE/REPAIR/DEACTIVATED, REPAIR to ACTIVE/DEACTIVATED, "
+            + "DEACTIVATED to ACTIVE",
         example = "MAINTENANCE")
     StatusEquipmentResource newStatus
 ) {

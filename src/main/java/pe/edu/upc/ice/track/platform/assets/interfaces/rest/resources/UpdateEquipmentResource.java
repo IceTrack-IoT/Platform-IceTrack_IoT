@@ -16,15 +16,15 @@ import jakarta.validation.constraints.Size;
 @Schema(
     name = "UpdateEquipmentRequest",
     description = "Equipment update request",
-    example = "{\"name\": \"Congelador Principal\", \"equipment_type\": \"FREEZER\", \"reminder_interval_days\": 120}")
+    example = "{\"name\": \"Refrigerador Principal\", \"equipment_type\": \"REFRIGERATOR\", \"reminder_interval_days\": 120}")
 public record UpdateEquipmentResource(
     @NotBlank(message = "{validation.not-blank}")
     @Size(max = 30, message = "{validation.size.max}")
-    @Schema(description = "Name assigned to the unit", example = "Congelador Principal", maxLength = 30)
+    @Schema(description = "Name assigned to the unit", example = "Refrigerador Principal", maxLength = 30)
     String name,
 
     @NotNull(message = "{validation.not-null}")
-    @Schema(description = "Kind of refrigeration unit", example = "FREEZER")
+    @Schema(description = "Kind of refrigeration unit", example = "REFRIGERATOR")
     EquipmentTypeResource equipmentType,
 
     @NotNull(message = "{validation.not-null}")

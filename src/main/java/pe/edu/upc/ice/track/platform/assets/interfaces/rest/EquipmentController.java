@@ -108,7 +108,7 @@ public class EquipmentController {
           responseCode = "201",
           description = "Equipment registered",
           content = @Content(schema = @Schema(implementation = EquipmentResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid input data, such as a threshold whose minimum is not below its maximum"),
+      @ApiResponse(responseCode = "400", description = "Invalid input data, such as a threshold outside 0 to 30 °C or whose minimum is not below its maximum"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
       @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller"),
@@ -164,7 +164,7 @@ public class EquipmentController {
       @Parameter(description = "Restrict to a single status", example = "ACTIVE")
       StatusEquipmentResource status,
       @RequestParam(required = false)
-      @Parameter(description = "Restrict to a single equipment type", example = "FREEZER")
+      @Parameter(description = "Restrict to a single equipment type", example = "REFRIGERATOR")
       EquipmentTypeResource equipmentType,
       @RequestParam(required = false)
       @Parameter(description = "Restrict to a single site", example = "1")
@@ -286,15 +286,16 @@ public class EquipmentController {
   @Operation(
       summary = "Change the temperature threshold",
       description = "Replaces the acceptable temperature band of one of the authenticated owner's "
-          + "units. A band whose minimum is not strictly below its maximum is rejected with 400 and "
-          + "no domain event is emitted.",
+          + "units. Both bounds must lie within 0 to 30 °C and the minimum must be strictly below "
+          + "the maximum; otherwise the request is rejected with 400, the previous band stays "
+          + "active and no domain event is emitted.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
           description = "Threshold updated",
           content = @Content(schema = @Schema(implementation = EquipmentResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid band, such as a minimum greater than or equal to its maximum"),
+      @ApiResponse(responseCode = "400", description = "Invalid band: a bound outside 0 to 30 °C, or a minimum greater than or equal to its maximum"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
       @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller")
@@ -327,9 +328,11 @@ public class EquipmentController {
       summary = "Change the equipment status",
       description = "Moves one of the caller's own equipment units to a new lifecycle status. "
           + "Owner only: technicians cannot change a unit's status directly. "
-          + "Allowed transitions: ACTIVE to DESACTIVATE, MAINTENANCE or REPAIR; DESACTIVATE to ACTIVE "
-          + "or REPAIR; MAINTENANCE to ACTIVE, DESACTIVATE or REPAIR; REPAIR to ACTIVE or DESACTIVATE. "
-          + "Maintenance is only entered from ACTIVE. A forbidden transition is rejected with 409.",
+          + "Allowed transitions: ACTIVE to MAINTENANCE, REPAIR or DEACTIVATED; MAINTENANCE to "
+          + "ACTIVE, REPAIR or DEACTIVATED; REPAIR to ACTIVE or DEACTIVATED; DEACTIVATED to ACTIVE. "
+          + "Maintenance is only entered from ACTIVE, and a deactivated unit must be reactivated "
+          + "first. Re-sending the current status is a no-op. A forbidden transition is rejected "
+          + "with 409.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(

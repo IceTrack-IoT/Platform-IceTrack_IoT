@@ -18,9 +18,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 public enum StatusEquipmentResource {
 
   ACTIVE,
-  DESACTIVATE,
   MAINTENANCE,
-  REPAIR;
+  REPAIR,
+  DEACTIVATED;
 
   /**
    * Translates this REST constant into its domain counterpart.

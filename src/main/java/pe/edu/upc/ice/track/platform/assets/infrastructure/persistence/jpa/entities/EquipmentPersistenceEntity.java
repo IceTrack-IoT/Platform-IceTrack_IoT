@@ -48,7 +48,8 @@ import java.time.LocalDateTime;
         @Index(name = "idx_equipments_uid", columnList = "equipment_uid", unique = true),
         @Index(name = "idx_equipments_site_id", columnList = "site_id"),
         @Index(name = "idx_equipments_status_type", columnList = "status, equipment_type")})
-@Check(constraints = "threshold_min_celsius < threshold_max_celsius AND reminder_interval_days > 0")
+@Check(constraints = "threshold_min_celsius >= 0 AND threshold_max_celsius <= 30 "
+    + "AND threshold_min_celsius < threshold_max_celsius AND reminder_interval_days > 0")
 public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEntity {
 
   /**
@@ -85,7 +86,8 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
 
   /**
    * Lowest acceptable temperature in Celsius. Kept as its own column, next to its maximum, so the
-   * database can enforce {@code min < max} and so a band stays queryable by Monitoring.
+   * database can enforce the 0 to 30 °C bounds and {@code min < max}, and so a band stays
+   * queryable by Monitoring.
    */
   @Column(name = "threshold_min_celsius", nullable = false)
   private Double thresholdMinCelsius;

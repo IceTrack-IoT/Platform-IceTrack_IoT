@@ -148,11 +148,11 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   /**
    * Replaces the acceptable temperature band of this unit.
    *
-   * <p>Constructing the {@link TemperatureThreshold} is what enforces {@code minCelsius <
-   * maxCelsius}, so an invalid band never reaches the aggregate and no event is registered.</p>
+   * <p>Constructing the {@link TemperatureThreshold} is what enforces the 0 to 30 °C bounds and
+   * {@code minCelsius < maxCelsius}, so an invalid band never reaches the aggregate and no event is
+   * registered.</p>
    *
    * @param temperatureThreshold the new acceptable temperature band; required
-   * @throws IllegalArgumentException when {@code minCelsius} is not strictly below {@code maxCelsius}
    */
   public void changeThreshold(TemperatureThreshold temperatureThreshold) {
     this.temperatureThreshold = Objects.requireNonNull(temperatureThreshold, "temperatureThreshold must not be null");
@@ -165,14 +165,17 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * <p>The transition is checked against the matrix carried by {@link StatusEquipment}. A
    * forbidden move leaves the unit untouched and is reported as a conflict, because it means the
    * caller asked for something the domain does not allow rather than something that happens to
-   * fail.</p>
+   * fail. Re-sending the status the unit already holds changes nothing.</p>
    *
    * @param targetStatus the status to move to; required
-   * @throws IllegalArgumentException when the target status is missing
-   * @throws IllegalStateException    when the transition is not part of the matrix
+   * @throws NullPointerException  when the target status is missing
+   * @throws IllegalStateException when the transition is not part of the matrix
    */
   public void changeStatus(StatusEquipment targetStatus) {
     var target = Objects.requireNonNull(targetStatus, "targetStatus must not be null");
+    if (target == this.status) {
+      return;
+    }
     if (!this.status.canTransitionTo(target)) {
       throw new IllegalStateException(
           "Illegal equipment status transition from %s to %s; allowed targets are %s"
@@ -181,7 +184,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     this.status = target;
     // A unit taken out of service is powered down and cannot be connected; keeping the two
     // consistent stops the dashboard from showing a deactivated unit as still reporting.
-    if (target == StatusEquipment.DESACTIVATE) {
+    if (target == StatusEquipment.DEACTIVATED) {
       this.online = false;
     }
   }
