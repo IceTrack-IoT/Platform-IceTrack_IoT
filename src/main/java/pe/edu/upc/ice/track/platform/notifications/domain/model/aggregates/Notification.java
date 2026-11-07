@@ -13,11 +13,15 @@ import java.util.Objects;
  * Notification aggregate root of the {@code notifications} bounded context.
  *
  * <p>Deliberately simple: this context is a sink, not a source. A {@code Notification} is
- * always created as a translation of a fact that already happened somewhere else (an
- * {@code AlertRaisedIntegrationEvent} from Monitoring and Alerting Management today; a service
- * request update or a maintenance reminder in the future), never from a user-issued REST
+ * always created as a translation of a fact that already happened somewhere else (an alert or a
+ * maintenance window from Monitoring and Alerting Management, a service request assignment,
+ * rejection or cancellation from Service Request Management), never from a user-issued REST
  * request directly, and it never registers a domain event of its own because nothing downstream
  * needs to react to a notification being created, read or dismissed.</p>
+ *
+ * <p>{@code recipientUserId} holds the identifier of the owner or technician profile the
+ * notification is addressed to; both kinds of profile share one identifier sequence, so the two
+ * never collide.</p>
  *
  * <p>{@code sourceAlertId} is kept as a bare identifier, never as a reference to Monitoring's
  * {@code Alert} aggregate -- this context only ever imports primitives across the boundary,

@@ -8,10 +8,11 @@ import java.util.Optional;
 
 /**
  * Outbound service (Anti-Corruption Layer) through which notifications resolves <em>who the caller
- * is</em>: the recipient identifier that notifications are addressed to (the caller's owner
- * profile).
+ * is</em>: the recipient identifier that notifications are addressed to, which is the caller's owner
+ * profile or, for a technician, its technician profile.
  *
- * <p>Chains the IAM and Profiles facades: username -> account -> owner profile.</p>
+ * <p>Chains the IAM and Profiles facades: username -> account -> profile. Owner and technician
+ * profiles share one identifier sequence, so a recipient identifier never names two people.</p>
  */
 @Service
 public class ExternalProfilesServiceForNotifications {
@@ -29,7 +30,8 @@ public class ExternalProfilesServiceForNotifications {
 
   /**
    * @param username username of the authenticated account
-   * @return the owner profile identifier, or empty when the account does not exist or holds no owner profile
+   * @return the owner or technician profile identifier, or empty when the account does not exist or
+   *         holds no profile
    */
   public Optional<Long> fetchRecipientUserIdByUsername(String username) {
     if (username == null || username.isBlank()) {
@@ -40,6 +42,10 @@ public class ExternalProfilesServiceForNotifications {
       return Optional.empty();
     }
     var ownerId = profilesContextFacade.fetchOwnerIdByUserId(userId);
-    return ownerId == null || ownerId == NOT_FOUND ? Optional.empty() : Optional.of(ownerId);
+    if (ownerId != null && ownerId != NOT_FOUND) {
+      return Optional.of(ownerId);
+    }
+    var technicianId = profilesContextFacade.fetchTechnicianIdByUserId(userId);
+    return technicianId == null || technicianId == NOT_FOUND ? Optional.empty() : Optional.of(technicianId);
   }
 }

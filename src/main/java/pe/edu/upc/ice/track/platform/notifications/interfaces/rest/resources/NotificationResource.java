@@ -17,7 +17,8 @@ public record NotificationResource(
     @Schema(description = "Notification unique identifier", example = "12")
     Long id,
 
-    @Schema(description = "Identifier of the user the notification is addressed to", example = "42")
+    @Schema(description = "Identifier of the owner or technician profile the notification is addressed to",
+        example = "42")
     Long recipientUserId,
 
     @Schema(description = "Identifier of the equipment the notification concerns", example = "10",
@@ -38,7 +39,8 @@ public record NotificationResource(
 
     @Schema(description = "Kind of event that produced the notification", example = "TEMPERATURE_EXCURSION",
         allowableValues = {"MAINTENANCE_REMINDER", "TEMPERATURE_EXCURSION", "DEVICE_OFFLINE",
-            "LOW_BATTERY", "SENSOR_FAILURE", "SERVICE_REQUEST_UPDATE"})
+            "LOW_BATTERY", "SENSOR_FAILURE", "SERVICE_REQUEST_UPDATE", "MAINTENANCE_WINDOW",
+            "UNLINKED_MAINTENANCE_WINDOW"})
     String type,
 
     @Schema(description = "Urgency of the notification",

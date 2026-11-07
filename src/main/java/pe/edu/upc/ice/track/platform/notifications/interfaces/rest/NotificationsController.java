@@ -32,8 +32,9 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResou
  * read/dismiss transitions.
  *
  * <p>There is no creation endpoint: a notification is never created from a direct HTTP
- * request, only from an {@code AlertRaisedEventListener} (or a future equivalent) reacting to
- * an integration event from another bounded context.</p>
+ * request, only by an inbound listener reacting to an integration event from another bounded
+ * context (alerts and maintenance windows, service request assignments, rejections and
+ * cancellations). Owners and technicians each read their own inbox.</p>
  *
  * <p>The recipient is always derived from the authenticated principal, never taken from the
  * request, the same way {@code DeviceTokensController} does. A notification addressed
@@ -94,8 +95,8 @@ public class NotificationsController {
       Authentication authentication) {
     var recipient = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName());
     if (recipient.isEmpty()) {
-      // Accounts without an owner profile (technicians today) receive no notifications yet. The
-      // paging values are still validated, so the answer does not depend on the caller's role.
+      // An account without an owner or technician profile has no inbox. The paging values are still
+      // validated, so the answer does not depend on whether the caller has one.
       var emptyQuery = new GetNotificationsByRecipientQuery(NO_RECIPIENT, unreadOnly, page, size);
       return ResponseEntity.ok(NotificationResourceFromEntityAssembler.toPagedResourceFromPage(
           NotificationPage.empty(emptyQuery.page(), emptyQuery.size())));

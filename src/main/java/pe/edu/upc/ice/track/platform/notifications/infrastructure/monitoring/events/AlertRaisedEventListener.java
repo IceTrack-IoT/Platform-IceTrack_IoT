@@ -15,8 +15,9 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentI
  * published language of Monitoring and Alerting, and hands it to the notifications application
  * layer.
  *
- * <p>This is the only class in {@code notifications} that knows a {@code monitoring} context
- * exists, and the single Anti-Corruption Layer point where the {@code AlertType}/
+ * <p>Together with {@code MaintenanceWindowNotificationEventListener}, this is the only class in
+ * {@code notifications} that knows a {@code monitoring} context exists, and the single
+ * Anti-Corruption Layer point where the {@code AlertType}/
  * {@code AlertSeverity} vocabulary of Monitoring - received as plain text - is mapped onto the
  * {@link NotificationType}/{@link NotificationSeverity} vocabulary of this context. The
  * application layer only ever sees the resulting {@link NotifyAlertRaisedCommand}. Notifications

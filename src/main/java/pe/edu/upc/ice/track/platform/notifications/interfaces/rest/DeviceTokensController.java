@@ -48,7 +48,7 @@ public class DeviceTokensController {
       @ApiResponse(responseCode = "204", description = "Token registered"),
       @ApiResponse(responseCode = "400", description = "Invalid token or platform"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "The account has no owner profile")
+      @ApiResponse(responseCode = "403", description = "The account has no owner or technician profile")
   })
   public ResponseEntity<Void> registerDeviceToken(
       @Valid @RequestBody RegisterDeviceTokenResource resource, Authentication authentication) {
@@ -69,7 +69,7 @@ public class DeviceTokensController {
   @ApiResponses({
       @ApiResponse(responseCode = "204", description = "Token removed (or it was not registered)"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "The account has no owner profile")
+      @ApiResponse(responseCode = "403", description = "The account has no owner or technician profile")
   })
   public ResponseEntity<Void> unregisterDeviceToken(
       @Parameter(description = "FCM registration token to remove", required = true)
