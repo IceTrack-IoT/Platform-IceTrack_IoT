@@ -15,10 +15,16 @@ public final class SensorReadingResourceFromEntityAssembler {
   }
 
   public static SensorReadingResource toResourceFromEntity(SensorReading reading) {
+    var environment = reading.getEnvironment();
     return new SensorReadingResource(
-        reading.getId(), reading.getEquipmentId().equipmentId(), reading.getDeviceId(),
+        reading.getId(), reading.getReadingUid().toString(), reading.getEquipmentId().equipmentId(),
+        reading.getDeviceId(),
         reading.getMinTemperature().celsius(), reading.getMaxTemperature().celsius(),
-        reading.getAvgTemperature().celsius(), reading.getHumidity().percentage(),
-        reading.getRecordedAt());
+        reading.getAvgTemperature().celsius(),
+        reading.getRawMinTemperature().celsius(), reading.getRawMaxTemperature().celsius(),
+        reading.getRawAvgTemperature().celsius(),
+        reading.getHumidity().percentage(), reading.getSampleCount(),
+        environment.lightLevelMax(), environment.doorOpenSeconds(), environment.presenceDetected(),
+        reading.getRecordedAt(), reading.getAppliedConfigVersion());
   }
 }

@@ -1,16 +1,20 @@
 package pe.edu.upc.ice.track.platform.monitoring.application.internal.commandservices;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import pe.edu.upc.ice.track.platform.monitoring.application.commandservices.SensorReadingCommandService;
 import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.assetmanagement.ExternalAssetManagementService;
+import pe.edu.upc.ice.track.platform.monitoring.application.results.ReadingIngestionOutcome;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.Alert;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.AlertPolicy;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.SensorReading;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.RecordReadingBatchCommand;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertSeverity;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EnvironmentObservation;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Temperature;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertPolicyRepository;
@@ -18,7 +22,6 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertReposit
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadingRepository;
 
 import java.time.Duration;
-import java.util.Optional;
 
 /**
  * Default implementation of {@link SensorReadingCommandService}.
@@ -33,6 +36,14 @@ import java.util.Optional;
  * whatever the synchronous listeners of those alerts write commit together or not at all. A
  * failure after the reading row is written therefore no longer leaves a stored reading whose
  * retries are all discarded as duplicates, with its threshold evaluation lost.</p>
+ *
+ * <p>Idempotency: a batch whose {@code readingUid} is already stored is answered as a duplicate
+ * with the stored reading, and nothing is written. Two concurrent deliveries of the same batch can
+ * both pass that check; the unique index on {@code reading_uid} rejects the second insert, its
+ * transaction is rolled back, and it is answered as a duplicate too, instead of as a conflict.
+ * That is why the write runs in a {@link TransactionTemplate} rather than under
+ * {@code @Transactional}: the violation must be caught after the rollback, outside the
+ * transaction.</p>
  */
 @Service
 @Slf4j
@@ -42,40 +53,53 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
   private final AlertRepository alertRepository;
   private final AlertPolicyRepository alertPolicyRepository;
   private final ExternalAssetManagementService externalAssetManagementService;
+  private final TransactionTemplate transactionTemplate;
 
   public SensorReadingCommandServiceImpl(
       SensorReadingRepository sensorReadingRepository,
       AlertRepository alertRepository,
       AlertPolicyRepository alertPolicyRepository,
-      ExternalAssetManagementService externalAssetManagementService) {
+      ExternalAssetManagementService externalAssetManagementService,
+      PlatformTransactionManager transactionManager) {
     this.sensorReadingRepository = sensorReadingRepository;
     this.alertRepository = alertRepository;
     this.alertPolicyRepository = alertPolicyRepository;
     this.externalAssetManagementService = externalAssetManagementService;
+    this.transactionTemplate = new TransactionTemplate(transactionManager);
   }
 
-  /**
-   *  Records a new sensor reading batch, de-duplicating by {@code readingUid}, and evaluates
-   * @param command The {@link RecordReadingBatchCommand} instance
-   * @return  An {@link Optional} containing the saved {@link SensorReading} if it was new, or empty if
-   */
+  // inherited javadoc
   @Override
-  @Transactional
-  public Optional<SensorReading> handle(RecordReadingBatchCommand command) {
-    if (sensorReadingRepository.findByReadingUid(command.readingUid()).isPresent()) {
-      log.info("Ignoring duplicate reading {}", command.readingUid());
-      return Optional.empty();
+  public ReadingIngestionOutcome handle(RecordReadingBatchCommand command) {
+    var existing = sensorReadingRepository.findByReadingUid(command.readingUid());
+    if (existing.isPresent()) {
+      log.info("Duplicate reading {} from device {}", command.readingUid(), command.deviceId());
+      return new ReadingIngestionOutcome.Duplicate(existing.get());
     }
 
-    var reading = new SensorReading(
+    // Validated before any write: a batch outside the sensor's physical range is never stored.
+    var reading = SensorReading.record(
         command.readingUid(), new EquipmentId(command.equipmentId()), command.deviceId(),
         command.minTemperature(), command.maxTemperature(), command.avgTemperature(),
-        command.humidity(), command.sampleCount(), command.recordedAt());
-    var savedReading = sensorReadingRepository.save(reading);
+        command.rawMinTemperature(), command.rawMaxTemperature(), command.rawAvgTemperature(),
+        command.humidity(), command.sampleCount(),
+        new EnvironmentObservation(command.lightLevelMax(), command.doorOpenSeconds(), command.presenceDetected()),
+        command.recordedAt(), command.appliedConfigVersion());
 
-    evaluateThreshold(savedReading);
-
-    return Optional.of(savedReading);
+    try {
+      return transactionTemplate.execute(status -> {
+        var savedReading = sensorReadingRepository.save(reading);
+        evaluateThreshold(savedReading);
+        return new ReadingIngestionOutcome.Recorded(savedReading);
+      });
+    } catch (DataIntegrityViolationException e) {
+      return sensorReadingRepository.findByReadingUid(command.readingUid())
+          .<ReadingIngestionOutcome>map(stored -> {
+            log.info("Concurrent duplicate reading {} from device {}", command.readingUid(), command.deviceId());
+            return new ReadingIngestionOutcome.Duplicate(stored);
+          })
+          .orElseThrow(() -> e);
+    }
   }
 
   /**

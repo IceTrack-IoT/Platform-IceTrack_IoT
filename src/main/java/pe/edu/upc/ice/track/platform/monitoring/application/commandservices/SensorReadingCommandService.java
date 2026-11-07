@@ -1,9 +1,8 @@
 package pe.edu.upc.ice.track.platform.monitoring.application.commandservices;
 
+import pe.edu.upc.ice.track.platform.monitoring.application.results.ReadingIngestionOutcome;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.SensorReading;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.RecordReadingBatchCommand;
-
-import java.util.Optional;
 
 /** Application service handling write operations on {@link SensorReading}. */
 public interface SensorReadingCommandService {
@@ -12,7 +11,9 @@ public interface SensorReadingCommandService {
    * Records an incoming reading batch, de-duplicating by {@code readingUid}, and triggers
    * threshold evaluation against the applicable {@code AlertPolicy}.
    *
-   * @return the persisted reading, or empty when it was a duplicate delivery
+   * @return {@link ReadingIngestionOutcome.Recorded} for a new batch, or
+   *         {@link ReadingIngestionOutcome.Duplicate} with the stored reading for a resubmission
+   * @throws IllegalArgumentException when the batch breaks a physical bound of the sensor
    */
-  Optional<SensorReading> handle(RecordReadingBatchCommand command);
+  ReadingIngestionOutcome handle(RecordReadingBatchCommand command);
 }
