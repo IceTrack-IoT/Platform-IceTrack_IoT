@@ -12,11 +12,9 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.Alert;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.AlertPolicy;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.SensorReading;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.RecordReadingBatchCommand;
-import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertSeverity;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EnvironmentObservation;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
-import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Temperature;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertPolicyRepository;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertRepository;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadingRepository;
@@ -26,13 +24,17 @@ import java.time.Duration;
 /**
  * Default implementation of {@link SensorReadingCommandService}.
  *
+ * <p>A batch never opens an alert: thermal excursions are opened by the edge gateway's events on
+ * {@code POST /api/v1/telemetry/events}. A batch may only close the active excursion alert, as a
+ * hysteresis-aware fallback for a normalization event that never arrives.</p>
+ *
  * <p>This is also where threshold evaluation lives: neither IAM nor Profiles introduce a
  * {@code domain.services} package in this codebase for cross-aggregate coordination, so, by the
  * same convention, that logic stays here rather than in a standalone domain service class. If
  * the team later prefers to extract it, it would become the first inhabitant of a new
  * {@code monitoring.domain.services} package.</p>
  *
- * <p>Ingestion is transactional: the reading, any alert it opens or resolves, and
+ * <p>Ingestion is transactional: the reading, any alert it resolves, and
  * whatever the synchronous listeners of those alerts write commit together or not at all. A
  * failure after the reading row is written therefore no longer leaves a stored reading whose
  * retries are all discarded as duplicates, with its threshold evaluation lost.</p>
@@ -103,51 +105,94 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
   }
 
   /**
-   *  Evaluates the temperature thresholds for the given reading and raises or resolves alerts as needed.
-   * @param reading The {@link SensorReading} instance to evaluate
+   * Evaluates a stored reading against the unit's active thermal excursion alert.
+   *
+   * <p>A reading batch never opens an alert: excursions are detected by the edge gateway, which
+   * evaluates every sample against the sustained duration and reports them on
+   * {@code POST /api/v1/telemetry/events}. Opening alerts here as well would raise a second alert
+   * for the same excursion, from a single out-of-range batch.</p>
+   *
+   * <p>Batches are still the fallback that closes an excursion whose normalization event never
+   * arrives. That resolution is hysteresis-aware, exactly like the gateway's: see
+   * {@link #hasRecovered}.</p>
+   *
+   * @param reading the reading that was just stored
    */
   private void evaluateThreshold(SensorReading reading) {
-    var thresholdOpt = externalAssetManagementService.fetchTemperatureThreshold(reading.getEquipmentId().equipmentId());
-    if (thresholdOpt.isEmpty()) {
-      log.warn("No temperature threshold found for equipment {}, skipping evaluation",
-          reading.getEquipmentId());
+    var equipmentId = reading.getEquipmentId().equipmentId();
+    var activeAlert = alertRepository.findOpenAlertByEquipmentIdAndType(equipmentId, AlertType.TEMPERATURE_EXCURSION);
+    if (activeAlert.isEmpty()) {
       return;
     }
-    var threshold = thresholdOpt.get();
-    var minThreshold = new Temperature(threshold[0]);
-    var maxThreshold = new Temperature(threshold[1]);
-
+    var threshold = externalAssetManagementService.fetchTemperatureThreshold(equipmentId);
+    if (threshold.isEmpty()) {
+      log.warn("No temperature threshold found for equipment {}, skipping evaluation", equipmentId);
+      return;
+    }
     // The default is seeded at startup; the in-memory fallback only guards against a database in
     // which it was deleted, so evaluation never fails for lack of a policy.
-    var policy = alertPolicyRepository.findApplicableTo(reading.getEquipmentId().equipmentId())
+    var policy = alertPolicyRepository.findApplicableTo(equipmentId)
         .orElseGet(() -> {
           log.warn("No alert policy stored for equipment {} nor a platform default; using built-in defaults",
-              reading.getEquipmentId().equipmentId());
+              equipmentId);
           return AlertPolicy.platformDefault();
         });
-
-    var aboveMaximum = reading.getMaxTemperature().isAbove(maxThreshold);
-    var outOfRange = aboveMaximum || reading.getMinTemperature().isBelow(minThreshold);
-
-    var existingAlert = alertRepository.findOpenAlertByEquipmentIdAndType(
-        reading.getEquipmentId().equipmentId(), AlertType.TEMPERATURE_EXCURSION);
-
-    if (outOfRange && existingAlert.isEmpty()) {
-      // A thermal excursion puts the stored inventory at risk, so it is always CRITICAL. The
-      // triggering value is the bound that was crossed: the batch maximum above the range, the
-      // batch minimum below it.
-      var triggeringTemperature = aboveMaximum ? reading.getMaxTemperature() : reading.getMinTemperature();
-      var alert = new Alert(
-          reading.getEquipmentId().equipmentId(), AlertType.TEMPERATURE_EXCURSION, AlertSeverity.CRITICAL,
-          reading.getId(), triggeringTemperature.celsius(), reading.getRecordedAt(),
-          triggeringTemperature.celsius(), Duration.ofMinutes(policy.getSustainedExcursionMinutes()));
-      var savedAlert = alertRepository.save(alert);
-      savedAlert.onRaised();
-      alertRepository.save(savedAlert);
-    } else if (!outOfRange && existingAlert.isPresent()) {
-      var alert = existingAlert.get();
+    var alert = activeAlert.get();
+    if (hasRecovered(alert, reading, threshold.get()[0], threshold.get()[1], policy)) {
       alert.resolveAutomatically();
       alertRepository.save(alert);
+      log.info("Resolved alert {} of equipment {} from stored readings", alert.getId(), equipmentId);
     }
+  }
+
+  /**
+   * Tells whether the stored readings show that an excursion is over, with the same rule the edge
+   * gateway applies before reporting a normalization.
+   *
+   * <p>Every batch recorded during the last {@code sustainedExcursionMinutes}, up to the latest one,
+   * must lie back within range by at least the hysteresis margin on the side that was breached:
+   * below {@code max - margin} after an excursion above the range, above {@code min + margin} after
+   * one below it, and inside the plain range on the other side. When the breached side cannot be
+   * told - an old alert without a triggering temperature, or a threshold changed since - both sides
+   * are narrowed. The window must start after the excursion did, and hold at least one batch per
+   * minute of it, so a gap in the telemetry is never mistaken for a recovery.</p>
+   *
+   * @param alert      the active excursion alert
+   * @param latest     the reading that was just stored
+   * @param minCelsius the lowest acceptable temperature
+   * @param maxCelsius the highest acceptable temperature
+   * @param policy     the policy applicable to the unit
+   * @return {@code true} when the alert can be resolved
+   */
+  private boolean hasRecovered(Alert alert, SensorReading latest, double minCelsius, double maxCelsius,
+                               AlertPolicy policy) {
+    var sustainedMinutes = policy.getSustainedExcursionMinutes() == null ? 0 : policy.getSustainedExcursionMinutes();
+    var windowEnd = latest.getRecordedAt();
+    var windowStart = windowEnd.minus(Duration.ofMinutes(sustainedMinutes));
+    var excursionStart = alert.getTriggeringRecordedAt() != null ? alert.getTriggeringRecordedAt() : alert.getOpenedAt();
+    if (excursionStart != null && !windowStart.isAfter(excursionStart)) {
+      return false;
+    }
+    var window = sensorReadingRepository.findByEquipmentIdAndRecordedAtBetween(
+        latest.getEquipmentId().equipmentId(), windowStart, windowEnd);
+    if (window.size() < Math.max(1, sustainedMinutes)) {
+      return false;
+    }
+
+    var margin = policy.getHysteresisMargin().celsius() == null ? 0.0 : policy.getHysteresisMargin().celsius();
+    var reference = alert.getTriggeringTemperature().celsius() != null
+        ? alert.getTriggeringTemperature().celsius()
+        : alert.getPeakTemperature().celsius();
+    var breachedMaximum = reference != null && reference > maxCelsius;
+    var breachedMinimum = reference != null && reference < minCelsius;
+    var sideUnknown = !breachedMaximum && !breachedMinimum;
+    var lowerBound = breachedMinimum || sideUnknown ? minCelsius + margin : minCelsius;
+    var upperBound = breachedMaximum || sideUnknown ? maxCelsius - margin : maxCelsius;
+
+    return window.stream().allMatch(candidate -> {
+      var min = candidate.getMinTemperature().celsius();
+      var max = candidate.getMaxTemperature().celsius();
+      return min != null && max != null && min >= lowerBound && max <= upperBound;
+    });
   }
 }

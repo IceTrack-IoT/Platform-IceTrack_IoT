@@ -1,8 +1,11 @@
 package pe.edu.upc.ice.track.platform.monitoring.interfaces.acl;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.AlertPolicy;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertStatus;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
+import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertPolicyRepository;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertRepository;
 
 import java.time.LocalDateTime;
@@ -29,9 +32,33 @@ public class MonitoringContextFacade {
   private static final List<AlertStatus> ACTIVE_STATUSES = List.of(AlertStatus.OPEN, AlertStatus.ACKNOWLEDGED);
 
   private final AlertRepository alertRepository;
+  private final AlertPolicyRepository alertPolicyRepository;
 
-  public MonitoringContextFacade(AlertRepository alertRepository) {
+  public MonitoringContextFacade(AlertRepository alertRepository, AlertPolicyRepository alertPolicyRepository) {
     this.alertRepository = alertRepository;
+    this.alertPolicyRepository = alertPolicyRepository;
+  }
+
+  /**
+   * Returns the alert policy that applies to a unit: its own when it has one, the stored platform
+   * default otherwise, and the built-in default when neither is stored.
+   *
+   * <p>Device Management includes it in the configuration the unit's edge gateway polls, which
+   * evaluates excursions locally.</p>
+   *
+   * @param equipmentId identifier of the unit; {@code null} yields the platform default
+   * @return the applicable settings, never {@code null}
+   */
+  @Transactional(readOnly = true)
+  public AlertPolicySettings fetchApplicableAlertPolicy(Long equipmentId) {
+    var policy = (equipmentId == null
+        ? alertPolicyRepository.findDefaultPolicy()
+        : alertPolicyRepository.findApplicableTo(equipmentId))
+        .orElseGet(AlertPolicy::platformDefault);
+    return new AlertPolicySettings(
+        policy.getSustainedExcursionMinutes(),
+        policy.getHysteresisMargin().celsius(),
+        policy.getMissedSyncWindowsForOffline());
   }
 
   /** @return the number of OPEN or ACKNOWLEDGED alerts currently active for the equipment. */

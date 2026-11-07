@@ -56,7 +56,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
   private final Long triggeringReadingId;
   private final Temperature triggeringTemperature;
   private final LocalDateTime triggeringRecordedAt;
-  private final Temperature peakTemperature;
+  private Temperature peakTemperature;
   private final Duration excursionDuration;
   private LocalDateTime openedAt;
   private Long acknowledgedBy;
@@ -93,6 +93,32 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     this.excursionDuration = excursionDuration;
     this.status = AlertStatus.OPEN;
     this.openedAt = LocalDateTime.now();
+  }
+
+  /**
+   * Raises a thermal excursion alert from the edge gateway's sustained-excursion event.
+   *
+   * <p>The gateway has already waited for the excursion to last the policy's sustained duration, so
+   * the alert opens at once, {@link AlertSeverity#CRITICAL}, and is dated when the gateway detected
+   * it rather than when the event reached the cloud. A detection instant reported in the future,
+   * because of a drifting device clock, is replaced by the server clock.</p>
+   *
+   * @param equipmentId           the unit; required
+   * @param triggeringReadingId   the stored reading the excursion was detected in, or {@code null}
+   * @param temperatureCelsius    the out-of-range temperature the gateway reported; required
+   * @param detectedAt            when the gateway detected the excursion; required
+   * @param excursionDuration     the sustained duration the gateway waited for, or {@code null}
+   * @return the new OPEN alert, not yet persisted
+   */
+  public static Alert raisedFromEdge(Long equipmentId, Long triggeringReadingId, Double temperatureCelsius,
+                                     LocalDateTime detectedAt, Duration excursionDuration) {
+    Objects.requireNonNull(temperatureCelsius, "temperatureCelsius must not be null");
+    Objects.requireNonNull(detectedAt, "detectedAt must not be null");
+    var alert = new Alert(equipmentId, AlertType.TEMPERATURE_EXCURSION, AlertSeverity.CRITICAL, triggeringReadingId,
+        temperatureCelsius, detectedAt, temperatureCelsius, excursionDuration);
+    var now = LocalDateTime.now();
+    alert.openedAt = detectedAt.isAfter(now) ? now : detectedAt;
+    return alert;
   }
 
   public void assignId(Long id) {
@@ -142,7 +168,8 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
   }
 
   /**
-   * Resolves the alert because the condition stopped applying, with no user involved.
+   * Resolves the alert because the stored readings show the condition stopped applying, with no
+   * user involved.
    *
    * @throws IllegalStateException when the alert is already RESOLVED or DISMISSED
    */
@@ -150,6 +177,35 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     requireActive();
     this.status = AlertStatus.RESOLVED;
     this.resolvedAt = LocalDateTime.now();
+  }
+
+  /**
+   * Resolves the alert because the edge gateway reported the excursion normalized: the temperature
+   * stayed back within range, by the hysteresis margin, for the sustained duration.
+   *
+   * <p>No user is involved, so {@code resolvedBy} stays {@code null}. The resolution is dated when
+   * the gateway normalized the excursion, kept between the opening and the server clock so the
+   * total duration can never be negative or reach into the future. The peak the gateway reports
+   * replaces the one recorded when the alert opened.</p>
+   *
+   * @param peakTemperatureCelsius the most extreme temperature reached during the excursion, or
+   *                               {@code null} to keep the recorded peak
+   * @param normalizedAt           when the gateway normalized the excursion; required
+   * @throws IllegalStateException when the alert is already RESOLVED or DISMISSED
+   */
+  public void resolveFromEdge(Double peakTemperatureCelsius, LocalDateTime normalizedAt) {
+    Objects.requireNonNull(normalizedAt, "normalizedAt must not be null");
+    requireActive();
+    var now = LocalDateTime.now();
+    var resolution = normalizedAt.isAfter(now) ? now : normalizedAt;
+    if (openedAt != null && resolution.isBefore(openedAt)) {
+      resolution = openedAt;
+    }
+    if (peakTemperatureCelsius != null) {
+      this.peakTemperature = new Temperature(peakTemperatureCelsius);
+    }
+    this.status = AlertStatus.RESOLVED;
+    this.resolvedAt = resolution;
   }
 
   /**

@@ -85,8 +85,10 @@ public class TelemetryController {
   @Operation(
       summary = "Record an aggregated reading batch",
       description = "Stores one aggregated sensor reading batch sent by an edge device, "
-          + "de-duplicating by reading_uid, and triggers threshold evaluation against the "
-          + "applicable alert policy for the equipment. Authenticated by the X-API-Key header "
+          + "de-duplicating by reading_uid. A batch never opens an alert - excursions are reported on "
+          + "POST /api/v1/telemetry/events - but it resolves the active excursion alert once every batch of "
+          + "the policy's sustained duration lies back within range by the hysteresis margin, as a fallback "
+          + "for a lost normalization event. Authenticated by the X-API-Key header "
           + "only; the equipment and device are those the key is paired with. Raw temperatures "
           + "must lie within 0 to 50 °C, each calibrated temperature within 5 °C of its raw value, "
           + "humidity within 20 to 90 %, and min <= avg <= max for both sets. Light level, door-open "
