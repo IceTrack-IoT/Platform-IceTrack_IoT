@@ -1,29 +1,39 @@
 package pe.edu.upc.ice.track.platform.service.request.application.internal.commandservices;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.service.request.application.commandservices.ServiceRequestCommandService;
 import pe.edu.upc.ice.track.platform.service.request.application.internal.outboundservices.acl.ExternalEquipmentService;
 import pe.edu.upc.ice.track.platform.service.request.application.internal.outboundservices.acl.ExternalUserProfileService;
+import pe.edu.upc.ice.track.platform.service.request.application.internal.outboundservices.tokens.EdgeGrantTokenService;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.EdgeGrant;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.AcceptServiceRequestCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.AssignTechnicianCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.CancelServiceRequestCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.CreateServiceRequestCommand;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegenerateEdgeGrantCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegisterInterventionCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RejectServiceRequestCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.StartServiceRequestCommand;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.AcceptedServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.InterventionRegistration;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.IssuedEdgeGrant;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
+import pe.edu.upc.ice.track.platform.service.request.domain.repositories.EdgeGrantRepository;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ServiceRequestRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.SiteId;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -44,6 +54,13 @@ import java.util.function.Supplier;
  * translated: a version conflict or a unique violation has already marked the transaction
  * rollback-only, so it propagates to {@code GlobalExceptionHandler}, which answers
  * {@code 409 CONCURRENT_MODIFICATION_CONFLICT} or {@code 409 DUPLICATE_RESOURCE_CONFLICT}.</p>
+ *
+ * <p><strong>Edge grants.</strong> Accepting a request issues an {@link EdgeGrant} to its
+ * technician in the same transaction, and the plaintext token travels back once in the outcome.
+ * Reassigning, canceling or completing the request revokes its unrevoked grants, also in the same
+ * transaction, and the assigned technician may regenerate a lost grant while the request is
+ * {@code ACCEPTED} or {@code IN_PROGRESS}. Grants live for
+ * {@code service-request.edge-grant.ttl-hours} (24 by default).</p>
  */
 @Service
 @Slf4j
@@ -54,9 +71,18 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
   private static final String INVALID_STATUS_TRANSITION = "INVALID_STATUS_TRANSITION";
   private static final String TECHNICIAN_NOT_ELIGIBLE = "TECHNICIAN_NOT_ELIGIBLE";
 
+  /** Revocation reasons recorded on edge grants. */
+  static final String GRANT_REASSIGNED = "REASSIGNED";
+  static final String GRANT_CANCELED = "CANCELED";
+  static final String GRANT_COMPLETED = "COMPLETED";
+  static final String GRANT_REGENERATED = "REGENERATED";
+
   private final ServiceRequestRepository serviceRequestRepository;
   private final ExternalEquipmentService externalEquipmentService;
   private final ExternalUserProfileService externalUserProfileService;
+  private final EdgeGrantRepository edgeGrantRepository;
+  private final EdgeGrantTokenService edgeGrantTokenService;
+  private final Duration edgeGrantTimeToLive;
 
   /**
    * Constructor
@@ -64,14 +90,26 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
    * @param serviceRequestRepository   The {@link ServiceRequestRepository} instance
    * @param externalEquipmentService   The {@link ExternalEquipmentService} instance
    * @param externalUserProfileService The {@link ExternalUserProfileService} instance
+   * @param edgeGrantRepository        The {@link EdgeGrantRepository} instance
+   * @param edgeGrantTokenService      The {@link EdgeGrantTokenService} instance
+   * @param edgeGrantTtlHours          how long an edge grant stays valid, in hours
    */
   public ServiceRequestCommandServiceImpl(
       ServiceRequestRepository serviceRequestRepository,
       ExternalEquipmentService externalEquipmentService,
-      ExternalUserProfileService externalUserProfileService) {
+      ExternalUserProfileService externalUserProfileService,
+      EdgeGrantRepository edgeGrantRepository,
+      EdgeGrantTokenService edgeGrantTokenService,
+      @Value("${service-request.edge-grant.ttl-hours:24}") long edgeGrantTtlHours) {
+    if (edgeGrantTtlHours < 1) {
+      throw new IllegalStateException("service-request.edge-grant.ttl-hours must be at least 1");
+    }
     this.serviceRequestRepository = serviceRequestRepository;
     this.externalEquipmentService = externalEquipmentService;
     this.externalUserProfileService = externalUserProfileService;
+    this.edgeGrantRepository = edgeGrantRepository;
+    this.edgeGrantTokenService = edgeGrantTokenService;
+    this.edgeGrantTimeToLive = Duration.ofHours(edgeGrantTtlHours);
   }
 
   // inherited javadoc
@@ -110,20 +148,53 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
               return attempt(() -> {
                 request.assignTechnician(new TechnicianProfileId(command.technicianProfileId()), new OwnerId(ownerId));
                 return request;
-              }).map(assigned -> persist("Assigned a technician to", assigned));
+              }).map(assigned -> {
+                var saved = persist("Assigned a technician to", assigned);
+                // The outgoing technician, if the request had been accepted, loses gateway access.
+                revokeEdgeGrants(saved, GRANT_REASSIGNED);
+                return saved;
+              });
             }));
   }
 
   // inherited javadoc
   @Override
   @Transactional
-  public Result<ServiceRequest, ApplicationError> handle(AcceptServiceRequestCommand command) {
+  public Result<AcceptedServiceRequest, ApplicationError> handle(AcceptServiceRequestCommand command) {
     return resolveTechnicianId(command.username())
         .flatMap(technicianId -> assignedServiceRequest(command.serviceRequestId(), technicianId)
             .flatMap(request -> attempt(() -> {
               request.accept(new TechnicianProfileId(technicianId));
               return request;
-            }).map(accepted -> persist("Accepted", accepted))));
+            }).map(accepted -> {
+              var saved = persist("Accepted", accepted);
+              return new AcceptedServiceRequest(saved, issueEdgeGrant(saved, GRANT_REGENERATED));
+            })));
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public Result<IssuedEdgeGrant, ApplicationError> handle(RegenerateEdgeGrantCommand command) {
+    return resolveTechnicianId(command.username()).flatMap(technicianId -> {
+      var request = findServiceRequest(command.serviceRequestId());
+      if (request.isEmpty()) {
+        return Result.failure(notReachableServiceRequest(command.serviceRequestId()));
+      }
+      // Unlike the other technician commands, a request assigned to somebody else is answered 403:
+      // the caller is a technician asking for gateway access it does not hold.
+      if (!request.get().isAssignedTo(new TechnicianProfileId(technicianId))) {
+        return Result.failure(ApplicationError.accessDenied(
+            "Only the technician assigned to the service request may regenerate its edge grant"));
+      }
+      var status = request.get().getStatus();
+      if (status != ServiceStatus.ACCEPTED && status != ServiceStatus.IN_PROGRESS) {
+        return Result.failure(invalidStatusTransition(
+            "An edge grant can only be regenerated for an ACCEPTED or IN_PROGRESS service request, not %s"
+                .formatted(status)));
+      }
+      return Result.success(issueEdgeGrant(request.get(), GRANT_REGENERATED));
+    });
   }
 
   // inherited javadoc
@@ -189,9 +260,14 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
                     command.photoEvidence(),
                     command.completedAt());
                 return request;
-              }).map(completed -> replayed
-                  ? new InterventionRegistration(completed, true)
-                  : new InterventionRegistration(persist("Completed", completed), false));
+              }).map(completed -> {
+                if (replayed) {
+                  return new InterventionRegistration(completed, true);
+                }
+                var saved = persist("Completed", completed);
+                revokeEdgeGrants(saved, GRANT_COMPLETED);
+                return new InterventionRegistration(saved, false);
+              });
             }));
   }
 
@@ -204,7 +280,50 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
             .flatMap(request -> attempt(() -> {
               request.cancel(new OwnerId(ownerId), command.reason());
               return request;
-            }).map(canceled -> persist("Canceled", canceled))));
+            }).map(canceled -> {
+              var saved = persist("Canceled", canceled);
+              revokeEdgeGrants(saved, GRANT_CANCELED);
+              return saved;
+            })));
+  }
+
+  /**
+   * Issues an edge grant to the technician of a request, revoking any grant of the request that is
+   * still unrevoked first, so a request never holds two live grants.
+   *
+   * @param request          the persisted request, assigned to a technician
+   * @param previousReason   the revocation reason recorded on a grant being replaced
+   * @return the issued grant, carrying its plaintext token
+   */
+  private IssuedEdgeGrant issueEdgeGrant(ServiceRequest request, String previousReason) {
+    revokeEdgeGrants(request, previousReason);
+    var token = edgeGrantTokenService.generate();
+    var now = Instant.now();
+    var grant = edgeGrantRepository.save(EdgeGrant.issue(
+        request.getId().serviceRequestId(),
+        request.getTechnicianId().technicianProfileId(),
+        request.getEquipmentId().equipmentId(),
+        token.digest(),
+        now,
+        now.plus(edgeGrantTimeToLive)));
+    log.info("Issued edge grant {} for service request {} to technician {}, valid until {}",
+        grant.getId(), grant.getServiceRequestId(), grant.getTechnicianProfileId(), grant.getExpiresAt());
+    return new IssuedEdgeGrant(grant, token.plainText());
+  }
+
+  /**
+   * Revokes every unrevoked edge grant of a request.
+   *
+   * @param request the persisted request
+   * @param reason  why the grants end
+   */
+  private void revokeEdgeGrants(ServiceRequest request, String reason) {
+    var now = Instant.now();
+    for (var grant : edgeGrantRepository.findUnrevokedByServiceRequestId(request.getId().serviceRequestId())) {
+      grant.revoke(reason, now);
+      edgeGrantRepository.save(grant);
+      log.info("Revoked edge grant {} of service request {} ({})", grant.getId(), grant.getServiceRequestId(), reason);
+    }
   }
 
   /**

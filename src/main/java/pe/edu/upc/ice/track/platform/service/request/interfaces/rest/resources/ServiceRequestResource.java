@@ -1,5 +1,6 @@
 package pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
@@ -66,6 +67,11 @@ public record ServiceRequestResource(
     List<StatusTransitionResource> history,
 
     @Schema(description = "The intervention that completed the request; null until completed", nullable = true)
-    InterventionResource intervention
+    InterventionResource intervention,
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "The edge grant issued when the request was accepted, token included. Present only "
+        + "in the response of PUT /accept; omitted everywhere else", nullable = true)
+    IssuedEdgeGrantResource edgeGrant
 ) {
 }

@@ -26,6 +26,7 @@ import pe.edu.upc.ice.track.platform.service.request.application.commandservices
 import pe.edu.upc.ice.track.platform.service.request.application.queryservices.ReviewQueryService;
 import pe.edu.upc.ice.track.platform.service.request.application.queryservices.ServiceRequestQueryService;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.AcceptServiceRequestCommand;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegenerateEdgeGrantCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetReviewByServiceRequestIdQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestByIdQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListServiceRequestsQuery;
@@ -33,6 +34,7 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.S
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.AssignTechnicianResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.CancelServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.CreateServiceRequestResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.IssuedEdgeGrantResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.PagedServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.RejectServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ReviewResource;
@@ -43,12 +45,14 @@ import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.A
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.CancelServiceRequestCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.CreateServiceRequestCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.IssuedEdgeGrantResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.RejectServiceRequestCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.ReviewResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.ServiceRequestResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.StartServiceRequestCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
@@ -277,12 +281,15 @@ public class ServiceRequestsController {
   @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "Accept a service request",
-      description = "Accepts a PENDING request assigned to the authenticated technician.",
+      description = "Accepts a PENDING request assigned to the authenticated technician and issues an edge "
+          + "grant for the unit's gateway. The response carries edge_grant with its plaintext token "
+          + "(it_grt_...), shown only here; only its SHA-256 digest is stored. The gateway learns the grant on "
+          + "its next configuration poll. Reassigning, canceling or completing the request revokes it.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
-          description = "Service request accepted",
+          description = "Service request accepted; edge_grant.token is shown only once",
           content = @Content(schema = @Schema(implementation = ServiceRequestResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not a technician"),
@@ -296,7 +303,48 @@ public class ServiceRequestsController {
       Authentication authentication) {
     return ResponseEntityAssembler.toResponseEntityFromResult(
         serviceRequestCommandService.handle(new AcceptServiceRequestCommand(serviceRequestId, authentication.getName())),
-        ServiceRequestResourceFromEntityAssembler::toResourceFromEntity,
+        ServiceRequestResourceFromEntityAssembler::toResourceFromAccepted,
+        HttpStatus.OK);
+  }
+
+  /**
+   * Replaces the edge grant of a service request assigned to the authenticated technician.
+   *
+   * @param serviceRequestId The service request identifier
+   * @param authentication   The authenticated principal, whose name identifies the caller
+   * @return The new {@link IssuedEdgeGrantResource}, token included
+   */
+  @PostMapping("/{serviceRequestId}/edge-grant")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
+  @Operation(
+      summary = "Regenerate the edge grant of a service request",
+      description = "Issues a new edge grant to the assigned technician of an ACCEPTED or IN_PROGRESS request, "
+          + "for example after the previous token was lost, and revokes the previous grant. The new plaintext "
+          + "token is shown only in this response.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "New edge grant issued; token is shown only once",
+          content = @Content(schema = @Schema(implementation = IssuedEdgeGrantResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "ACCESS_DENIED - the caller is not a technician, or the "
+          + "request is assigned to another technician",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "404", description = "SERVICE_REQUEST_NOT_FOUND",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION - the request is neither "
+          + "ACCEPTED nor IN_PROGRESS",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
+  })
+  public ResponseEntity<?> regenerateEdgeGrant(
+      @PathVariable
+      @Parameter(description = "Service request unique identifier", example = "42", required = true)
+      Long serviceRequestId,
+      Authentication authentication) {
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        serviceRequestCommandService.handle(new RegenerateEdgeGrantCommand(serviceRequestId, authentication.getName())),
+        IssuedEdgeGrantResourceFromEntityAssembler::toResourceFromEntity,
         HttpStatus.OK);
   }
 

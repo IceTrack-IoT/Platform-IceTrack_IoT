@@ -2,7 +2,9 @@ package pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform;
 
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.entities.StatusTransition;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.AcceptedServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestPage;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.IssuedEdgeGrantResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.PagedServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServicePriorityResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServiceRequestResource;
@@ -24,6 +26,22 @@ public class ServiceRequestResourceFromEntityAssembler {
    * @return the {@link ServiceRequestResource} resource
    */
   public static ServiceRequestResource toResourceFromEntity(ServiceRequest entity) {
+    return toResource(entity, null);
+  }
+
+  /**
+   * Converts an accepted request into a {@link ServiceRequestResource} carrying the edge grant
+   * issued with it.
+   *
+   * @param accepted the accepted request and its grant
+   * @return the {@link ServiceRequestResource} resource, with {@code edge_grant} set
+   */
+  public static ServiceRequestResource toResourceFromAccepted(AcceptedServiceRequest accepted) {
+    return toResource(accepted.serviceRequest(),
+        IssuedEdgeGrantResourceFromEntityAssembler.toResourceFromEntity(accepted.edgeGrant()));
+  }
+
+  private static ServiceRequestResource toResource(ServiceRequest entity, IssuedEdgeGrantResource edgeGrant) {
     var serviceRequestId = entity.getId().serviceRequestId();
     return new ServiceRequestResource(
         serviceRequestId,
@@ -46,7 +64,8 @@ public class ServiceRequestResourceFromEntityAssembler {
             .toList(),
         entity.getIntervention() == null
             ? null
-            : InterventionResourceFromEntityAssembler.toResourceFromIntervention(serviceRequestId, entity.getIntervention()));
+            : InterventionResourceFromEntityAssembler.toResourceFromIntervention(serviceRequestId, entity.getIntervention()),
+        edgeGrant);
   }
 
   /**

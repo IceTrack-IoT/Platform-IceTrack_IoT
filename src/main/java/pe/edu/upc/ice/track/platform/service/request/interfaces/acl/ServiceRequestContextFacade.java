@@ -7,6 +7,7 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.O
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceType;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
+import pe.edu.upc.ice.track.platform.service.request.domain.repositories.EdgeGrantRepository;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ReviewRepository;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ServiceRequestRepository;
 
@@ -21,7 +22,8 @@ import java.util.Set;
  *
  * <p>This class is the published contract of the Anti-Corruption Layer of the
  * {@code service.request} context. Every parameter and return type is a primitive, a boxed
- * primitive, a {@link List} of them or an {@link Instant} - no {@code ServiceRequest} or
+ * primitive, a {@link List} of them, an {@link Instant} or a value record of this package such as
+ * {@link ActiveEdgeGrant} - no {@code ServiceRequest} or
  * {@code Review} aggregate, value object, repository or JPA entity appears in its signature.
  * Callers depend on this class alone and must never reach into
  * {@code service.request.domain.*}, {@code service.request.application.*} or
@@ -45,17 +47,42 @@ public class ServiceRequestContextFacade {
 
   private final ServiceRequestRepository serviceRequestRepository;
   private final ReviewRepository reviewRepository;
+  private final EdgeGrantRepository edgeGrantRepository;
 
   /**
    * Constructor
    *
    * @param serviceRequestRepository the {@link ServiceRequestRepository} instance
    * @param reviewRepository         the {@link ReviewRepository} instance
+   * @param edgeGrantRepository      the {@link EdgeGrantRepository} instance
    */
   public ServiceRequestContextFacade(
-      ServiceRequestRepository serviceRequestRepository, ReviewRepository reviewRepository) {
+      ServiceRequestRepository serviceRequestRepository,
+      ReviewRepository reviewRepository,
+      EdgeGrantRepository edgeGrantRepository) {
     this.serviceRequestRepository = serviceRequestRepository;
     this.reviewRepository = reviewRepository;
+    this.edgeGrantRepository = edgeGrantRepository;
+  }
+
+  /**
+   * Returns the edge grants that currently open a unit's gateway: neither revoked nor expired.
+   *
+   * <p>Device Management includes them in the configuration the gateway polls. Only token digests
+   * leave this context.</p>
+   *
+   * @param equipmentId identifier of the unit
+   * @return the active grants, oldest first; empty for a missing or non-positive identifier
+   */
+  @Transactional(readOnly = true)
+  public List<ActiveEdgeGrant> fetchActiveEdgeGrants(Long equipmentId) {
+    if (!isValidIdentifier(equipmentId)) {
+      return List.of();
+    }
+    return edgeGrantRepository.findActiveByEquipmentId(equipmentId, Instant.now()).stream()
+        .map(grant -> new ActiveEdgeGrant(
+            grant.getTokenDigest(), grant.getTechnicianProfileId(), grant.getServiceRequestId(), grant.getExpiresAt()))
+        .toList();
   }
 
   /**
