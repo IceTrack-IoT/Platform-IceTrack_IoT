@@ -18,7 +18,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.authorization.sfs.pipeline.BearerAuthorizationRequestFilter;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.hashing.bcrypt.BCryptHashingService;
+import pe.edu.upc.ice.track.platform.iam.infrastructure.security.SignInAttemptRegistry;
+import pe.edu.upc.ice.track.platform.iam.infrastructure.security.SignInRateLimitFilter;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.tokens.jwt.BearerTokenService;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -35,7 +38,7 @@ import java.util.List;
  * {@code spring-boot-starter-oauth2-resource-server} dependency is present only to supply the
  * {@code NimbusJwtDecoder} that validates incoming <em>Google</em> id_tokens at the token
  * exchange endpoint; no {@code spring.security.oauth2.resourceserver.*} property is declared, so
- * Spring Boot's resource-server auto-configuration stays inactive and this filter chain remains
+ * Spring Boot's resource-server autoconfiguration stays inactive and this filter chain remains
  * the single authority on user request authorization.
  * </p>
  * <p>
@@ -43,6 +46,11 @@ import java.util.List;
  * boards call ({@code POST /api/v1/telemetry}, {@code POST /api/v1/telemetry/events} and
  * {@code /api/v1/devices/me/**}) are claimed first by the device API key chain of the Device
  * Management context, so they never reach the bearer token filter.
+ * </p>
+ * <p>
+ * The endpoints that verify a credential ({@code /sign-in/local}, {@code /google/verify} and
+ * {@code /google/link}) are throttled by {@link SignInRateLimitFilter}, which answers
+ * {@code 429 TOO_MANY_REQUESTS} once a client address or an account has failed too often.
  * </p>
  */
 @Configuration
@@ -56,6 +64,23 @@ public class WebSecurityConfiguration {
   private final BCryptHashingService hashingService;
 
   private final AuthenticationEntryPoint unauthorizedRequestHandler;
+
+  private final SignInAttemptRegistry signInAttemptRegistry;
+
+  private final ObjectMapper objectMapper;
+
+  /**
+   * Creates the filter throttling failed sign-in attempts.
+   *
+   * <p>Deliberately not a {@code @Bean}, for the same reason as
+   * {@link #authorizationRequestFilter()}.</p>
+   *
+   * @return The sign-in rate limit filter
+   * @see SignInRateLimitFilter
+   */
+  private SignInRateLimitFilter signInRateLimitFilter() {
+    return new SignInRateLimitFilter(signInAttemptRegistry, objectMapper);
+  }
 
   /**
    * Creates the Bearer Authorization Request Filter.
@@ -141,6 +166,7 @@ public class WebSecurityConfiguration {
                 "/webjars/**").permitAll()
             .anyRequest().authenticated());
     http.authenticationProvider(authenticationProvider());
+    http.addFilterBefore(signInRateLimitFilter(), UsernamePasswordAuthenticationFilter.class);
     http.addFilterBefore(authorizationRequestFilter(), UsernamePasswordAuthenticationFilter.class);
     return http.build();
 
@@ -152,11 +178,21 @@ public class WebSecurityConfiguration {
    * @param tokenService The token service
    * @param hashingService The hashing service
    * @param authenticationEntryPoint The authentication entry point
+   * @param signInAttemptRegistry The registry counting failed sign-in attempts
+   * @param objectMapper The JSON mapper the sign-in rate limit filter reads and writes bodies with
    */
-  public WebSecurityConfiguration(@Qualifier("defaultUserDetailsService") UserDetailsService userDetailsService, BearerTokenService tokenService, BCryptHashingService hashingService, AuthenticationEntryPoint authenticationEntryPoint) {
+  public WebSecurityConfiguration(
+      @Qualifier("defaultUserDetailsService") UserDetailsService userDetailsService,
+      BearerTokenService tokenService,
+      BCryptHashingService hashingService,
+      AuthenticationEntryPoint authenticationEntryPoint,
+      SignInAttemptRegistry signInAttemptRegistry,
+      ObjectMapper objectMapper) {
     this.userDetailsService = userDetailsService;
     this.tokenService = tokenService;
     this.hashingService = hashingService;
     this.unauthorizedRequestHandler = authenticationEntryPoint;
+    this.signInAttemptRegistry = signInAttemptRegistry;
+    this.objectMapper = objectMapper;
   }
 }
