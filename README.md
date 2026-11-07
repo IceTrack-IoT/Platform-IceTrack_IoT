@@ -24,6 +24,7 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - [Edge devices](#edge-devices)
 - [Edge configuration, events and grants](#edge-configuration-events-and-grants)
 - [Maintenance windows](#maintenance-windows)
+- [Sites, address verification and reports](#sites-address-verification-and-reports)
 - [Integration events and technician metrics](#integration-events-and-technician-metrics)
 - [Run locally with Docker](#run-locally-with-docker)
 - [Access](#access)
@@ -100,6 +101,8 @@ Defaults come from `src/main/resources/application.properties`:
 | `MAINTENANCE_WINDOW_EXPIRY_GRACE_MINUTES` | `30` | Minutes after its expiration an open maintenance window is closed by the platform as `EXPIRED`, when its gateway never reported the end |
 | `MAINTENANCE_WINDOW_EXPIRY_SWEEP_MS` | `60000` | Interval of the sweep that closes those overdue windows |
 | `OUTBOX_DISPATCH_DELAY_MS` | `2000` | Interval at which the transactional outbox delivers pending integration events |
+| `ADDRESS_VALIDATION_SECRET` | none (required) | Base64-encoded key, at least 32 decoded bytes, that signs address validation tokens (`openssl rand -base64 32`); startup fails when it is missing, not Base64 or too short. It is separate from `JWT_SECRET` |
+| `GOOGLE_MAPS_API_KEY` | `YOUR_MAPS_DEMO_KEY` | Google Maps Geocoding key; with the placeholder every address validation answers `503` |
 | `OUTBOX_MAX_ATTEMPTS` | `10` | Failed deliveries after which an outbox event is no longer tried (it stays in `outbox_events`, unpublished) |
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.
@@ -281,6 +284,40 @@ Other effects:
 - **Expiration** — a window still open `MAINTENANCE_WINDOW_EXPIRY_GRACE_MINUTES` after its expiration is closed by the platform as `EXPIRED`, dated at its expiration. A later start on a unit whose active window is already past its expiration closes that window the same way first.
 
 **Audit** (`GET /api/v1/maintenance-windows?equipmentId=10&from=2026-11-01T00:00:00Z&to=2026-11-30T23:59:59Z`, owner JWT): the windows of one of the caller's units, newest first, each with `id`, `equipment_id`, `origin`, `started_at`, `expires_at`, `ended_at`, `closure_reason`, `technician_id`, `service_request_id`, `unlinked` and `active`. `from` and `to` are optional ISO-8601 instants bounding the start inclusively; `from` after `to` answers `400`. A unit the caller does not own answers `404 EQUIPMENT_NOT_FOUND`.
+
+## Sites, address verification and reports
+
+**Address verification.** An owner verifies an address before a site is saved: `POST /api/v1/assets/sites/validate-address` (owner JWT, body `{"address": "...", "place_id": null}`) asks Google Maps synchronously, with at most 2 seconds to connect and 3 to answer. A single match inside Metropolitan Lima or the Constitutional Province of Callao answers `200` with `formatted_address`, `latitude`, `longitude`, `place_id`, `district`, `area` (`LIMA_METROPOLITANA` or `CALLAO`) and a `validation_token`. Nothing is saved. The token is signed with `ADDRESS_VALIDATION_SECRET`, bound to the owner, and valid for 15 minutes.
+
+| Outcome | Status and code |
+|---|---|
+| Outside the coverage area | `422 ADDRESS_OUT_OF_COVERAGE` |
+| No match, or several (`details` lists up to five candidates, one per line; the body carries them as `candidates`) | `422 ADDRESS_NOT_VERIFIED` |
+| Maps service timed out, unreachable, or refused | `503 GEOCODING_UNAVAILABLE`, with `Retry-After: 30` |
+| More than 20 validations per owner in a minute | `429 TOO_MANY_REQUESTS`, with `Retry-After: 60`; Google is not queried |
+| Caller is a technician | `403` |
+
+The coverage check uses bounding boxes around the two jurisdictions. It is an approximation: an address near the border of the two areas can be accepted or refused by a few hundred meters.
+
+**Registering and moving a site.** `POST /api/v1/assets/sites` takes `name`, `contact_name`, `phone`, `validation_token` and an optional `pin` (`{"latitude": ..., "longitude": ...}`). `PUT /api/v1/assets/sites/{siteId}/address` takes `validation_token` and an optional `pin`. Both save the site as `RESOLVED` at the verified point, or at the pin when one is given; Google Maps is not queried. A pin farther than 150 meters from the verified point answers `400 PIN_OUT_OF_RANGE`. A missing, forged, expired or foreign token answers `400 ADDRESS_VALIDATION_REQUIRED`. `PUT /api/v1/assets/sites/{siteId}` now changes only `name`, `contact_name` and `phone`; the address changes only through the address endpoint.
+
+A site's `location` and `navigation_url` are omitted from the JSON when it has no coordinates. Sites created before verification keep their stored `geocoding_status` (`PENDING`, `FAILED` or `NOT_FOUND`) and carry no location until they are moved to a verified address.
+
+**Report requests.** `POST /api/v1/reports` (owner JWT) takes `name`, `type`, `format` (`PDF`, `XLSX` or `CSV`) and `filters` (`site_id`, `equipment_id`, `technician_id`, `from`, `to`). The requester is the authenticated caller; there is no `user_id`. The answer is `202 Accepted` with the report in `PENDING`. Poll `GET /api/v1/reports/{id}`: a `COMPLETED` report carries a `download_url` signed for 15 minutes, a `FAILED` one carries `failure_reason`. A report of another owner answers `404 NOT_FOUND`. The download route `GET /api/v1/reports/{id}/download` has been removed.
+
+For a `TEMPERATURE_EXCURSION` report, each unit gets its Mean Kinetic Temperature (Arrhenius form, activation energy 83.144 kJ/mol), the standard deviation of its temperatures, the degree-minutes outside its threshold band, and the share of time in range. Readings taken during maintenance are excluded, so are dismissed alerts and any alert opened inside a maintenance window, and durations lose the part that overlaps a window; the same window exclusion applies to the uptime report. A unit's time between two readings is credited at most 60 minutes. If no unit in scope recorded any telemetry in the period, the report is `FAILED` with `Insufficient telemetry data for the period`.
+
+Files are stored at `reports/{ownerId}/{reportId}.{ext}` in the private bucket. A storage failure is retried three times with backoff before the report is marked `FAILED`.
+
+**Upgrading an existing database** (run once, before deploying this version):
+
+```sql
+ALTER TABLE reports DROP CONSTRAINT IF EXISTS reports_format_check;
+UPDATE reports SET format = 'XLSX' WHERE format = 'EXCEL';
+ALTER TABLE reports ALTER COLUMN completed_at TYPE timestamp USING completed_at::timestamp;
+```
+
+Clients must be updated for the renamed fields: the report request uses `name` and `filters`, and the report response uses `name` and `failure_reason`.
 
 ## Integration events and technician metrics
 
