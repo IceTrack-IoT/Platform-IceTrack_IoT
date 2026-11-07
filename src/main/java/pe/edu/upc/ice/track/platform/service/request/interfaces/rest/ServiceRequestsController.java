@@ -143,7 +143,8 @@ public class ServiceRequestsController {
    * Lists one page of the caller's service requests, newest first.
    *
    * @param status         Restrict to these statuses, comma-separated or repeated; optional
-   * @param assignedTo     {@code me} for the requests assigned to the calling technician; optional
+   * @param assignedTo     {@code me} for the requests assigned to the calling technician, sent as the
+   *                       {@code assigned_to} query parameter; optional
    * @param page           Zero-based page index; defaults to 0
    * @param size           Page size, from 1 to 100; defaults to 20
    * @param authentication The authenticated principal, whose name and role identify the caller
@@ -154,7 +155,7 @@ public class ServiceRequestsController {
   @Operation(
       summary = "List my service requests",
       description = "An owner lists the requests it created; a technician lists the requests assigned "
-          + "to it, which assignedTo=me makes explicit. Optionally filtered by one or more statuses, "
+          + "to it, which assigned_to=me makes explicit. Optionally filtered by one or more statuses, "
           + "always paged and ordered by creation date, newest first.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
@@ -162,7 +163,7 @@ public class ServiceRequestsController {
           responseCode = "200",
           description = "Service requests found",
           content = @Content(schema = @Schema(implementation = PagedServiceRequestResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid filter or paging value, such as an unknown status, a page size above 100, or assignedTo=me sent by an owner"),
+      @ApiResponse(responseCode = "400", description = "Invalid filter or paging value, such as an unknown status, a page size above 100, or assigned_to=me sent by an owner"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician")
   })
@@ -170,7 +171,7 @@ public class ServiceRequestsController {
       @RequestParam(required = false)
       @Parameter(description = "Restrict to these statuses, comma-separated", example = "PENDING,ACCEPTED")
       List<ServiceStatusResource> status,
-      @RequestParam(required = false)
+      @RequestParam(name = "assigned_to", required = false)
       @Parameter(description = "Only accepts 'me', for the requests assigned to the calling technician", example = "me")
       String assignedTo,
       @RequestParam(required = false)
@@ -524,7 +525,7 @@ public class ServiceRequestsController {
   }
 
   /**
-   * Reads the {@code assignedTo} parameter, which only accepts {@code me}.
+   * Reads the {@code assigned_to} parameter, which only accepts {@code me}.
    *
    * @throws IllegalArgumentException for any other value, answered with 400 by
    *                                  {@code GlobalExceptionHandler}
@@ -536,6 +537,6 @@ public class ServiceRequestsController {
     if (ASSIGNED_TO_ME.equalsIgnoreCase(assignedTo.strip())) {
       return true;
     }
-    throw new IllegalArgumentException("Parameter 'assignedTo' only accepts 'me'");
+    throw new IllegalArgumentException("Parameter 'assigned_to' only accepts 'me'");
   }
 }

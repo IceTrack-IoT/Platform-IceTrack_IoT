@@ -52,7 +52,7 @@ public class MaintenanceWindowsController {
   /**
    * Lists the maintenance windows of one of the caller's units.
    *
-   * @param equipmentId    the unit
+   * @param equipmentId    the unit, sent as the {@code equipment_id} query parameter
    * @param from           inclusive lower bound of the window start, optional
    * @param to             inclusive upper bound of the window start, optional
    * @param authentication the authenticated principal
@@ -79,7 +79,7 @@ public class MaintenanceWindowsController {
           content = @Content(schema = @Schema(implementation = ErrorResource.class)))
   })
   public ResponseEntity<?> getMaintenanceWindows(
-      @RequestParam
+      @RequestParam(name = "equipment_id")
       @Parameter(description = "Unit whose windows are listed", example = "10", required = true)
       Long equipmentId,
       @RequestParam(required = false)

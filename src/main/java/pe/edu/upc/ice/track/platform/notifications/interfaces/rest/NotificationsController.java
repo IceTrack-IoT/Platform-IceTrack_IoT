@@ -91,7 +91,7 @@ public class NotificationsController {
       @Parameter(description = "Page size, from 1 to 100; larger values are capped at 100", example = "20")
       @RequestParam(defaultValue = "" + GetNotificationsByRecipientQuery.DEFAULT_PAGE_SIZE) int size,
       @Parameter(description = "Return only notifications not yet read", example = "false")
-      @RequestParam(defaultValue = "false") boolean unreadOnly,
+      @RequestParam(name = "unread_only", defaultValue = "false") boolean unreadOnly,
       Authentication authentication) {
     var recipient = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName());
     if (recipient.isEmpty()) {

@@ -130,8 +130,8 @@ public class EquipmentController {
    *
    * @param search Case-insensitive text matched against the unit name or uid, optional
    * @param status Restrict to a single lifecycle status, optional
-   * @param equipmentType Restrict to a single kind of unit, optional
-   * @param siteId Restrict to a single site, optional
+   * @param equipmentType Restrict to a single kind of unit, sent as {@code equipment_type}, optional
+   * @param siteId Restrict to a single site, sent as {@code site_id}, optional
    * @param page Zero-based page index; supply together with {@code size} to page
    * @param size Page size, from 1 to 100; supply together with {@code page} to page
    * @param authentication The authenticated principal, whose name identifies the caller
@@ -163,10 +163,10 @@ public class EquipmentController {
       @RequestParam(required = false)
       @Parameter(description = "Restrict to a single status", example = "ACTIVE")
       StatusEquipmentResource status,
-      @RequestParam(required = false)
+      @RequestParam(name = "equipment_type", required = false)
       @Parameter(description = "Restrict to a single equipment type", example = "REFRIGERATOR")
       EquipmentTypeResource equipmentType,
-      @RequestParam(required = false)
+      @RequestParam(name = "site_id", required = false)
       @Parameter(description = "Restrict to a single site", example = "1")
       Long siteId,
       @RequestParam(required = false)

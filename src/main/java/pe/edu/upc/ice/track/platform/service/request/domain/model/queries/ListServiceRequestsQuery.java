@@ -57,7 +57,7 @@ public record ListServiceRequestsQuery(
       throw new IllegalArgumentException("Page size must be between 1 and %d".formatted(MAX_PAGE_SIZE));
     }
     if (assignedToMe && callerRole != CallerRole.TECHNICIAN) {
-      throw new IllegalArgumentException("assignedTo=me is only available to technicians");
+      throw new IllegalArgumentException("assigned_to=me is only available to technicians");
     }
   }
 }
