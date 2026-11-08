@@ -1,9 +1,9 @@
 package pe.edu.upc.ice.track.platform.device.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
-import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.assetmanagement.ExternalAssetManagementServiceForDevice;
-import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.monitoring.ExternalMonitoringServiceForDevice;
-import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.servicerequests.ExternalServiceRequestServiceForDevice;
+import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.ExternalAssetManagementServiceForDevice;
+import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.ExternalMonitoringServiceForDevice;
+import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.ExternalServiceRequestServiceForDevice;
 import pe.edu.upc.ice.track.platform.device.application.queryservices.EdgeConfigurationQueryService;
 import pe.edu.upc.ice.track.platform.device.application.results.EdgeConfiguration;
 import pe.edu.upc.ice.track.platform.device.domain.model.queries.GetEdgeConfigurationQuery;

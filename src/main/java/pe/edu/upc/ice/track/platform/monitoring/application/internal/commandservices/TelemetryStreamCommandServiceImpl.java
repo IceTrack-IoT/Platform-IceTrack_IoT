@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.monitoring.application.internal.commandser
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.monitoring.application.commandservices.TelemetryStreamCommandService;
-import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.profiles.ExternalProfilesServiceForMonitoring;
+import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.acl.ExternalProfilesServiceForMonitoring;
 import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.streaming.StreamTicketService;
 import pe.edu.upc.ice.track.platform.monitoring.application.results.IssuedStreamTicket;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.IssueStreamTicketCommand;

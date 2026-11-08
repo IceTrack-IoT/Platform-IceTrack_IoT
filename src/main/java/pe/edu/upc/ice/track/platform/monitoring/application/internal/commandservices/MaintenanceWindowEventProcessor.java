@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.monitoring.application.internal.commandser
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.servicerequests.ExternalServiceRequestServiceForMonitoring;
+import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.acl.ExternalServiceRequestServiceForMonitoring;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.MaintenanceWindow;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.RecordEdgeEventCommand;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.ClosureReason;

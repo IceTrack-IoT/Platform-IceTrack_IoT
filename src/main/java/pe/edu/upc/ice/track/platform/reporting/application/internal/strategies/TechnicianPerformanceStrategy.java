@@ -1,7 +1,7 @@
 package pe.edu.upc.ice.track.platform.reporting.application.internal.strategies;
 
 import org.springframework.stereotype.Service;
-import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.servicerequests.ExternalServiceRequestsServiceForReporting;
+import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.acl.ExternalServiceRequestsServiceForReporting;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.DateRange;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.KpiValue;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportFilters;

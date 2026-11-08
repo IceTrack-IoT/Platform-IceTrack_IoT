@@ -5,7 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.monitoring.application.commandservices.AlertCommandService;
 import pe.edu.upc.ice.track.platform.monitoring.application.internal.accesspolicies.EquipmentAccessPolicy;
-import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.profiles.ExternalProfilesServiceForMonitoring;
+import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.acl.ExternalProfilesServiceForMonitoring;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.Alert;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.AcknowledgeAlertCommand;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.DismissAlertCommand;

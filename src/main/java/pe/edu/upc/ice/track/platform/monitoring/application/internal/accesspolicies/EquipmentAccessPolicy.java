@@ -1,9 +1,9 @@
 package pe.edu.upc.ice.track.platform.monitoring.application.internal.accesspolicies;
 
 import org.springframework.stereotype.Service;
-import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.assetmanagement.ExternalAssetManagementService;
-import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.profiles.ExternalProfilesServiceForMonitoring;
-import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.servicerequests.ExternalServiceRequestServiceForMonitoring;
+import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.acl.ExternalAssetManagementService;
+import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.acl.ExternalProfilesServiceForMonitoring;
+import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.acl.ExternalServiceRequestServiceForMonitoring;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 
 /**

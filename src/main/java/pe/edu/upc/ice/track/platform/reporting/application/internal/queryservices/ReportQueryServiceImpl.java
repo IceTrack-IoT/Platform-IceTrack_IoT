@@ -1,7 +1,7 @@
 package pe.edu.upc.ice.track.platform.reporting.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
-import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.profiles.ExternalProfilesServiceForReporting;
+import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.acl.ExternalProfilesServiceForReporting;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.storage.ReportFileStorage;
 import pe.edu.upc.ice.track.platform.reporting.application.queryservices.ReportQueryService;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates.Report;

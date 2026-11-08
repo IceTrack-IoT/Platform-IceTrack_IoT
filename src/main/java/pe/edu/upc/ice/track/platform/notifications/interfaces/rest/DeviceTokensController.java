@@ -13,7 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import pe.edu.upc.ice.track.platform.notifications.application.commandservices.DeviceTokenCommandService;
-import pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.profiles.ExternalProfilesServiceForNotifications;
+import pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.acl.ExternalProfilesServiceForNotifications;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.RegisterDeviceTokenCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.UnregisterDeviceTokenCommand;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.RegisterDeviceTokenResource;

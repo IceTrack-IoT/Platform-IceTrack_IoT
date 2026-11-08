@@ -6,7 +6,7 @@ import java.util.Set;
 
 /**
  * Outbound port through which the notifications application layer asks an external push
- * provider (Firebase Cloud Messaging today) to deliver a message to a set of devices.
+ * provider (Firebase Cloud Messaging) to deliver a message to a set of devices.
  *
  * <p>The application layer depends on this port only; the adapter in
  * {@code notifications.infrastructure.push} is the single class that knows the provider's SDK.</p>

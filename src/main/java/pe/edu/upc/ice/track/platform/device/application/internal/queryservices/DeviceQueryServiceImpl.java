@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.device.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.DeviceExternalOwnerService;
-import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.assetmanagement.ExternalAssetManagementServiceForDevice;
+import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.ExternalAssetManagementServiceForDevice;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.credentials.DeviceCredentialService;
 import pe.edu.upc.ice.track.platform.device.application.queryservices.DeviceQueryService;
 import pe.edu.upc.ice.track.platform.device.application.results.DeviceAuthenticationResult;

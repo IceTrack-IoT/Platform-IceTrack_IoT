@@ -6,7 +6,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.notifications.application.commandservices.NotificationCommandService;
 import pe.edu.upc.ice.track.platform.notifications.application.internal.messages.NotificationMessageComposer;
-import pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.assetmanagement.ExternalAssetManagementServiceForNotifications;
+import pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.acl.ExternalAssetManagementServiceForNotifications;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.CreateNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.DismissNotificationCommand;

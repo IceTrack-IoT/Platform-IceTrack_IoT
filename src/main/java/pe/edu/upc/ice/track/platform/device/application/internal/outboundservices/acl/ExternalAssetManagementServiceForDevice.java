@@ -1,4 +1,4 @@
-package pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.assetmanagement;
+package pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl;
 
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.assets.interfaces.acl.AssetContextFacade;

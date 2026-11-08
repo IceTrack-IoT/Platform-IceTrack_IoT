@@ -1,4 +1,4 @@
-package pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.profiles;
+package pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.acl;
 
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.iam.interfaces.acl.IamContextFacade;
