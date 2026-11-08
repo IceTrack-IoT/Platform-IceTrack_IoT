@@ -70,6 +70,12 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- In-memory database for the test profile, so context tests need no running PostgreSQL -->
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<!-- Architecture rules (src/test/.../architecture/ArchitectureTest). 1.5.x reads Java 26 class files. -->
 		<dependency>
 			<groupId>com.tngtech.archunit</groupId>
