@@ -4,7 +4,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Closur
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EdgeEventType;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.MaintenanceOrigin;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -33,7 +33,7 @@ public record RecordEdgeEventCommand(
     EdgeEventType type,
     Long deviceId,
     Long equipmentId,
-    LocalDateTime occurredAt,
+    Instant occurredAt,
     Double temperatureCelsius,
     Double peakTemperatureCelsius,
     UUID readingUid,

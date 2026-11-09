@@ -3,11 +3,15 @@ package pe.edu.upc.ice.track.platform.assets.interfaces.acl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upc.ice.track.platform.assets.application.commandservices.EquipmentCommandService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.MarkEquipmentOfflineCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RecordEquipmentReadingCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -30,7 +34,8 @@ import java.util.Optional;
  *
  * <p>Reads go straight to the repositories rather than through the query services: those resolve
  * an authenticated caller's username to an owner, while a cross-context caller either asks about a
- * unit whatever its owner or already holds the owner identifier to check against.</p>
+ * unit whatever its owner or already holds the owner identifier to check against. Writes go
+ * through {@link EquipmentCommandService}, so the aggregate enforces its own rules.</p>
  */
 @Service
 @Slf4j
@@ -38,17 +43,22 @@ public class AssetContextFacade {
 
   private final EquipmentRepository equipmentRepository;
   private final SiteRepository siteRepository;
+  private final EquipmentCommandService equipmentCommandService;
 
   /**
    * Constructor
    *
-   * @param equipmentRepository The {@link EquipmentRepository} instance
-   * @param siteRepository      The {@link SiteRepository} instance, used to resolve the owner of a
-   *                            unit's site
+   * @param equipmentRepository     The {@link EquipmentRepository} instance
+   * @param siteRepository          The {@link SiteRepository} instance, used to resolve the owner of a
+   *                                unit's site
+   * @param equipmentCommandService The {@link EquipmentCommandService} instance, applying the
+   *                                telemetry state Monitoring and Alerting reports
    */
-  public AssetContextFacade(EquipmentRepository equipmentRepository, SiteRepository siteRepository) {
+  public AssetContextFacade(EquipmentRepository equipmentRepository, SiteRepository siteRepository,
+                            EquipmentCommandService equipmentCommandService) {
     this.equipmentRepository = equipmentRepository;
     this.siteRepository = siteRepository;
+    this.equipmentCommandService = equipmentCommandService;
   }
 
   /**
@@ -204,6 +214,57 @@ public class AssetContextFacade {
       return Optional.empty();
     }
     return equipmentRepository.findByUid(uid).map(Equipment::getEquipmentId);
+  }
+
+  /**
+   * Records that a reading batch of a unit was stored.
+   *
+   * <p>Monitoring and Alerting calls this for every new batch, inside its ingestion transaction. The
+   * unit goes online, and its last reading instant and temperature move to the batch's unless the
+   * batch is older than the latest one recorded.</p>
+   *
+   * @param equipmentId        identifier of the equipment
+   * @param temperatureCelsius the temperature the batch reports, may be {@code null}
+   * @param recordedAt         when the batch was taken
+   * @return {@code true} when the unit exists and was updated; {@code false} when an identifier or
+   *         the instant is {@code null}, or the unit does not exist
+   */
+  public boolean recordEquipmentReading(Long equipmentId, Double temperatureCelsius, Instant recordedAt) {
+    if (equipmentId == null || recordedAt == null) {
+      return false;
+    }
+    return equipmentCommandService.handle(
+        new RecordEquipmentReadingCommand(equipmentId, temperatureCelsius, recordedAt));
+  }
+
+  /**
+   * Records that a unit stopped reporting.
+   *
+   * <p>Monitoring and Alerting calls this when it raises a {@code DEVICE_OFFLINE} alert for the unit.</p>
+   *
+   * @param equipmentId identifier of the equipment
+   * @return {@code true} when the unit was online and is now offline
+   */
+  public boolean markEquipmentOffline(Long equipmentId) {
+    if (equipmentId == null) {
+      return false;
+    }
+    return equipmentCommandService.handle(new MarkEquipmentOfflineCommand(equipmentId));
+  }
+
+  /**
+   * Returns the identifiers of every unit currently shown as connected, whatever its owner.
+   *
+   * <p>Monitoring and Alerting checks these units for silence: only a connected unit can stop
+   * reporting.</p>
+   *
+   * @return the unit identifiers, by ascending identifier; empty when no unit is online
+   */
+  @Transactional(readOnly = true)
+  public List<Long> fetchOnlineEquipmentIds() {
+    return equipmentRepository.findOnline().stream()
+        .map(Equipment::getEquipmentId)
+        .toList();
   }
 
   /**

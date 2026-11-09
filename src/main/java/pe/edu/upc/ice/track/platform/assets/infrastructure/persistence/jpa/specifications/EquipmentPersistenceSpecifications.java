@@ -9,7 +9,7 @@ import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entit
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entities.SitePersistenceEntity;
 
 import java.util.ArrayList;
-import java.util.Date;
+import java.time.Instant;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -108,12 +108,12 @@ public final class EquipmentPersistenceSpecifications {
    * @param updatedAt   the modification timestamp to record; required
    * @return the update, affecting one row at most
    */
-  public static UpdateSpecification<EquipmentPersistenceEntity> incrementConfigVersion(Long equipmentId, Date updatedAt) {
+  public static UpdateSpecification<EquipmentPersistenceEntity> incrementConfigVersion(Long equipmentId, Instant updatedAt) {
     Objects.requireNonNull(equipmentId, "equipmentId must not be null");
     Objects.requireNonNull(updatedAt, "updatedAt must not be null");
     return (root, update, criteriaBuilder) -> {
       update.set(root.<Integer>get(CONFIG_VERSION), criteriaBuilder.sum(root.<Integer>get(CONFIG_VERSION), 1));
-      update.set(root.<Date>get(UPDATED_AT), updatedAt);
+      update.set(root.<Instant>get(UPDATED_AT), updatedAt);
       return criteriaBuilder.equal(root.get(IDENTIFIER), equipmentId);
     };
   }

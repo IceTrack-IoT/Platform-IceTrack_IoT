@@ -6,6 +6,8 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCo
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.EnterMaintenanceCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.LeaveMaintenanceCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.MarkEquipmentOfflineCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RecordEquipmentReadingCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateEquipmentCommand;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
@@ -84,6 +86,25 @@ public interface EquipmentCommandService {
    * @return {@code true} when the unit left maintenance
    */
   boolean handle(LeaveMaintenanceCommand command);
+
+  /**
+   * Record that a reading batch of a unit was stored: the unit goes online and, unless the batch is
+   * older than the latest one recorded, its last reading instant and temperature move to the batch's.
+   * A unit that does not exist is left alone.
+   *
+   * @param command The {@link RecordEquipmentReadingCommand} Command
+   * @return {@code true} when the unit exists and was updated
+   */
+  boolean handle(RecordEquipmentReadingCommand command);
+
+  /**
+   * Record that a unit stopped reporting. A unit that does not exist or is already offline is left
+   * unchanged.
+   *
+   * @param command The {@link MarkEquipmentOfflineCommand} Command
+   * @return {@code true} when the unit was online and is now offline
+   */
+  boolean handle(MarkEquipmentOfflineCommand command);
 
   /**
    * Move a unit to a new operational status, when the transition is part of the matrix carried

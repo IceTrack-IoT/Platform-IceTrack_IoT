@@ -7,7 +7,7 @@ import pe.edu.upc.ice.track.platform.device.domain.model.events.DeviceUnpairedEv
 import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DeviceStatus;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -49,7 +49,7 @@ public class Device extends AbstractDomainAggregateRoot<Device> {
   private String apiKeyDigest;
   private DeviceStatus status;
   private Long pairedEquipmentId;
-  private LocalDateTime lastSeenAt;
+  private Instant lastSeenAt;
 
   /** Creates a newly registered board: unpaired and without a credential. */
   public Device(Long deviceId, String deviceUid, String boardModel, String firmwareVersion) {
@@ -64,7 +64,7 @@ public class Device extends AbstractDomainAggregateRoot<Device> {
    */
   public Device(Long deviceId, String deviceUid, String boardModel, String firmwareVersion,
                 String apiKeyDigest, DeviceStatus status, Long pairedEquipmentId,
-                LocalDateTime lastSeenAt) {
+                Instant lastSeenAt) {
     this.deviceId = deviceId;
     this.deviceUid = requiredText(deviceUid, "Device uid", MAX_DEVICE_UID_LENGTH);
     this.boardModel = requiredText(boardModel, "Board model", MAX_BOARD_MODEL_LENGTH);
@@ -184,7 +184,7 @@ public class Device extends AbstractDomainAggregateRoot<Device> {
   }
 
   /** Registers the most recent successful authenticated contact from the board. */
-  public void recordActivity(LocalDateTime seenAt) {
+  public void recordActivity(Instant seenAt) {
     if (status != DeviceStatus.PAIRED) {
       throw new IllegalStateException("Only a paired device can report activity");
     }

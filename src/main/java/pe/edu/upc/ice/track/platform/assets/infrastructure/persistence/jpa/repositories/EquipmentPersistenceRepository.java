@@ -51,4 +51,6 @@ public interface EquipmentPersistenceRepository
    * @return {@code true} when some unit already uses it
    */
   boolean existsByEquipmentUid(String equipmentUid);
+
+  List<EquipmentPersistenceEntity> findByOnlineTrueOrderByIdAsc();
 }

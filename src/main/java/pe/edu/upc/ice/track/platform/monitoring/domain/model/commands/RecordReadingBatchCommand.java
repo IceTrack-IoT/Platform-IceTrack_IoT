@@ -1,6 +1,6 @@
 package pe.edu.upc.ice.track.platform.monitoring.domain.model.commands;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -43,6 +43,6 @@ public record RecordReadingBatchCommand(
     Double lightLevelMax,
     Integer doorOpenSeconds,
     Boolean presenceDetected,
-    LocalDateTime recordedAt,
+    Instant recordedAt,
     Long appliedConfigVersion) {
 }

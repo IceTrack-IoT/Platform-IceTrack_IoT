@@ -12,7 +12,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EdgeEv
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EdgeEventType;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -46,7 +46,7 @@ public class EdgeEventPersistenceEntity extends AuditableAbstractPersistenceEnti
   private EdgeEventType type;
 
   @Column(name = "occurred_at", nullable = false)
-  private LocalDateTime occurredAt;
+  private Instant occurredAt;
 
   @Column(name = "temperature_celsius")
   private Double temperatureCelsius;

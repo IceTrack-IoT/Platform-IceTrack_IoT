@@ -8,7 +8,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Humidi
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Temperature;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -72,8 +72,8 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
   private final Humidity humidity;
   private final Integer sampleCount;
   private final EnvironmentObservation environment;
-  private final LocalDateTime recordedAt;
-  private final LocalDateTime receivedAt;
+  private final Instant recordedAt;
+  private final Instant receivedAt;
   private final Long appliedConfigVersion;
 
   /**
@@ -90,7 +90,7 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
                        Double minTemperature, Double maxTemperature, Double avgTemperature,
                        Double rawMinTemperature, Double rawMaxTemperature, Double rawAvgTemperature,
                        Double humidity, Integer sampleCount, EnvironmentObservation environment,
-                       LocalDateTime recordedAt, LocalDateTime receivedAt, Long appliedConfigVersion,
+                       Instant recordedAt, Instant receivedAt, Long appliedConfigVersion,
                        boolean underMaintenance) {
     this.readingUid = Objects.requireNonNull(readingUid, "readingUid must not be null");
     this.equipmentId = Objects.requireNonNull(equipmentId, "equipmentId must not be null");
@@ -105,7 +105,7 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
     this.sampleCount = sampleCount;
     this.environment = environment == null ? EnvironmentObservation.UNAVAILABLE : environment;
     this.recordedAt = Objects.requireNonNull(recordedAt, "recordedAt must not be null");
-    this.receivedAt = receivedAt == null ? LocalDateTime.now() : receivedAt;
+    this.receivedAt = receivedAt == null ? Instant.now() : receivedAt;
     this.appliedConfigVersion = appliedConfigVersion;
     this.underMaintenance = underMaintenance;
   }
@@ -127,7 +127,7 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
                                      Double minTemperature, Double maxTemperature, Double avgTemperature,
                                      Double rawMinTemperature, Double rawMaxTemperature, Double rawAvgTemperature,
                                      Double humidity, Integer sampleCount, EnvironmentObservation environment,
-                                     LocalDateTime recordedAt, Long appliedConfigVersion, boolean underMaintenance) {
+                                     Instant recordedAt, Long appliedConfigVersion, boolean underMaintenance) {
     requireRawInSensorRange("rawMinTemperature", rawMinTemperature);
     requireRawInSensorRange("rawMaxTemperature", rawMaxTemperature);
     requireRawInSensorRange("rawAvgTemperature", rawAvgTemperature);
@@ -154,7 +154,7 @@ public class SensorReading extends AbstractDomainAggregateRoot<SensorReading> {
     var reading = new SensorReading(readingUid, equipmentId, deviceId,
         minTemperature, maxTemperature, avgTemperature,
         rawMinTemperature, rawMaxTemperature, rawAvgTemperature,
-        humidity, sampleCount, environment, recordedAt, LocalDateTime.now(), appliedConfigVersion, underMaintenance);
+        humidity, sampleCount, environment, recordedAt, Instant.now(), appliedConfigVersion, underMaintenance);
     reading.registerDomainEvent(new ReadingRecordedEvent(
         reading.readingUid, reading.equipmentId.equipmentId(), reading.deviceId,
         reading.minTemperature.celsius(), reading.maxTemperature.celsius(), reading.avgTemperature.celsius(),

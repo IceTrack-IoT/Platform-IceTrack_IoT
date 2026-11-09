@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.monitoring.domain.model.queries;
 
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Query to fetch the reading history of an equipment within a date range, on behalf of an
@@ -18,5 +18,5 @@ import java.time.LocalDateTime;
  * @param callerRole  the role the caller acts in; {@code null} is treated as {@link CallerRole#OWNER}
  */
 public record GetReadingsByEquipmentQuery(
-    Long equipmentId, LocalDateTime from, LocalDateTime to, String username, CallerRole callerRole) {
+    Long equipmentId, Instant from, Instant to, String username, CallerRole callerRole) {
 }

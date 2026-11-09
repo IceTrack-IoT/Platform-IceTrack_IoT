@@ -155,8 +155,9 @@ public class TelemetryStreamController {
   })
   public ResponseEntity<SseEmitter> openStream(
       @RequestParam(name = "ticket", required = false)
-      @Parameter(description = "Stream ticket issued by POST /api/v1/telemetry/stream-ticket",
-          example = "st_9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", required = true)
+      @Parameter(description = "Stream ticket issued by POST /api/v1/telemetry/stream-ticket. Declared optional so "
+          + "that a missing ticket is answered like any refused one: 401 UNAUTHORIZED, not 400",
+          example = "st_9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
       String ticket) {
     var ownerProfileId = telemetryStreamCommandService.handle(new RedeemStreamTicketCommand(ticket))
         .orElseThrow(InvalidStreamTicketException::new);

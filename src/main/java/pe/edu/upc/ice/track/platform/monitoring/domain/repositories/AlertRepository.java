@@ -4,7 +4,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.Alert;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertStatus;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -55,5 +55,5 @@ public interface AlertRepository {
    * @param to  the end of the time range (inclusive)
    * @return  the matching alerts; callers decide how DISMISSED alerts are treated
    */
-  List<Alert> findByEquipmentIdAndTypeOpenedBetween(Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to);
+  List<Alert> findByEquipmentIdAndTypeOpenedBetween(Long equipmentId, AlertType type, Instant from, Instant to);
 }

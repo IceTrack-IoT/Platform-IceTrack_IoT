@@ -7,6 +7,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import pe.edu.upc.ice.track.platform.monitoring.application.commandservices.SensorReadingCommandService;
 import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.acl.ExternalAssetManagementService;
+import pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundservices.acl.ExternalDeviceServiceForMonitoring;
 import pe.edu.upc.ice.track.platform.monitoring.application.results.ReadingIngestionOutcome;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.Alert;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.AlertPolicy;
@@ -36,7 +37,13 @@ import java.time.Duration;
  * the team later prefers to extract it, it would become the first inhabitant of a new
  * {@code monitoring.domain.services} package.</p>
  *
- * <p>Ingestion is transactional: the reading, any alert it resolves, and
+ * <p>Every stored batch also refreshes the connectivity view other contexts display: the unit goes
+ * online with the batch as its latest reading (through {@link ExternalAssetManagementService}), the
+ * device's last contact moves to the batch's arrival (through
+ * {@link ExternalDeviceServiceForMonitoring}), and an active {@code DEVICE_OFFLINE} alert of the unit
+ * is resolved, because the unit is reporting again. A duplicate batch changes none of them.</p>
+ *
+ * <p>Ingestion is transactional: the reading, the connectivity updates, any alert it resolves, and
  * whatever the synchronous listeners of those alerts write commit together or not at all. A
  * failure after the reading row is written therefore no longer leaves a stored reading whose
  * retries are all discarded as duplicates, with its threshold evaluation lost.</p>
@@ -57,6 +64,7 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
   private final AlertRepository alertRepository;
   private final AlertPolicyRepository alertPolicyRepository;
   private final ExternalAssetManagementService externalAssetManagementService;
+  private final ExternalDeviceServiceForMonitoring externalDeviceService;
   private final MaintenanceWindowRepository maintenanceWindowRepository;
   private final TransactionTemplate transactionTemplate;
 
@@ -65,12 +73,14 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
       AlertRepository alertRepository,
       AlertPolicyRepository alertPolicyRepository,
       ExternalAssetManagementService externalAssetManagementService,
+      ExternalDeviceServiceForMonitoring externalDeviceService,
       MaintenanceWindowRepository maintenanceWindowRepository,
       PlatformTransactionManager transactionManager) {
     this.sensorReadingRepository = sensorReadingRepository;
     this.alertRepository = alertRepository;
     this.alertPolicyRepository = alertPolicyRepository;
     this.externalAssetManagementService = externalAssetManagementService;
+    this.externalDeviceService = externalDeviceService;
     this.maintenanceWindowRepository = maintenanceWindowRepository;
     this.transactionTemplate = new TransactionTemplate(transactionManager);
   }
@@ -88,7 +98,7 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
     // is still recognized as taken during maintenance.
     var underMaintenance = command.equipmentId() != null && command.recordedAt() != null
         && maintenanceWindowRepository.findCovering(
-            command.equipmentId(), EdgeTimestamps.toInstant(command.recordedAt())).isPresent();
+            command.equipmentId(), command.recordedAt()).isPresent();
 
     // Validated before any write: a batch outside the sensor's physical range is never stored.
     var reading = SensorReading.record(
@@ -102,6 +112,7 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
     try {
       return transactionTemplate.execute(status -> {
         var savedReading = sensorReadingRepository.save(reading);
+        refreshConnectivity(savedReading);
         evaluateThreshold(savedReading);
         return new ReadingIngestionOutcome.Recorded(savedReading);
       });
@@ -113,6 +124,30 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
           })
           .orElseThrow(() -> e);
     }
+  }
+
+  /**
+   * Reports a stored reading as the unit's and the device's latest sign of life, and resolves the
+   * unit's active {@code DEVICE_OFFLINE} alert.
+   *
+   * <p>A batch taken during a maintenance window counts too: it still proves the unit is reporting.
+   * The unit's last reading is judged by when the batch was taken, the device's last contact by when
+   * the platform received it.</p>
+   *
+   * @param reading the reading that was just stored
+   */
+  private void refreshConnectivity(SensorReading reading) {
+    var equipmentId = reading.getEquipmentId().equipmentId();
+    externalAssetManagementService.recordEquipmentReading(
+        equipmentId, reading.getAvgTemperature().celsius(), reading.getRecordedAt());
+    externalDeviceService.recordDeviceActivity(reading.getDeviceId(), reading.getReceivedAt());
+    alertRepository.findOpenAlertByEquipmentIdAndType(equipmentId, AlertType.DEVICE_OFFLINE)
+        .ifPresent(offlineAlert -> {
+          offlineAlert.resolveAutomatically();
+          alertRepository.save(offlineAlert);
+          log.info("Resolved offline alert {} of equipment {}: reading {} received",
+              offlineAlert.getId(), equipmentId, reading.getReadingUid());
+        });
   }
 
   /**

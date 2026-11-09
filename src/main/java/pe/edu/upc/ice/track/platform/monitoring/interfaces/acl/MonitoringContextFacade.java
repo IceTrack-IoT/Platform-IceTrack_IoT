@@ -12,9 +12,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.MaintenanceW
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadingRepository;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -120,7 +118,7 @@ public class MonitoringContextFacade {
    * @return how many alerts of the type were opened for the equipment within the range, outside maintenance
    */
   public long countAlertsByEquipmentAndTypeInRange(
-      Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
+      Long equipmentId, String alertType, Instant from, Instant to) {
     var type = AlertType.valueOf(alertType.toUpperCase());
     var windows = maintenanceIntervals(equipmentId, from, to);
     return alertRepository.findByEquipmentIdAndTypeOpenedBetween(equipmentId, type, from, to).stream()
@@ -142,7 +140,7 @@ public class MonitoringContextFacade {
    * @return total hours under alerts of the type within the range, excluding maintenance
    */
   public double fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
-      Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
+      Long equipmentId, String alertType, Instant from, Instant to) {
     var type = AlertType.valueOf(alertType.toUpperCase());
     var windows = maintenanceIntervals(equipmentId, from, to);
     return alertRepository.findByEquipmentIdAndTypeOpenedBetween(equipmentId, type, from, to).stream()
@@ -166,7 +164,7 @@ public class MonitoringContextFacade {
    * Returns the temperature samples a unit recorded within a range, outside maintenance.
    *
    * <p>Each row is {@code {celsius, epochSeconds}}: the calibrated average temperature of one reading
-   * and the moment it was recorded, in seconds since the epoch as read in UTC. Rows come in time order.</p>
+   * and the moment it was recorded, in seconds since the epoch. Rows come in time order.</p>
    *
    * @param equipmentId identifier of the unit
    * @param from        inclusive start of the range
@@ -174,7 +172,7 @@ public class MonitoringContextFacade {
    * @return the samples, empty when the unit recorded none in the range
    */
   public List<double[]> fetchTemperatureSamplesByEquipmentInRange(
-      Long equipmentId, LocalDateTime from, LocalDateTime to) {
+      Long equipmentId, Instant from, Instant to) {
     if (equipmentId == null) {
       return List.of();
     }
@@ -184,7 +182,7 @@ public class MonitoringContextFacade {
         .sorted(Comparator.comparing(SensorReading::getRecordedAt))
         .map(reading -> new double[] {
             reading.getAvgTemperature().celsius(),
-            reading.getRecordedAt().toEpochSecond(ZoneOffset.UTC)})
+            reading.getRecordedAt().getEpochSecond()})
         .toList();
   }
 
@@ -196,17 +194,16 @@ public class MonitoringContextFacade {
    * @param to          inclusive end of the range
    * @return the merged maintenance intervals, sorted by start
    */
-  private List<Interval> maintenanceIntervals(Long equipmentId, LocalDateTime from, LocalDateTime to) {
+  private List<Interval> maintenanceIntervals(Long equipmentId, Instant from, Instant to) {
     if (equipmentId == null) {
       return List.of();
     }
-    var zone = ZoneId.systemDefault();
-    var searchFrom = from.atZone(zone).toInstant().minus(MAINTENANCE_LOOKBACK);
-    var searchTo = to.atZone(zone).toInstant();
+    var searchFrom = from.minus(MAINTENANCE_LOOKBACK);
+    var searchTo = to;
     var raw = new ArrayList<Interval>();
     for (var window : maintenanceWindowRepository.findByEquipmentIdAndStartedAtBetween(equipmentId, searchFrom, searchTo)) {
-      var start = LocalDateTime.ofInstant(window.getStartedAt(), zone);
-      var end = window.getEndedAt() == null ? to : LocalDateTime.ofInstant(window.getEndedAt(), zone);
+      var start = window.getStartedAt();
+      var end = window.getEndedAt() == null ? to : window.getEndedAt();
       var clipped = new Interval(start.isBefore(from) ? from : start, end.isAfter(to) ? to : end);
       if (clipped.end().isAfter(clipped.start())) {
         raw.add(clipped);
@@ -221,13 +218,13 @@ public class MonitoringContextFacade {
    * @param start inclusive start
    * @param end   exclusive end
    */
-  private record Interval(LocalDateTime start, LocalDateTime end) {
+  private record Interval(Instant start, Instant end) {
 
-    boolean contains(LocalDateTime instant) {
+    boolean contains(Instant instant) {
       return instant != null && !instant.isBefore(start) && instant.isBefore(end);
     }
 
-    long overlapSeconds(LocalDateTime from, LocalDateTime to) {
+    long overlapSeconds(Instant from, Instant to) {
       var overlapStart = start.isAfter(from) ? start : from;
       var overlapEnd = end.isBefore(to) ? end : to;
       return overlapEnd.isAfter(overlapStart) ? Duration.between(overlapStart, overlapEnd).toSeconds() : 0L;

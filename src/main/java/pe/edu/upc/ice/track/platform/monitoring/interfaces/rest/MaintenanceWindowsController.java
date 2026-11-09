@@ -84,11 +84,11 @@ public class MaintenanceWindowsController {
       Long equipmentId,
       @RequestParam(required = false)
       @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-      @Parameter(description = "Inclusive lower bound of the window start", example = "2026-11-01T00:00:00Z")
+      @Parameter(description = "Inclusive lower bound of the window start; ISO 8601 with Z or an explicit offset; a value without offset is rejected", example = "2026-11-01T00:00:00Z")
       Instant from,
       @RequestParam(required = false)
       @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-      @Parameter(description = "Inclusive upper bound of the window start", example = "2026-11-30T23:59:59Z")
+      @Parameter(description = "Inclusive upper bound of the window start; ISO 8601 with Z or an explicit offset; a value without offset is rejected", example = "2026-11-30T23:59:59Z")
       Instant to,
       Authentication authentication) {
     final GetMaintenanceWindowsByEquipmentQuery query;

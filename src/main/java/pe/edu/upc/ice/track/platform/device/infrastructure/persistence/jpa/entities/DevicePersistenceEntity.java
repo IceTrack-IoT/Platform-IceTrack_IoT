@@ -11,7 +11,7 @@ import lombok.Setter;
 import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DeviceStatus;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * JPA representation of the Device aggregate.
@@ -55,7 +55,7 @@ public class DevicePersistenceEntity extends AuditableAbstractPersistenceEntity 
   private Long pairedEquipmentId;
 
   @Column(name = "last_seen_at")
-  private LocalDateTime lastSeenAt;
+  private Instant lastSeenAt;
 
   public DevicePersistenceEntity() {
   }

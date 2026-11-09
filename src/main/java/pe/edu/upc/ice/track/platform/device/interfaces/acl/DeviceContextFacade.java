@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.device.interfaces.acl;
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.device.application.commandservices.DeviceCommandService;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Published in-process contract of the Device Management context.
@@ -20,7 +20,16 @@ public class DeviceContextFacade {
     this.deviceCommandService = deviceCommandService;
   }
 
-  public void recordActivity(Long deviceId, LocalDateTime seenAt) {
+  /**
+   * Records the latest contact of a paired device, which becomes its {@code last_seen_at}.
+   *
+   * <p>Monitoring and Alerting calls this for every reading batch it stores, with the instant the
+   * platform received it. A device that is unknown or no longer paired is left alone.</p>
+   *
+   * @param deviceId identifier of the device
+   * @param seenAt   when the platform received the device's payload
+   */
+  public void recordActivity(Long deviceId, Instant seenAt) {
     deviceCommandService.recordActivity(deviceId, seenAt);
   }
 }

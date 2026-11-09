@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Resource for an alert, including its triggering reading and its lifecycle history.
@@ -13,10 +13,10 @@ import java.time.LocalDateTime;
         + "through its lifecycle and when",
     example = "{\"id\": 301, \"equipment_id\": 1, \"type\": \"TEMPERATURE_EXCURSION\", \"severity\": \"CRITICAL\", "
         + "\"status\": \"DISMISSED\", \"triggering_reading_id\": 8812, \"triggering_temperature\": 9.5, "
-        + "\"triggering_recorded_at\": \"2026-09-29T08:31:00\", \"peak_temperature\": 9.5, "
-        + "\"opened_at\": \"2026-09-29T08:32:00\", \"acknowledged_by\": 42, "
-        + "\"acknowledged_at\": \"2026-09-29T08:40:00\", \"resolved_by\": null, \"resolved_at\": null, "
-        + "\"dismissed_by\": 42, \"dismissed_at\": \"2026-09-29T08:45:00\", "
+        + "\"triggering_recorded_at\": \"2026-09-29T08:31:00Z\", \"peak_temperature\": 9.5, "
+        + "\"opened_at\": \"2026-09-29T08:32:00Z\", \"acknowledged_by\": 42, "
+        + "\"acknowledged_at\": \"2026-09-29T08:40:00Z\", \"resolved_by\": null, \"resolved_at\": null, "
+        + "\"dismissed_by\": 42, \"dismissed_at\": \"2026-09-29T08:45:00Z\", "
         + "\"dismiss_reason\": \"Planned defrost cycle\", \"dismiss_evidence\": null, "
         + "\"total_duration_seconds\": 780}"
 )
@@ -46,34 +46,34 @@ public record AlertResource(
         + "its minimum below it; null for a DEVICE_OFFLINE alert", example = "9.5", nullable = true)
     Double triggeringTemperature,
 
-    @Schema(description = "When the triggering reading was recorded", example = "2026-09-29T08:31:00", nullable = true)
-    LocalDateTime triggeringRecordedAt,
+    @Schema(description = "When the triggering reading was recorded", example = "2026-09-29T08:31:00Z", nullable = true)
+    Instant triggeringRecordedAt,
 
     @Schema(description = "Peak temperature observed during the excursion, in Celsius; "
         + "null for a DEVICE_OFFLINE alert", example = "9.5", nullable = true)
     Double peakTemperature,
 
-    @Schema(description = "Timestamp the alert was raised", example = "2026-09-29T08:32:00")
-    LocalDateTime openedAt,
+    @Schema(description = "Timestamp the alert was raised", example = "2026-09-29T08:32:00Z")
+    Instant openedAt,
 
     @Schema(description = "IAM user identifier of who acknowledged the alert", example = "42", nullable = true)
     Long acknowledgedBy,
 
-    @Schema(description = "When the alert was acknowledged", example = "2026-09-29T08:40:00", nullable = true)
-    LocalDateTime acknowledgedAt,
+    @Schema(description = "When the alert was acknowledged", example = "2026-09-29T08:40:00Z", nullable = true)
+    Instant acknowledgedAt,
 
     @Schema(description = "IAM user identifier of who resolved the alert; null while not resolved, or when it was "
         + "resolved automatically because readings returned within range", example = "42", nullable = true)
     Long resolvedBy,
 
-    @Schema(description = "When the alert was resolved", example = "2026-09-29T09:10:00", nullable = true)
-    LocalDateTime resolvedAt,
+    @Schema(description = "When the alert was resolved", example = "2026-09-29T09:10:00Z", nullable = true)
+    Instant resolvedAt,
 
     @Schema(description = "IAM user identifier of who dismissed the alert", example = "42", nullable = true)
     Long dismissedBy,
 
-    @Schema(description = "When the alert was dismissed", example = "2026-09-29T08:45:00", nullable = true)
-    LocalDateTime dismissedAt,
+    @Schema(description = "When the alert was dismissed", example = "2026-09-29T08:45:00Z", nullable = true)
+    Instant dismissedAt,
 
     @Schema(description = "Justification given when the alert was dismissed", example = "Planned defrost cycle",
         nullable = true)

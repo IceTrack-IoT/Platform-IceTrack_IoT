@@ -6,6 +6,10 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentI
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Temperature;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Objects;
+
 /**
  * AlertPolicy aggregate root of the {@code monitoring} bounded context.
  *
@@ -33,6 +37,12 @@ public class AlertPolicy extends AbstractDomainAggregateRoot<AlertPolicy> {
 
   /** Missed synchronization windows before a device is considered offline. */
   public static final int DEFAULT_MISSED_SYNC_WINDOWS_FOR_OFFLINE = 3;
+
+  /**
+   * Length of one synchronization window: a monitored unit's gateway delivers at least one reading
+   * batch per window.
+   */
+  public static final Duration SYNC_WINDOW = Duration.ofSeconds(60);
 
   private Long id;
   private EquipmentId equipmentId;
@@ -94,5 +104,34 @@ public class AlertPolicy extends AbstractDomainAggregateRoot<AlertPolicy> {
 
   public void deactivate() {
     this.active = false;
+  }
+
+  /**
+   * How long a unit may stay silent before it counts as offline: {@link #SYNC_WINDOW} times
+   * {@code missedSyncWindowsForOffline}. A missing or non-positive count falls back to
+   * {@value #DEFAULT_MISSED_SYNC_WINDOWS_FOR_OFFLINE}.
+   *
+   * @return the silence that makes a unit offline
+   */
+  public Duration offlineSilence() {
+    var missedWindows = missedSyncWindowsForOffline == null || missedSyncWindowsForOffline < 1
+        ? DEFAULT_MISSED_SYNC_WINDOWS_FOR_OFFLINE
+        : missedSyncWindowsForOffline;
+    return SYNC_WINDOW.multipliedBy(missedWindows);
+  }
+
+  /**
+   * Tells whether a unit whose last reading arrived at {@code lastReceivedAt} has been silent long
+   * enough, at {@code now}, to count as offline. Reaching {@link #offlineSilence()} exactly already
+   * counts.
+   *
+   * @param lastReceivedAt when the platform received the unit's latest reading; required
+   * @param now            the instant to judge at; required
+   * @return {@code true} when the unit counts as offline
+   */
+  public boolean isOfflineSince(Instant lastReceivedAt, Instant now) {
+    Objects.requireNonNull(lastReceivedAt, "lastReceivedAt must not be null");
+    Objects.requireNonNull(now, "now must not be null");
+    return !Duration.between(lastReceivedAt, now).minus(offlineSilence()).isNegative();
   }
 }

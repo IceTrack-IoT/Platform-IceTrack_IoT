@@ -16,7 +16,7 @@ import pe.edu.upc.ice.track.platform.device.domain.repositories.DeviceRepository
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Default implementation of the device lifecycle use cases.
@@ -135,7 +135,7 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
 
   @Override
   @Transactional
-  public void recordActivity(Long deviceId, LocalDateTime seenAt) {
+  public void recordActivity(Long deviceId, Instant seenAt) {
     deviceRepository.findById(deviceId).filter(Device::isPaired).ifPresent(device -> {
       device.recordActivity(seenAt);
       deviceRepository.save(device);

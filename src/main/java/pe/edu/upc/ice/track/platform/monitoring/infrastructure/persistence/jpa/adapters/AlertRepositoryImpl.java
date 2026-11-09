@@ -9,7 +9,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertReposit
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.assemblers.AlertPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.repositories.AlertPersistenceRepository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -60,7 +60,7 @@ public class AlertRepositoryImpl implements AlertRepository {
 
   @Override
   public List<Alert> findByEquipmentIdAndTypeOpenedBetween(
-      Long equipmentId, AlertType type, LocalDateTime from, LocalDateTime to) {
+      Long equipmentId, AlertType type, Instant from, Instant to) {
     return persistenceRepository.findByEquipmentIdAndTypeAndOpenedAtBetween(equipmentId, type.name(), from, to).stream()
         .map(AlertPersistenceAssembler::toDomainFromPersistenceEntity)
         .toList();

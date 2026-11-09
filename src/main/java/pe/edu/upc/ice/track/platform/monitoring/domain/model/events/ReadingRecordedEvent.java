@@ -1,6 +1,6 @@
 package pe.edu.upc.ice.track.platform.monitoring.domain.model.events;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -36,7 +36,7 @@ public record ReadingRecordedEvent(
     Double avgTemperature,
     Double humidity,
     Integer sampleCount,
-    LocalDateTime recordedAt,
-    LocalDateTime receivedAt,
+    Instant recordedAt,
+    Instant receivedAt,
     boolean underMaintenance) {
 }

@@ -6,7 +6,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -19,7 +19,7 @@ import java.util.UUID;
     name = "RecordEdgeEventRequest",
     description = "Event detected by an edge gateway",
     example = "{\"event_uid\": \"6f1c2d34-8a7b-4c1e-9f00-1a2b3c4d5e6f\", \"type\": \"THERMAL_EXCURSION_DETECTED\", "
-        + "\"occurred_at\": \"2026-11-07T08:32:00\", \"temperature_celsius\": 9.5, "
+        + "\"occurred_at\": \"2026-11-07T08:32:00Z\", \"temperature_celsius\": 9.5, "
         + "\"reading_uid\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\"}")
 public record RecordEdgeEventResource(
     @NotNull(message = "{validation.not-null}")
@@ -34,8 +34,8 @@ public record RecordEdgeEventResource(
 
     @NotNull(message = "{validation.not-null}")
     @Schema(description = "When the gateway observed the event, by its clock. For maintenance events, when the "
-        + "window started or ended", example = "2026-11-07T08:32:00", requiredMode = Schema.RequiredMode.REQUIRED)
-    LocalDateTime occurredAt,
+        + "window started or ended; ISO 8601 with Z or an explicit offset; a value without offset is rejected", example = "2026-11-07T08:32:00Z", requiredMode = Schema.RequiredMode.REQUIRED)
+    Instant occurredAt,
 
     @DecimalMin(value = "-50.0", message = "{validation.edge-event.temperature}")
     @DecimalMax(value = "60.0", message = "{validation.edge-event.temperature}")

@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.
 import org.springframework.data.jpa.repository.JpaRepository;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.entities.SensorReadingPersistenceEntity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,7 +27,7 @@ public interface SensorReadingPersistenceRepository
    * @return  a list of sensor readings matching the criteria
    */
   List<SensorReadingPersistenceEntity> findByEquipmentIdAndRecordedAtBetween(
-      Long equipmentId, LocalDateTime from, LocalDateTime to);
+      Long equipmentId, Instant from, Instant to);
 
   /**
    *  Finds the most recent 50 sensor readings for a specific equipment, ordered by recorded time in descending order.
@@ -35,4 +35,6 @@ public interface SensorReadingPersistenceRepository
    * @return  a list of the most recent 50 sensor readings for the specified equipment
    */
   List<SensorReadingPersistenceEntity> findTop50ByEquipmentIdOrderByRecordedAtDesc(Long equipmentId);
+
+  Optional<SensorReadingPersistenceEntity> findFirstByEquipmentIdOrderByReceivedAtDesc(Long equipmentId);
 }

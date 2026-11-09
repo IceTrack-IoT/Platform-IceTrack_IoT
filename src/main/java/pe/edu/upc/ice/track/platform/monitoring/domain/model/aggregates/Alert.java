@@ -10,7 +10,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.Temper
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -59,16 +59,16 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
   private AlertStatus status;
   private final Long triggeringReadingId;
   private final Temperature triggeringTemperature;
-  private final LocalDateTime triggeringRecordedAt;
+  private final Instant triggeringRecordedAt;
   private Temperature peakTemperature;
   private final Duration excursionDuration;
-  private LocalDateTime openedAt;
+  private Instant openedAt;
   private Long acknowledgedBy;
-  private LocalDateTime acknowledgedAt;
+  private Instant acknowledgedAt;
   private Long resolvedBy;
-  private LocalDateTime resolvedAt;
+  private Instant resolvedAt;
   private Long dismissedBy;
-  private LocalDateTime dismissedAt;
+  private Instant dismissedAt;
   private String dismissReason;
   private String dismissEvidence;
 
@@ -85,7 +85,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
    * @param excursionDuration     how long the excursion lasted before the alert was raised, or {@code null}
    */
   public Alert(Long equipmentId, AlertType type, AlertSeverity severity, Long triggeringReadingId,
-               Double triggeringTemperature, LocalDateTime triggeringRecordedAt,
+               Double triggeringTemperature, Instant triggeringRecordedAt,
                Double peakTemperature, Duration excursionDuration) {
     this.equipmentId = Objects.requireNonNull(equipmentId, "equipmentId must not be null");
     this.type = Objects.requireNonNull(type, "type must not be null");
@@ -96,7 +96,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     this.peakTemperature = new Temperature(peakTemperature);
     this.excursionDuration = excursionDuration;
     this.status = AlertStatus.OPEN;
-    this.openedAt = LocalDateTime.now();
+    this.openedAt = Instant.now();
   }
 
   /**
@@ -115,14 +115,34 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
    * @return the new OPEN alert, not yet persisted
    */
   public static Alert raisedFromEdge(Long equipmentId, Long triggeringReadingId, Double temperatureCelsius,
-                                     LocalDateTime detectedAt, Duration excursionDuration) {
+                                     Instant detectedAt, Duration excursionDuration) {
     Objects.requireNonNull(temperatureCelsius, "temperatureCelsius must not be null");
     Objects.requireNonNull(detectedAt, "detectedAt must not be null");
     var alert = new Alert(equipmentId, AlertType.TEMPERATURE_EXCURSION, AlertSeverity.CRITICAL, triggeringReadingId,
         temperatureCelsius, detectedAt, temperatureCelsius, excursionDuration);
-    var now = LocalDateTime.now();
+    var now = Instant.now();
     alert.openedAt = detectedAt.isAfter(now) ? now : detectedAt;
     return alert;
+  }
+
+  /**
+   * Raises a device-silence alert: the unit's gateway delivered no reading for the offline window of
+   * its alert policy.
+   *
+   * <p>No temperature is involved, so both temperatures wrap {@code null}. {@code triggeringRecordedAt}
+   * keeps when the last reading was received, which is when the silence began; the alert itself opens
+   * when the silence is detected, so the interruption it measures until its resolution is the time the
+   * owner was told the unit was offline. Raised {@link AlertSeverity#WARNING}: the unit may still be
+   * cooling, the platform has just lost sight of it.</p>
+   *
+   * @param equipmentId the unit; required
+   * @param silentSince when the platform received the unit's last reading; required
+   * @return the new OPEN alert, not yet persisted
+   */
+  public static Alert raisedForSilence(Long equipmentId, Instant silentSince) {
+    Objects.requireNonNull(silentSince, "silentSince must not be null");
+    return new Alert(equipmentId, AlertType.DEVICE_OFFLINE, AlertSeverity.WARNING, null,
+        null, silentSince, null, null);
   }
 
   public void assignId(Long id) {
@@ -156,7 +176,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     var previousStatus = status;
     this.status = AlertStatus.ACKNOWLEDGED;
     this.acknowledgedBy = actorUserId;
-    this.acknowledgedAt = LocalDateTime.now();
+    this.acknowledgedAt = Instant.now();
     announceStatus(previousStatus, acknowledgedAt);
   }
 
@@ -173,7 +193,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     var previousStatus = status;
     this.status = AlertStatus.RESOLVED;
     this.resolvedBy = actorUserId;
-    this.resolvedAt = LocalDateTime.now();
+    this.resolvedAt = Instant.now();
     announceStatus(previousStatus, resolvedAt);
   }
 
@@ -187,7 +207,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     requireActive();
     var previousStatus = status;
     this.status = AlertStatus.RESOLVED;
-    this.resolvedAt = LocalDateTime.now();
+    this.resolvedAt = Instant.now();
     announceStatus(previousStatus, resolvedAt);
   }
 
@@ -205,10 +225,10 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
    * @param normalizedAt           when the gateway normalized the excursion; required
    * @throws IllegalStateException when the alert is already RESOLVED or DISMISSED
    */
-  public void resolveFromEdge(Double peakTemperatureCelsius, LocalDateTime normalizedAt) {
+  public void resolveFromEdge(Double peakTemperatureCelsius, Instant normalizedAt) {
     Objects.requireNonNull(normalizedAt, "normalizedAt must not be null");
     requireActive();
-    var now = LocalDateTime.now();
+    var now = Instant.now();
     var resolution = normalizedAt.isAfter(now) ? now : normalizedAt;
     if (openedAt != null && resolution.isBefore(openedAt)) {
       resolution = openedAt;
@@ -252,7 +272,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
     var previousStatus = status;
     this.status = AlertStatus.DISMISSED;
     this.dismissedBy = actorUserId;
-    this.dismissedAt = LocalDateTime.now();
+    this.dismissedAt = Instant.now();
     this.dismissReason = trimmedReason;
     this.dismissEvidence = trimmedEvidence;
     announceStatus(previousStatus, dismissedAt);
@@ -283,10 +303,10 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
    * @param dismissReason   why it was dismissed, or {@code null}
    * @param dismissEvidence the evidence given for the dismissal, or {@code null}
    */
-  public void restoreState(AlertStatus status, LocalDateTime openedAt,
-                           Long acknowledgedBy, LocalDateTime acknowledgedAt,
-                           Long resolvedBy, LocalDateTime resolvedAt,
-                           Long dismissedBy, LocalDateTime dismissedAt,
+  public void restoreState(AlertStatus status, Instant openedAt,
+                           Long acknowledgedBy, Instant acknowledgedAt,
+                           Long resolvedBy, Instant resolvedAt,
+                           Long dismissedBy, Instant dismissedAt,
                            String dismissReason, String dismissEvidence) {
     this.status = Objects.requireNonNull(status, "status must not be null");
     this.openedAt = Objects.requireNonNull(openedAt, "openedAt must not be null");
@@ -307,7 +327,7 @@ public class Alert extends AbstractDomainAggregateRoot<Alert> {
    * @param previousStatus the status the alert left, or {@code null} when it was just raised
    * @param changedAt      when the alert entered its current status
    */
-  private void announceStatus(AlertStatus previousStatus, LocalDateTime changedAt) {
+  private void announceStatus(AlertStatus previousStatus, Instant changedAt) {
     registerDomainEvent(new AlertStatusChangedEvent(
         id, equipmentId, type, severity, previousStatus, status, peakTemperature.celsius(), changedAt));
   }

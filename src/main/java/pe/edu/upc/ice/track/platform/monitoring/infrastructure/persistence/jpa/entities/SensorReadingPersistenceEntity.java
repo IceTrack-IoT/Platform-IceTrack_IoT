@@ -6,7 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.ColumnDefault;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -98,13 +98,13 @@ public class SensorReadingPersistenceEntity {
    * Timestamp assigned by the device clock when the reading was recorded, used to track when the data was collected.
    */
   @Column(nullable = false)
-  private LocalDateTime recordedAt;
+  private Instant recordedAt;
 
   /**
    *  Timestamp when the reading was received by the platform, used to track when the data was ingested.
    */
   @Column(nullable = false)
-  private LocalDateTime receivedAt;
+  private Instant receivedAt;
 
   /**
    * Edge configuration version the gateway was running when it built the batch. Nullable only

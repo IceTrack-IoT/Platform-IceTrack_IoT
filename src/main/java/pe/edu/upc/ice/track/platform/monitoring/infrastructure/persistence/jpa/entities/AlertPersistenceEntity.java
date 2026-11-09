@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  *  Persistence entity representing an alert in the system.
@@ -62,7 +62,7 @@ public class AlertPersistenceEntity {
    *  When the triggering reading was recorded. Null for a DEVICE_OFFLINE alert and for alerts
    *  raised before this snapshot was recorded.
    */
-  private LocalDateTime triggeringRecordedAt;
+  private Instant triggeringRecordedAt;
   /**
    *  The peak temperature observed during the excursion, in Celsius. This field is null for a DEVICE_OFFLINE alert.
    */
@@ -76,28 +76,28 @@ public class AlertPersistenceEntity {
    *  The timestamp when the alert was raised.
    */
   @Column(nullable = false)
-  private LocalDateTime openedAt;
+  private Instant openedAt;
 
   /**
    *  IAM identifier of the user who acknowledged the alert.
    */
   private Long acknowledgedByUserId;
 
-  private LocalDateTime acknowledgedAt;
+  private Instant acknowledgedAt;
 
   /**
    *  IAM identifier of the user who resolved the alert; null when it was resolved automatically.
    */
   private Long resolvedByUserId;
 
-  private LocalDateTime resolvedAt;
+  private Instant resolvedAt;
 
   /**
    *  IAM identifier of the user who dismissed the alert.
    */
   private Long dismissedByUserId;
 
-  private LocalDateTime dismissedAt;
+  private Instant dismissedAt;
 
   @Column(length = 500)
   private String dismissReason;

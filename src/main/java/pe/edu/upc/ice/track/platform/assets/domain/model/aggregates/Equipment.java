@@ -8,7 +8,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEqui
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.TemperatureThreshold;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -25,8 +25,9 @@ import java.util.Objects;
  *
  * <p>{@code online}, {@code lastReadingAt} and {@code lastKnownTemperature} are the equipment's
  * view of the telemetry it produces. They are persisted and exposed here, but this context does
- * not ingest readings: the Monitoring and Alerting context writes them when it evaluates a
- * reading, which is why they are only reachable through {@link #recordReading}.</p>
+ * not ingest readings: the Monitoring and Alerting context writes them when it stores a reading and
+ * when it detects that the unit stopped reporting, which is why they are only reachable through
+ * {@link #recordReading} and {@link #markOffline}.</p>
  *
  * <p>{@code configVersion} numbers the configuration the unit's edge gateway must enforce:
  * thresholds, alert policy and technician grants. It starts at {@value #INITIAL_CONFIG_VERSION}
@@ -75,7 +76,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   private boolean online;
   private TemperatureThreshold temperatureThreshold;
   private Integer reminderIntervalDays;
-  private LocalDateTime lastReadingAt;
+  private Instant lastReadingAt;
   private Double lastKnownTemperature;
   private final Integer configVersion;
 
@@ -130,7 +131,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * @param online                whether the unit is connected
    * @param temperatureThreshold  the acceptable temperature band
    * @param reminderIntervalDays  the preventive maintenance interval in days
-   * @param lastReadingAt         when the last reading was received, may be {@code null}
+   * @param lastReadingAt         when the latest reading was taken, may be {@code null}
    * @param lastKnownTemperature  the last temperature known, may be {@code null}
    * @param configVersion         the version of the edge configuration; {@code null} is read as
    *                              {@value #INITIAL_CONFIG_VERSION}
@@ -139,7 +140,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    */
   public Equipment(Long equipmentId, Long siteId, String uid, String name, EquipmentType equipmentType,
                    StatusEquipment status, boolean online, TemperatureThreshold temperatureThreshold,
-                   Integer reminderIntervalDays, LocalDateTime lastReadingAt, Double lastKnownTemperature,
+                   Integer reminderIntervalDays, Instant lastReadingAt, Double lastKnownTemperature,
                    Integer configVersion, StatusEquipment statusBeforeMaintenance) {
     this.equipmentId = equipmentId;
     this.siteId = Objects.requireNonNull(siteId, "siteId must not be null");
@@ -265,15 +266,47 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   /**
    * Records that a reading was received from this unit.
    *
-   * <p>Invoked by the Monitoring and Alerting context, which is the only writer of these fields.
-   * This context stores and exposes them; it does not evaluate them.</p>
+   * <p>Invoked through the Monitoring and Alerting context, which is the only writer of these fields,
+   * every time it stores a new reading batch. This context stores and exposes them; it does not
+   * evaluate them.</p>
    *
-   * @param temperature the temperature that was read
+   * <p>A received reading proves the unit is connected, so it goes {@code online} - unless it is
+   * {@link StatusEquipment#DEACTIVATED}, which is never shown as connected. {@code lastReadingAt} and
+   * {@code lastKnownTemperature} only move forward: a batch taken before the one already recorded,
+   * such as one the gateway delivers late from its offline buffer, keeps the newer values in place.</p>
+   *
+   * @param temperature the temperature that was read, in Celsius
    * @param readAt      when the reading was taken; required
+   * @return {@code true} when the reading became the unit's latest one
    */
-  public void recordReading(Double temperature, LocalDateTime readAt) {
+  public boolean recordReading(Double temperature, Instant readAt) {
+    Objects.requireNonNull(readAt, "readAt must not be null");
+    if (status != StatusEquipment.DEACTIVATED) {
+      this.online = true;
+    }
+    if (lastReadingAt != null && readAt.isBefore(lastReadingAt)) {
+      return false;
+    }
     this.lastKnownTemperature = temperature;
-    this.lastReadingAt = Objects.requireNonNull(readAt, "readAt must not be null");
+    this.lastReadingAt = readAt;
+    return true;
+  }
+
+  /**
+   * Records that the unit stopped reporting: Monitoring and Alerting detected that no reading arrived
+   * within the offline window of its alert policy.
+   *
+   * <p>The last reading and temperature are kept, so the dashboard can still tell when the unit was
+   * last heard from.</p>
+   *
+   * @return {@code true} when the unit was online and is now offline
+   */
+  public boolean markOffline() {
+    if (!online) {
+      return false;
+    }
+    this.online = false;
+    return true;
   }
 
   /**

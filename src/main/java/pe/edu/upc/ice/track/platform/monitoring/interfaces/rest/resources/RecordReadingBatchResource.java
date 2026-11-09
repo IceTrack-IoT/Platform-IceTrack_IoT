@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -36,7 +36,7 @@ import java.util.UUID;
         + "\"avg_temperature\": 3.9, \"raw_min_temperature\": 3.8, \"raw_max_temperature\": 5.1, "
         + "\"raw_avg_temperature\": 4.4, \"humidity\": 62.0, \"sample_count\": 6, "
         + "\"light_level_max\": 41.0, \"door_open_seconds\": 12, \"presence_detected\": true, "
-        + "\"recorded_at\": \"2026-09-29T08:30:00\", \"applied_config_version\": 3}"
+        + "\"recorded_at\": \"2026-09-29T08:30:00Z\", \"applied_config_version\": 3}"
 )
 public record RecordReadingBatchResource(
     @NotNull(message = "{validation.not-null}")
@@ -123,8 +123,8 @@ public record RecordReadingBatchResource(
     Boolean presenceDetected,
 
     @NotNull(message = "{validation.not-null}")
-    @Schema(description = "Timestamp assigned by the device clock", example = "2026-09-29T08:30:00")
-    LocalDateTime recordedAt,
+    @Schema(description = "When the device took the batch, by its clock; ISO 8601 with Z or an explicit offset; a value without offset is rejected", example = "2026-09-29T08:30:00Z")
+    Instant recordedAt,
 
     @NotNull(message = "{validation.not-null}")
     @PositiveOrZero(message = "{validation.positive-or-zero}")

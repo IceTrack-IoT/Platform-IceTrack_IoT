@@ -16,7 +16,7 @@ import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entit
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.repositories.EquipmentPersistenceRepository;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.specifications.EquipmentPersistenceSpecifications;
 
-import java.util.Date;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -136,6 +136,14 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
         .map(EquipmentPersistenceAssembler::toDomainFromPersistence);
   }
 
+  // inherited javadoc
+  @Override
+  public List<Equipment> findOnline() {
+    return equipmentPersistenceRepository.findByOnlineTrueOrderByIdAsc().stream()
+        .map(EquipmentPersistenceAssembler::toDomainFromPersistence)
+        .toList();
+  }
+
   /**
    * Persists a unit and dispatches whatever domain events the change raised.
    *
@@ -180,7 +188,7 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
     if (equipmentId == null) {
       return Optional.empty();
     }
-    var increment = EquipmentPersistenceSpecifications.incrementConfigVersion(equipmentId, new Date());
+    var increment = EquipmentPersistenceSpecifications.incrementConfigVersion(equipmentId, Instant.now());
     entityManager.flush();
     long updated;
     try {

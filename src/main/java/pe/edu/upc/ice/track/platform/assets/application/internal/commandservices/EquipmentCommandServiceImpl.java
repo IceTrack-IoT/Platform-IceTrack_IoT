@@ -13,6 +13,8 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeStatusCo
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ChangeThresholdCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.EnterMaintenanceCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.LeaveMaintenanceCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.MarkEquipmentOfflineCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RecordEquipmentReadingCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateEquipmentCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.TemperatureThreshold;
@@ -214,6 +216,39 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
     equipmentRepository.save(unit);
     log.info("Equipment {} returned to {} after maintenance window {} closed",
         command.equipmentId(), unit.getStatus(), command.maintenanceWindowId());
+    return true;
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public boolean handle(RecordEquipmentReadingCommand command) {
+    var equipment = equipmentRepository.findById(command.equipmentId());
+    if (equipment.isEmpty()) {
+      log.warn("Reading taken at {} recorded for equipment {}, which does not exist",
+          command.recordedAt(), command.equipmentId());
+      return false;
+    }
+    var unit = equipment.get();
+    if (!unit.recordReading(command.temperatureCelsius(), command.recordedAt())) {
+      log.debug("Reading of equipment {} taken at {} is older than its latest one, taken at {}",
+          command.equipmentId(), command.recordedAt(), unit.getLastReadingAt());
+    }
+    equipmentRepository.save(unit);
+    return true;
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public boolean handle(MarkEquipmentOfflineCommand command) {
+    var equipment = equipmentRepository.findById(command.equipmentId());
+    if (equipment.isEmpty() || !equipment.get().markOffline()) {
+      return false;
+    }
+    equipmentRepository.save(equipment.get());
+    log.info("Equipment {} is offline; last reading taken at {}",
+        command.equipmentId(), equipment.get().getLastReadingAt());
     return true;
   }
 

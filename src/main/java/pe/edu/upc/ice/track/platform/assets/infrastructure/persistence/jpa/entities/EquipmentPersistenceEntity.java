@@ -14,7 +14,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentT
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * JPA persistence entity for an {@code Equipment}, mapped to the {@code equipments} table.
@@ -105,7 +105,7 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
    * exposed here; nullable because a unit may not have reported yet.
    */
   @Column(name = "last_reading_at")
-  private LocalDateTime lastReadingAt;
+  private Instant lastReadingAt;
 
   /**
    * Last temperature known for this unit, in Celsius. Written by the Monitoring and Alerting

@@ -4,7 +4,7 @@ import lombok.Getter;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EdgeEventResult;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.EdgeEventType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -25,7 +25,7 @@ public class EdgeEvent {
   private final Long deviceId;
   private final Long equipmentId;
   private final EdgeEventType type;
-  private final LocalDateTime occurredAt;
+  private final Instant occurredAt;
   private final Double temperatureCelsius;
   private final Double peakTemperatureCelsius;
   private final EdgeEventResult result;
@@ -47,7 +47,7 @@ public class EdgeEvent {
    *                               a suppressed detection, or {@code null}
    */
   public EdgeEvent(Long id, UUID eventUid, Long deviceId, Long equipmentId, EdgeEventType type,
-                   LocalDateTime occurredAt, Double temperatureCelsius, Double peakTemperatureCelsius,
+                   Instant occurredAt, Double temperatureCelsius, Double peakTemperatureCelsius,
                    EdgeEventResult result, Long alertId, Long maintenanceWindowId) {
     this.id = id;
     this.eventUid = Objects.requireNonNull(eventUid, "eventUid must not be null");

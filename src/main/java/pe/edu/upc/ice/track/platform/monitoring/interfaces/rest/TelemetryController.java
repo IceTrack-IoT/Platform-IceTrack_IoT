@@ -34,8 +34,9 @@ import pe.edu.upc.ice.track.platform.shared.infrastructure.documentation.openapi
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.JsonFieldNameAssembler;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -159,7 +160,9 @@ public class TelemetryController {
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ErrorResource> handleInvalidReading(MethodArgumentNotValidException ex) {
     var details = ex.getBindingResult().getFieldErrors().stream()
-        .map(error -> "%s: %s".formatted(error.getField(), error.getDefaultMessage()))
+        .map(error -> "%s: %s".formatted(
+            JsonFieldNameAssembler.toJsonFieldName(error.getField()), error.getDefaultMessage()))
+        .sorted()
         .collect(Collectors.joining("; "));
     return invalidReadingPayload(details.isEmpty() ? null : details);
   }
@@ -199,25 +202,27 @@ public class TelemetryController {
           content = @Content(schema = @Schema(implementation = SensorReadingResource.class))
       ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller")
+      @ApiResponse(responseCode = "404", description = "EQUIPMENT_NOT_FOUND - no such equipment is reachable by the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
   })
-  public ResponseEntity<List<SensorReadingResource>> getReadingsByEquipment(
+  public ResponseEntity<?> getReadingsByEquipment(
       @PathVariable
       @Parameter(description = "Equipment unique identifier", example = "1", required = true)
       Long equipmentId,
       @RequestParam
-      @Parameter(description = "Inclusive start of the date range", required = true)
-      LocalDateTime from,
+      @Parameter(description = "Inclusive start of the range; ISO 8601 with Z or an explicit offset; a value without offset is rejected", example = "2026-11-08T05:00:00Z", required = true)
+      Instant from,
       @RequestParam
-      @Parameter(description = "Inclusive end of the date range", required = true)
-      LocalDateTime to,
+      @Parameter(description = "Inclusive end of the range; ISO 8601 with Z or an explicit offset; a value without offset is rejected", example = "2026-11-09T05:00:00Z", required = true)
+      Instant to,
       Authentication authentication) {
     var query = new GetReadingsByEquipmentQuery(equipmentId, from, to, authentication.getName(),
         CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication));
     return sensorReadingQueryService.handle(query)
-        .map(readings -> ResponseEntity.ok(readings.stream()
+        .<ResponseEntity<?>>map(readings -> ResponseEntity.ok(readings.stream()
             .map(SensorReadingResourceFromEntityAssembler::toResourceFromEntity)
             .toList()))
-        .orElse(ResponseEntity.notFound().build());
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound("Equipment", String.valueOf(equipmentId))));
   }
 }

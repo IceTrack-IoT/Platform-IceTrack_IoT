@@ -4,7 +4,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertS
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertStatus;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.AlertType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Domain event registered every time an {@code Alert} enters a status: when it is raised
@@ -32,5 +32,5 @@ public record AlertStatusChangedEvent(
     AlertStatus previousStatus,
     AlertStatus status,
     Double peakTemperature,
-    LocalDateTime changedAt) {
+    Instant changedAt) {
 }

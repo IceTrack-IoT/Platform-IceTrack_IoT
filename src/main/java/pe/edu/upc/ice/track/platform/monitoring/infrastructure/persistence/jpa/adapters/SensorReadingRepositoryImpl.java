@@ -7,7 +7,7 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadin
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.assemblers.SensorReadingPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.repositories.SensorReadingPersistenceRepository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,7 +48,7 @@ public class SensorReadingRepositoryImpl implements SensorReadingRepository {
 
   @Override
   public List<SensorReading> findByEquipmentIdAndRecordedAtBetween(
-      Long equipmentId, LocalDateTime from, LocalDateTime to) {
+      Long equipmentId, Instant from, Instant to) {
     return persistenceRepository.findByEquipmentIdAndRecordedAtBetween(equipmentId, from, to)
         .stream()
         .map(SensorReadingPersistenceAssembler::toDomainFromPersistenceEntity)
@@ -62,5 +62,11 @@ public class SensorReadingRepositoryImpl implements SensorReadingRepository {
         .limit(limit)
         .map(SensorReadingPersistenceAssembler::toDomainFromPersistenceEntity)
         .toList();
+  }
+
+  @Override
+  public Optional<SensorReading> findLatestReceivedByEquipmentId(Long equipmentId) {
+    return persistenceRepository.findFirstByEquipmentIdOrderByReceivedAtDesc(equipmentId)
+        .map(SensorReadingPersistenceAssembler::toDomainFromPersistenceEntity);
   }
 }

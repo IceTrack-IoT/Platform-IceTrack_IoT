@@ -9,7 +9,7 @@ import pe.edu.upc.ice.track.platform.device.domain.model.commands.UnpairDeviceCo
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /** Application contract for operations that change a managed device. */
 public interface DeviceCommandService {
@@ -21,5 +21,5 @@ public interface DeviceCommandService {
 
   Result<Device, ApplicationError> handle(ChangeDeviceStatusCommand command);
 
-  void recordActivity(Long deviceId, LocalDateTime seenAt);
+  void recordActivity(Long deviceId, Instant seenAt);
 }

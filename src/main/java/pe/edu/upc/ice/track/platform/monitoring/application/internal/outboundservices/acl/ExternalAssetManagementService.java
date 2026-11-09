@@ -3,6 +3,8 @@ package pe.edu.upc.ice.track.platform.monitoring.application.internal.outboundse
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.assets.interfaces.acl.AssetContextFacade;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -63,5 +65,35 @@ public class ExternalAssetManagementService {
       return Optional.empty();
     }
     return assetContextFacade.getEquipmentOwnerId(equipmentId);
+  }
+
+  /**
+   * Reports a newly stored reading batch to the unit, which goes online and moves its last reading
+   * forward.
+   *
+   * @param equipmentId        identifier of the equipment
+   * @param temperatureCelsius the temperature the batch reports
+   * @param recordedAt         when the batch was taken
+   * @return {@code true} when the unit exists and was updated
+   */
+  public boolean recordEquipmentReading(Long equipmentId, Double temperatureCelsius, Instant recordedAt) {
+    return assetContextFacade.recordEquipmentReading(equipmentId, temperatureCelsius, recordedAt);
+  }
+
+  /**
+   * Reports that a unit stopped reporting.
+   *
+   * @param equipmentId identifier of the equipment
+   * @return {@code true} when the unit was online and is now offline
+   */
+  public boolean markEquipmentOffline(Long equipmentId) {
+    return assetContextFacade.markEquipmentOffline(equipmentId);
+  }
+
+  /**
+   * @return the identifiers of the units currently shown as connected
+   */
+  public List<Long> fetchOnlineEquipmentIds() {
+    return assetContextFacade.fetchOnlineEquipmentIds();
   }
 }

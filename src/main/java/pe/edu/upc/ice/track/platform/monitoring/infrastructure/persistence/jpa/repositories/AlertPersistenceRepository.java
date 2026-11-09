@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.
 import org.springframework.data.jpa.repository.JpaRepository;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.entities.AlertPersistenceEntity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,5 +37,5 @@ public interface AlertPersistenceRepository extends JpaRepository<AlertPersisten
    * @return  A list of {@link AlertPersistenceEntity} matching the criteria.
    */
   List<AlertPersistenceEntity> findByEquipmentIdAndTypeAndOpenedAtBetween(
-      Long equipmentId, String type, LocalDateTime from, LocalDateTime to);
+      Long equipmentId, String type, Instant from, Instant to);
 }

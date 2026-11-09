@@ -13,7 +13,6 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.MaintenanceW
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
@@ -68,7 +67,7 @@ public class MaintenanceWindowEventProcessor {
    */
   public Outcome start(RecordEdgeEventCommand command) {
     var equipmentId = command.equipmentId();
-    var startedAt = EdgeTimestamps.toInstant(command.occurredAt());
+    var startedAt = command.occurredAt();
     var active = maintenanceWindowRepository.findActiveByEquipmentId(equipmentId);
     if (active.isPresent() && active.get().getExpiresAt().isBefore(startedAt)) {
       var overdue = active.get();
@@ -129,7 +128,7 @@ public class MaintenanceWindowEventProcessor {
       return new Outcome(EdgeEventResult.NO_ACTIVE_MAINTENANCE, null);
     }
     var window = target.get();
-    if (!window.close(EdgeTimestamps.toInstant(command.occurredAt()), command.closureReason())) {
+    if (!window.close(command.occurredAt(), command.closureReason())) {
       return new Outcome(EdgeEventResult.NO_ACTIVE_MAINTENANCE, window.getId());
     }
     maintenanceWindowRepository.save(window);
@@ -144,8 +143,8 @@ public class MaintenanceWindowEventProcessor {
    * @param timestamp   the gateway timestamp
    * @return the covering window, or empty
    */
-  public Optional<MaintenanceWindow> findCovering(Long equipmentId, LocalDateTime timestamp) {
-    return maintenanceWindowRepository.findCovering(equipmentId, EdgeTimestamps.toInstant(timestamp));
+  public Optional<MaintenanceWindow> findCovering(Long equipmentId, Instant timestamp) {
+    return maintenanceWindowRepository.findCovering(equipmentId, timestamp);
   }
 
   /**

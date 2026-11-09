@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Data of a {@code telemetry-update} stream event announcing a reading batch just recorded.
@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
     example = "{\"type\": \"READING_RECORDED\", \"reading_uid\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\", "
         + "\"equipment_id\": 21, \"device_id\": 7, \"min_temperature\": 3.3, \"max_temperature\": 4.6, "
         + "\"avg_temperature\": 3.9, \"humidity\": 62.0, \"sample_count\": 6, "
-        + "\"recorded_at\": \"2026-09-29T08:30:00\", \"received_at\": \"2026-09-29T08:30:02\", "
+        + "\"recorded_at\": \"2026-09-29T08:30:00Z\", \"received_at\": \"2026-09-29T08:30:02Z\", "
         + "\"under_maintenance\": false}"
 )
 public record ReadingRecordedStreamResource(
@@ -46,11 +46,11 @@ public record ReadingRecordedStreamResource(
     @Schema(description = "Number of raw samples folded into the batch", example = "6")
     Integer sampleCount,
 
-    @Schema(description = "When the batch was taken, by the device clock", example = "2026-09-29T08:30:00")
-    LocalDateTime recordedAt,
+    @Schema(description = "When the batch was taken, by the device clock", example = "2026-09-29T08:30:00Z")
+    Instant recordedAt,
 
-    @Schema(description = "When the platform received the batch", example = "2026-09-29T08:30:02")
-    LocalDateTime receivedAt,
+    @Schema(description = "When the platform received the batch", example = "2026-09-29T08:30:02Z")
+    Instant receivedAt,
 
     @Schema(description = "Whether a maintenance window covered recorded_at", example = "false")
     boolean underMaintenance

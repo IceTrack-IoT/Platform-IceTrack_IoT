@@ -91,6 +91,16 @@ public interface EquipmentRepository {
   Optional<Equipment> findByUid(String uid);
 
   /**
+   * Find every unit currently shown as connected.
+   *
+   * <p>Exists for Monitoring and Alerting, which checks these units for silence: only a unit that is
+   * online can stop reporting.</p>
+   *
+   * @return the units whose {@code online} flag is set, by ascending identifier
+   */
+  List<Equipment> findOnline();
+
+  /**
    * Persist a unit, inserting it when it is new and updating it otherwise.
    *
    * @param equipment the unit to persist

@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Data of a {@code telemetry-update} stream event announcing that an alert entered a status.
@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
         + "or moved to another status",
     example = "{\"type\": \"ALERT_STATUS_CHANGED\", \"alert_id\": 301, \"equipment_id\": 21, "
         + "\"alert_type\": \"TEMPERATURE_EXCURSION\", \"severity\": \"CRITICAL\", \"previous_status\": \"OPEN\", "
-        + "\"status\": \"ACKNOWLEDGED\", \"peak_temperature\": 9.5, \"changed_at\": \"2026-09-29T08:40:00\"}"
+        + "\"status\": \"ACKNOWLEDGED\", \"peak_temperature\": 9.5, \"changed_at\": \"2026-09-29T08:40:00Z\"}"
 )
 public record AlertStatusChangedStreamResource(
     @Schema(description = "Kind of update; always ALERT_STATUS_CHANGED for this data",
@@ -46,7 +46,7 @@ public record AlertStatusChangedStreamResource(
         + "is involved", example = "9.5", nullable = true)
     Double peakTemperature,
 
-    @Schema(description = "When the alert entered status", example = "2026-09-29T08:40:00")
-    LocalDateTime changedAt
+    @Schema(description = "When the alert entered status", example = "2026-09-29T08:40:00Z")
+    Instant changedAt
 ) {
 }
