@@ -16,15 +16,15 @@ import jakarta.validation.constraints.NotNull;
     name = "PinRequest",
     description = "Owner-adjusted location of the site, within 150 meters of the verified address")
 public record PinResource(
-    @NotNull(message = "{validation.not-blank}")
-    @DecimalMin(value = "-90.0", message = "{validation.size.max}")
-    @DecimalMax(value = "90.0", message = "{validation.size.max}")
+    @NotNull(message = "{validation.not-null}")
+    @DecimalMin(value = "-90.0", message = "{validation.pin.latitude}")
+    @DecimalMax(value = "90.0", message = "{validation.pin.latitude}")
     @Schema(description = "Latitude of the pin", example = "-12.0932")
     Double latitude,
 
-    @NotNull(message = "{validation.not-blank}")
-    @DecimalMin(value = "-180.0", message = "{validation.size.max}")
-    @DecimalMax(value = "180.0", message = "{validation.size.max}")
+    @NotNull(message = "{validation.not-null}")
+    @DecimalMin(value = "-180.0", message = "{validation.pin.longitude}")
+    @DecimalMax(value = "180.0", message = "{validation.pin.longitude}")
     @Schema(description = "Longitude of the pin", example = "-77.0466")
     Double longitude
 ) {

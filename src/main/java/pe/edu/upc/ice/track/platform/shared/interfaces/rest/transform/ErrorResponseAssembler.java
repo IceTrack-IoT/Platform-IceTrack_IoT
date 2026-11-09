@@ -72,10 +72,20 @@ public final class ErrorResponseAssembler {
     return new ApplicationError(error.code(), error.message(), "Reference: " + reference);
   }
 
-  private static String toLocalizedMessageFromApplicationError(ApplicationError error) {
-    String specificKey = toSpecificMessageKeyFromErrorCode(error.code());
-    return toLocalizedMessageOrNull(specificKey, error.details(), toEntityNameFromErrorCode(error.code()));
-
+  /**
+   * Resolves the client-facing message of an error: the text of its own {@code error.<code>.message}
+   * key, else the text of the generic key for its family ({@code _NOT_FOUND}, {@code _CONFLICT}, ...),
+   * else {@code error.generic.message}. Every error body therefore carries a message.
+   */
+  private static @Nullable String toLocalizedMessageFromApplicationError(ApplicationError error) {
+    String entityName = toEntityNameFromErrorCode(error.code());
+    String specificMessage = toLocalizedMessageOrNull(
+        toSpecificMessageKeyFromErrorCode(error.code()), error.details(), entityName);
+    if (specificMessage != null) {
+      return specificMessage;
+    }
+    String familyMessage = toLocalizedMessageOrNull(toMessageKeyFromErrorCode(error.code()), error.details(), entityName);
+    return familyMessage != null ? familyMessage : toLocalizedMessageOrNull("error.generic.message");
   }
 
   private static String toSpecificMessageKeyFromErrorCode(String errorCode) {

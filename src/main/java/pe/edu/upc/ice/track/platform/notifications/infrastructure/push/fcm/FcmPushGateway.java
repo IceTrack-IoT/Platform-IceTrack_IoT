@@ -8,7 +8,14 @@ import pe.edu.upc.ice.track.platform.notifications.application.internal.outbound
 
 import java.util.*;
 
-/** {@link PushGateway} adapter backed by Firebase Cloud Messaging (HTTP v1 through the Admin SDK). */
+/**
+ * {@link PushGateway} adapter backed by Firebase Cloud Messaging (HTTP v1 through the Admin SDK).
+ *
+ * <p>A token FCM reports as unregistered, or as belonging to another sender, is returned as invalid so
+ * the caller forgets it. The Admin SDK does not always manage to read the error body FCM sends back,
+ * and then reports no messaging error code; the HTTP status still tells an unregistered token apart,
+ * because FCM answers it, and only it, with 404.</p>
+ */
 @Slf4j
 @Service
 @ConditionalOnProperty(name = "notifications.push.provider", havingValue = "fcm")
@@ -50,11 +57,14 @@ public class FcmPushGateway implements PushGateway {
         if (result.isSuccessful()) {
           continue;
         }
-        var error = result.getException().getMessagingErrorCode();
-        if (error == MessagingErrorCode.UNREGISTERED || error == MessagingErrorCode.SENDER_ID_MISMATCH) {
+        var exception = result.getException();
+        var error = exception.getMessagingErrorCode();
+        var httpStatus = exception.getHttpResponse() == null ? null : exception.getHttpResponse().getStatusCode();
+        if (isInvalidToken(error, httpStatus)) {
           invalid.add(batch.get(i));
         } else {
-          log.warn("FCM rejected a push ({}): {}", error, result.getException().getMessage());
+          log.warn("FCM rejected a push ({}, {}, HTTP {}): {}",
+              error, exception.getErrorCode(), httpStatus, exception.getMessage());
         }
       }
       log.debug("FCM batch sent: {} ok, {} failed.", response.getSuccessCount(), response.getFailureCount());
@@ -62,5 +72,20 @@ public class FcmPushGateway implements PushGateway {
       log.error("FCM batch of {} token(s) failed.", batch.size(), ex);
     }
     return invalid;
+  }
+
+  /**
+   * Tells whether FCM rejected a token for good, so it must be forgotten.
+   *
+   * @param error      the messaging error code the Admin SDK read from the response, or {@code null}
+   *                   when it could not read one
+   * @param httpStatus the HTTP status of FCM's response, or {@code null} when unknown
+   * @return {@code true} for an unregistered token or one of another sender
+   */
+  static boolean isInvalidToken(MessagingErrorCode error, Integer httpStatus) {
+    if (error != null) {
+      return error == MessagingErrorCode.UNREGISTERED || error == MessagingErrorCode.SENDER_ID_MISMATCH;
+    }
+    return httpStatus != null && httpStatus == 404;
   }
 }

@@ -16,26 +16,26 @@ import jakarta.validation.constraints.Positive;
         + "\"hysteresis_margin_celsius\": 1.0, \"missed_sync_windows_for_offline\": 3}"
 )
 public record UpdateAlertPolicyResource(
-    @NotNull(message = "{validation.not-blank}")
+    @NotNull(message = "{validation.not-null}")
     @Schema(description = "Identifier of one of the caller's units this policy applies to. "
         + "The platform-wide default policy is managed by configuration and cannot be changed here.",
         example = "1")
     Long equipmentId,
 
-    @NotNull(message = "{validation.not-blank}")
-    @Positive
+    @NotNull(message = "{validation.not-null}")
+    @Positive(message = "{validation.positive}")
     @Schema(description = "Minutes an out-of-range reading must persist before an alert opens", example = "2")
     Integer sustainedExcursionMinutes,
 
-    @NotNull(message = "{validation.not-blank}")
-    @DecimalMin("1.0")
-    @DecimalMax("5.0")
+    @NotNull(message = "{validation.not-null}")
+    @DecimalMin(value = "1.0", message = "{validation.alert-policy.hysteresis-margin}")
+    @DecimalMax(value = "5.0", message = "{validation.alert-policy.hysteresis-margin}")
     @Schema(description = "Margin, in Celsius, a reading must re-enter range by before the alert closes; "
         + "at least 1.0, the resolution of the DHT11 sensor", example = "1.0")
     Double hysteresisMarginCelsius,
 
-    @NotNull(message = "{validation.not-blank}")
-    @Positive
+    @NotNull(message = "{validation.not-null}")
+    @Positive(message = "{validation.positive}")
     @Schema(description = "Number of missed synchronization windows before a device is considered offline",
         example = "3")
     Integer missedSyncWindowsForOffline

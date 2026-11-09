@@ -1,5 +1,7 @@
 package pe.edu.upc.ice.track.platform.notifications.interfaces.rest;
 
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -140,17 +142,18 @@ public class NotificationsController {
           description = "Notification found and retrieved successfully",
           content = @Content(schema = @Schema(implementation = NotificationResource.class))
       ),
-      @ApiResponse(responseCode = "404", description = "No such notification is addressed to the caller"),
+      @ApiResponse(responseCode = "404", description = "NOTIFICATION_NOT_FOUND - no such notification is addressed to the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
   })
-  public ResponseEntity<NotificationResource> getNotificationById(
+  public ResponseEntity<?> getNotificationById(
       @Parameter(description = "ID of the notification to retrieve", required = true)
       @PathVariable Long notificationId,
       Authentication authentication) {
     return externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
         .flatMap(recipient -> notificationQueryService.handle(new GetNotificationByIdQuery(notificationId, recipient)))
-        .map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
-        .orElse(ResponseEntity.notFound().build());
+        .<ResponseEntity<?>>map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
+        .orElseGet(() -> notificationNotFound(notificationId));
   }
 
   @PutMapping("/{notificationId}/read")
@@ -165,17 +168,18 @@ public class NotificationsController {
           description = "Notification marked as read successfully",
           content = @Content(schema = @Schema(implementation = NotificationResource.class))
       ),
-      @ApiResponse(responseCode = "404", description = "No such notification is addressed to the caller"),
+      @ApiResponse(responseCode = "404", description = "NOTIFICATION_NOT_FOUND - no such notification is addressed to the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
   })
-  public ResponseEntity<NotificationResource> markNotificationAsRead(
+  public ResponseEntity<?> markNotificationAsRead(
       @Parameter(description = "ID of the notification to mark as read", required = true)
       @PathVariable Long notificationId,
       Authentication authentication) {
     return externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
         .flatMap(recipient -> notificationCommandService.handle(new MarkNotificationAsReadCommand(notificationId, recipient)))
-        .map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
-        .orElse(ResponseEntity.notFound().build());
+        .<ResponseEntity<?>>map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
+        .orElseGet(() -> notificationNotFound(notificationId));
   }
 
   @PutMapping("/{notificationId}/dismiss")
@@ -190,16 +194,23 @@ public class NotificationsController {
           description = "Notification dismissed successfully",
           content = @Content(schema = @Schema(implementation = NotificationResource.class))
       ),
-      @ApiResponse(responseCode = "404", description = "No such notification is addressed to the caller"),
+      @ApiResponse(responseCode = "404", description = "NOTIFICATION_NOT_FOUND - no such notification is addressed to the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
   })
-  public ResponseEntity<NotificationResource> dismissNotification(
+  public ResponseEntity<?> dismissNotification(
       @Parameter(description = "ID of the notification to dismiss", required = true)
       @PathVariable Long notificationId,
       Authentication authentication) {
     return externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
         .flatMap(recipient -> notificationCommandService.handle(new DismissNotificationCommand(notificationId, recipient)))
-        .map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
-        .orElse(ResponseEntity.notFound().build());
+        .<ResponseEntity<?>>map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
+        .orElseGet(() -> notificationNotFound(notificationId));
+  }
+
+  /** Answers a notification that does not exist or is not addressed to the caller. */
+  private static ResponseEntity<ErrorResource> notificationNotFound(Long notificationId) {
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(
+        ApplicationError.notFound("Notification", String.valueOf(notificationId)));
   }
 }

@@ -1,5 +1,10 @@
 package pe.edu.upc.ice.track.platform.notifications.interfaces.rest;
 
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -7,7 +12,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -48,13 +52,14 @@ public class DeviceTokensController {
       @ApiResponse(responseCode = "204", description = "Token registered"),
       @ApiResponse(responseCode = "400", description = "Invalid token or platform"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "The account has no owner or technician profile")
+      @ApiResponse(responseCode = "403", description = "ACCESS_DENIED - the account has no owner or technician profile",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
   })
-  public ResponseEntity<Void> registerDeviceToken(
+  public ResponseEntity<?> registerDeviceToken(
       @Valid @RequestBody RegisterDeviceTokenResource resource, Authentication authentication) {
     var recipient = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName());
     if (recipient.isEmpty()) {
-      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+      return noRecipientProfile();
     }
     deviceTokenCommandService.handle(
         new RegisterDeviceTokenCommand(recipient.get(), resource.token(), resource.platform()));
@@ -69,17 +74,24 @@ public class DeviceTokensController {
   @ApiResponses({
       @ApiResponse(responseCode = "204", description = "Token removed (or it was not registered)"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "The account has no owner or technician profile")
+      @ApiResponse(responseCode = "403", description = "ACCESS_DENIED - the account has no owner or technician profile",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
   })
-  public ResponseEntity<Void> unregisterDeviceToken(
+  public ResponseEntity<?> unregisterDeviceToken(
       @Parameter(description = "FCM registration token to remove", required = true)
       @RequestParam String token,
       Authentication authentication) {
     var recipient = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName());
     if (recipient.isEmpty()) {
-      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+      return noRecipientProfile();
     }
     deviceTokenCommandService.handle(new UnregisterDeviceTokenCommand(recipient.get(), token));
     return ResponseEntity.noContent().build();
+  }
+
+  /** Answers an account that holds neither an owner nor a technician profile, so it receives no push. */
+  private static ResponseEntity<ErrorResource> noRecipientProfile() {
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(
+        ApplicationError.accessDenied("The authenticated account has no owner or technician profile"));
   }
 }

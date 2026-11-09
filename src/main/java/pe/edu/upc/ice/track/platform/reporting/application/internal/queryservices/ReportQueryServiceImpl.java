@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.reporting.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.acl.ExternalProfilesServiceForReporting;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.storage.ReportFileStorage;
 import pe.edu.upc.ice.track.platform.reporting.application.queryservices.ReportQueryService;
@@ -22,6 +23,10 @@ import java.util.Optional;
  *
  * <p>Every query is scoped to the authenticated caller: the username is resolved to its
  * platform account, and a report requested by anybody else is answered as absent.</p>
+ *
+ * <p>The queries returning reports run in a read-only transaction: {@code result_payload} is stored as a
+ * large object, which the PostgreSQL driver only reads inside a transaction, never in auto-commit
+ * mode.</p>
  */
 @Service
 public class ReportQueryServiceImpl implements ReportQueryService {
@@ -45,12 +50,14 @@ public class ReportQueryServiceImpl implements ReportQueryService {
   }
 
   @Override
+  @Transactional(readOnly = true)
   public Optional<Report> handle(GetReportByIdQuery query) {
     Objects.requireNonNull(query, "query must not be null");
     return findOwnedReport(query.reportId(), query.username());
   }
 
   @Override
+  @Transactional(readOnly = true)
   public List<Report> handle(GetReportsByUserQuery query) {
     Objects.requireNonNull(query, "query must not be null");
     return externalProfilesService.fetchUserIdByUsername(query.username())

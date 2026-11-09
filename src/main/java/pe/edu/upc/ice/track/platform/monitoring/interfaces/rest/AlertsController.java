@@ -1,5 +1,7 @@
 package pe.edu.upc.ice.track.platform.monitoring.interfaces.rest;
 
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -80,9 +82,10 @@ public class AlertsController {
           content = @Content(schema = @Schema(implementation = AlertResource.class))
       ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "404", description = "No such alert is reachable by the caller")
+      @ApiResponse(responseCode = "404", description = "ALERT_NOT_FOUND - no such alert is reachable by the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
   })
-  public ResponseEntity<AlertResource> getAlertById(
+  public ResponseEntity<?> getAlertById(
       @PathVariable
       @Parameter(description = "Alert unique identifier", example = "1", required = true)
       Long alertId,
@@ -90,8 +93,9 @@ public class AlertsController {
     var query = new GetAlertByIdQuery(alertId, authentication.getName(),
         CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication));
     return alertQueryService.handle(query)
-        .map(alert -> ResponseEntity.ok(AlertResourceFromEntityAssembler.toResourceFromEntity(alert)))
-        .orElse(ResponseEntity.notFound().build());
+        .<ResponseEntity<?>>map(alert -> ResponseEntity.ok(AlertResourceFromEntityAssembler.toResourceFromEntity(alert)))
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound("Alert", String.valueOf(alertId))));
   }
 
   /**

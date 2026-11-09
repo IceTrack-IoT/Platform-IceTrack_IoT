@@ -1,5 +1,7 @@
 package pe.edu.upc.ice.track.platform.monitoring.interfaces.rest;
 
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -76,9 +78,10 @@ public class AlertPoliciesController {
           content = @Content(schema = @Schema(implementation = AlertPolicyResource.class))
       ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller")
+      @ApiResponse(responseCode = "404", description = "EQUIPMENT_NOT_FOUND - no such equipment is reachable by the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
   })
-  public ResponseEntity<AlertPolicyResource> getPolicyByEquipment(
+  public ResponseEntity<?> getPolicyByEquipment(
       @PathVariable
       @Parameter(description = "Equipment unique identifier", example = "1", required = true)
       Long equipmentId,
@@ -86,8 +89,9 @@ public class AlertPoliciesController {
     var query = new GetAlertPolicyByEquipmentQuery(equipmentId, authentication.getName(),
         CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication));
     return alertPolicyQueryService.handle(query)
-        .map(policy -> ResponseEntity.ok(AlertPolicyResourceFromEntityAssembler.toResourceFromEntity(policy)))
-        .orElse(ResponseEntity.notFound().build());
+        .<ResponseEntity<?>>map(policy -> ResponseEntity.ok(AlertPolicyResourceFromEntityAssembler.toResourceFromEntity(policy)))
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound("Equipment", String.valueOf(equipmentId))));
   }
 
   /**

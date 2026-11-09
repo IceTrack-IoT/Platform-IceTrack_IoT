@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.JsonFieldNameAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 
 import java.sql.SQLException;
@@ -41,6 +42,10 @@ public class GlobalExceptionHandler {
    * Handles validation exceptions from Spring's request body validation.
    * Maps validation failure to a standardized error response.
    *
+   * <p>Each violation is reported under the JSON name of its property ({@code min_celsius}, not the
+   * Java field {@code minCelsius}), and the violations are listed once each, in alphabetical order, so
+   * the same invalid body always yields the same details.</p>
+   *
    * @param ex the validation exception from @Valid binding
    * @return error response with BAD_REQUEST status
    */
@@ -53,9 +58,11 @@ public class GlobalExceptionHandler {
         : fieldErrors.stream()
         .map(error -> "%s %s: %s".formatted(
             validationPrefix,
-            error.getField(),
+            JsonFieldNameAssembler.toJsonFieldName(error.getField()),
             error.getDefaultMessage()
         ))
+        .sorted()
+        .distinct()
         .reduce((a, b) -> a + "; " + b)
         .orElse(resolveMessageOrDefault("validation.request.failed", "Request validation failed"));
 

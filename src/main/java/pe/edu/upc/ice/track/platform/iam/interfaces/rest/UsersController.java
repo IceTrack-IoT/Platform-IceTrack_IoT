@@ -1,5 +1,8 @@
 package pe.edu.upc.ice.track.platform.iam.interfaces.rest;
 
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -94,9 +97,10 @@ public class UsersController {
       ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - Insufficient permissions"),
-      @ApiResponse(responseCode = "404", description = "User not found")
+      @ApiResponse(responseCode = "404", description = "USER_NOT_FOUND - not the caller's own identifier",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
   })
-  public ResponseEntity<UserResource> getUserById(
+  public ResponseEntity<?> getUserById(
       @PathVariable
       @Parameter(
           description = "Unique user identifier",
@@ -108,7 +112,8 @@ public class UsersController {
   ) {
     return userQueryService.handle(new GetUserByUsernameQuery(authentication.getName()))
         .filter(user -> user.getId().equals(userId))
-        .map(user -> ResponseEntity.ok(UserResourceFromEntityAssembler.toResourceFromEntity(user)))
-        .orElse(ResponseEntity.notFound().build());
+        .<ResponseEntity<?>>map(user -> ResponseEntity.ok(UserResourceFromEntityAssembler.toResourceFromEntity(user)))
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound("User", String.valueOf(userId))));
   }
 }

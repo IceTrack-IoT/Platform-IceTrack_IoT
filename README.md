@@ -142,7 +142,7 @@ Hibernate recreates no constraint on an existing table; the values are still val
 
 Path variables keep their names (`{equipmentId}`, `{siteId}`, ...): they only appear in the documentation, never on the wire.
 
-**Errors.** Error answers carry the standard body `{"code": "...", "message": "...", "details": "..."}` (`ErrorResponse` in the OpenAPI document). The `401` of the edge routes is empty, and an endpoint documents its own body where it differs, such as the candidates of `422 ADDRESS_NOT_VERIFIED` or a `404` answered without a body. The OpenAPI document declares the standard body for these codes on every operation, without per-method repetition:
+**Errors.** Error answers carry the standard body `{"code": "...", "message": "...", "details": "..."}` (`ErrorResponse` in the OpenAPI document). The `401` of the edge routes is empty, and an endpoint documents its own body where it differs, such as the candidates of `422 ADDRESS_NOT_VERIFIED`. `message` is always present (a code without a message of its own falls back to a generic text), and validation `details` name the snake_case request properties (`Field min_celsius: ...`), sorted and without repetitions. The OpenAPI document declares the standard body for these codes on every operation, without per-method repetition:
 
 | Code | Documented on |
 |---|---|
@@ -172,6 +172,8 @@ All endpoints live under `/api/v1/authentication`. Errors use the standard `{cod
 | Verified email belongs to an account registered with a password | `409 ACCOUNT_LINK_REQUIRED`; never linked silently |
 
 `POST /google/link` (body `id_token`, `password`, `channel`) links the Google identity to the password account whose profile uses the verified Google email, after checking that account's password (`401 BAD_CREDENTIALS` otherwise), then signs it in. An email Google has not verified is never matched against existing accounts. A linked account keeps its password and can still sign in locally.
+
+**Password policy.** Local sign-up (`/sign-up/owner`, `/sign-up/technician`) requires a password of 8 to 64 characters with at least one uppercase letter, one lowercase letter and one digit, otherwise `400 VALIDATION_ERROR`. Sign-in does not check the policy, so existing accounts keep working.
 
 **Email normalization.** Emails are trimmed and lowercased at sign-up, at sign-in and from Google, and by the profiles `EmailAddress` value object, so `Ana@x.com` and `ana@x.com` are the same account. Rows stored before this change keep their original case; normalize them once with `UPDATE profiles SET email_address = lower(trim(email_address));` (check first that no two rows collide).
 
@@ -232,7 +234,9 @@ The edge endpoints are `POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`
 
 Statuses are `UNPAIRED`, `PAIRED` and `REVOKED`. Keys are stored only as SHA-256 digests (unique index on `devices.api_key_digest`).
 
-**Telemetry ingestion** (`POST /api/v1/telemetry`) answers `201` for a new batch and `200` with the stored reading when the same `reading_uid` is resubmitted.
+**Telemetry ingestion** (`POST /api/v1/telemetry`) answers `201` for a new batch and `200` with the stored reading when the same `reading_uid` is resubmitted. Every new batch, in the same transaction, sets the unit `online` (unless `DEACTIVATED`) and moves its `last_reading_at` / `last_known_temperature` to the batch's `recorded_at` / `avg_temperature` (never backwards for a batch delivered late), sets the device's `last_seen_at` to the arrival time, and resolves the unit's active `DEVICE_OFFLINE` alert.
+
+**Device offline detection.** A unit is offline once no reading arrived for `60 s × missed_sync_windows_for_offline` of its alert policy (3 minutes by default). `EquipmentConnectivityCommandService` marks such units offline and raises one `OPEN`, `WARNING` `DEVICE_OFFLINE` alert each (none during a maintenance window, never a second one while one is active), which notifies the owner. Nothing schedules the detection yet: the periodic trigger is pending, so until it is added no `DEVICE_OFFLINE` alert is raised at runtime and `EQUIPMENT_UPTIME` reports read 100 %.
 
 Each batch carries temperatures twice:
 
@@ -311,7 +315,7 @@ Closure reasons are `MANUAL_APP`, `MANUAL_BUTTON`, `INTERVENTION_COMPLETED`, `EX
 While a window covers an instant:
 
 - a reading batch recorded then is stored with `under_maintenance: true` and changes no alert; it is also left out of the fallback resolution described above;
-- a `THERMAL_EXCURSION_DETECTED` dated then opens no alert (`SUPPRESSED_BY_MAINTENANCE`); alerts already active are left as they are. No `DEVICE_OFFLINE` alert is opened from any event today; an offline evaluation added later must apply the same coverage check.
+- a `THERMAL_EXCURSION_DETECTED` dated then opens no alert (`SUPPRESSED_BY_MAINTENANCE`); alerts already active are left as they are. The offline detection applies the same coverage check: a unit silent during a window is neither marked offline nor alerted.
 
 Other effects:
 
