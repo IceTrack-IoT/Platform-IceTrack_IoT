@@ -7,7 +7,7 @@ import lombok.Setter;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationSeverity;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "notifications")
@@ -41,7 +41,7 @@ public class NotificationPersistenceEntity {
   @Column(nullable = false)
   private boolean isRead;
 
-  private LocalDateTime readAt;
-  private LocalDateTime dismissedAt;
+  private Instant readAt;
+  private Instant dismissedAt;
 
 }

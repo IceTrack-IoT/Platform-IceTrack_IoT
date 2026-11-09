@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.reporting.interfaces.rest.resources;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Resource representing a report, as returned to API consumers.
@@ -34,8 +34,8 @@ import java.time.LocalDateTime;
     description = "A report, with its generation status",
     example = "{\"id\": 8, \"name\": \"Excursions - October\", \"type\": \"TEMPERATURE_EXCURSION\", "
         + "\"format\": \"PDF\", \"status\": \"COMPLETED\", \"user_id\": 42, \"site_id\": 1, "
-        + "\"from\": \"2026-10-01T00:00:00\", \"to\": \"2026-10-31T23:59:59\", "
-        + "\"requested_at\": \"2026-11-01T08:00:00\", \"completed_at\": \"2026-11-01T08:00:09\", "
+        + "\"from\": \"2026-10-01T00:00:00Z\", \"to\": \"2026-10-31T23:59:59Z\", "
+        + "\"requested_at\": \"2026-11-01T08:00:00Z\", \"completed_at\": \"2026-11-01T08:00:09Z\", "
         + "\"download_url\": \"https://storage.googleapis.com/icetrack-reports/reports/7/8.pdf?X-Goog-Signature=abc\"}")
 public record ReportResource(
     @Schema(description = "Report unique identifier", example = "8")
@@ -76,18 +76,18 @@ public record ReportResource(
     @Schema(description = "Technician the report covers", nullable = true)
     Long technicianId,
 
-    @Schema(description = "Inclusive start of the period", example = "2026-10-01T00:00:00")
-    LocalDateTime from,
+    @Schema(description = "Inclusive start of the period", example = "2026-10-01T00:00:00Z")
+    Instant from,
 
-    @Schema(description = "Inclusive end of the period", example = "2026-10-31T23:59:59")
-    LocalDateTime to,
+    @Schema(description = "Inclusive end of the period", example = "2026-10-31T23:59:59Z")
+    Instant to,
 
-    @Schema(description = "When the report was requested", example = "2026-11-01T08:00:00")
-    LocalDateTime requestedAt,
+    @Schema(description = "When the report was requested", example = "2026-11-01T08:00:00Z")
+    Instant requestedAt,
 
     @Schema(description = "When the report reached COMPLETED or FAILED; null while in progress", nullable = true,
-        example = "2026-11-01T08:00:09")
-    LocalDateTime completedAt,
+        example = "2026-11-01T08:00:09Z")
+    Instant completedAt,
 
     @Schema(description = "Signed download URL valid for 15 minutes; only for a COMPLETED report read by id",
         nullable = true)

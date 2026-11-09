@@ -114,7 +114,7 @@ public class ReportsController {
           content = @Content(schema = @Schema(implementation = ReportResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not an owner"),
-      @ApiResponse(responseCode = "404", description = "NOT_FOUND - no such report belongs to the caller")
+      @ApiResponse(responseCode = "404", description = "REPORT_NOT_FOUND - no such report belongs to the caller")
   })
   public ResponseEntity<?> getReportById(
       @Parameter(description = "Identifier of the report", example = "1", required = true)

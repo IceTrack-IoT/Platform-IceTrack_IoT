@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.reporting.application.internal.outboundser
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.acl.MonitoringContextFacade;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -34,7 +34,7 @@ public class ExternalMonitoringServiceForReporting {
    * @return the number of alerts of that type opened for the unit within the window
    */
   public long countAlertsByEquipmentAndTypeInRange(
-      Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
+      Long equipmentId, String alertType, Instant from, Instant to) {
     return monitoringContextFacade.countAlertsByEquipmentAndTypeInRange(equipmentId, alertType, from, to);
   }
 
@@ -48,7 +48,7 @@ public class ExternalMonitoringServiceForReporting {
    *         portion that overlaps the window
    */
   public double fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
-      Long equipmentId, String alertType, LocalDateTime from, LocalDateTime to) {
+      Long equipmentId, String alertType, Instant from, Instant to) {
     return monitoringContextFacade.fetchTotalAlertDurationHoursByEquipmentAndTypeInRange(
         equipmentId, alertType, from, to);
   }
@@ -60,7 +60,7 @@ public class ExternalMonitoringServiceForReporting {
    * @return the unit's temperature samples within the window, outside maintenance, as
    *         {@code {celsius, epochSeconds}} rows in time order; empty when there are none
    */
-  public List<double[]> fetchTemperatureSamplesByEquipmentInRange(Long equipmentId, LocalDateTime from, LocalDateTime to) {
+  public List<double[]> fetchTemperatureSamplesByEquipmentInRange(Long equipmentId, Instant from, Instant to) {
     return monitoringContextFacade.fetchTemperatureSamplesByEquipmentInRange(equipmentId, from, to);
   }
 }

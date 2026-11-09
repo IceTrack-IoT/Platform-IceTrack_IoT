@@ -7,12 +7,14 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.util.Date;
+import java.time.Instant;
 
 /**
  * Base JPA persistence entity for all persistence entities that require auditing.
  *
- * <p>Provides {@code id}, {@code createdAt}, and {@code updatedAt} fields.
+ * <p>Provides {@code id}, {@code createdAt}, and {@code updatedAt} fields. The two timestamps are
+ * {@link Instant}s, stored as {@code timestamp with time zone}, so they keep the real moment whatever
+ * zone the server runs in.
  * This class intentionally lives in the infrastructure layer to keep JPA and
  * Spring Data auditing concerns out of the domain model.</p>
  *
@@ -31,10 +33,10 @@ public abstract class AuditableAbstractPersistenceEntity {
 
   @CreatedDate
   @Column(nullable = false, updatable = false)
-  private Date createdAt;
+  private Instant createdAt;
 
   @LastModifiedDate
   @Column(nullable = false)
-  private Date updatedAt;
+  private Instant updatedAt;
 
 }

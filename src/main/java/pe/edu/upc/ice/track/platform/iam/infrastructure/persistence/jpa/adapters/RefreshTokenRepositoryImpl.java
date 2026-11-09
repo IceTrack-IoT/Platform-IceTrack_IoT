@@ -10,7 +10,6 @@ import pe.edu.upc.ice.track.platform.iam.infrastructure.persistence.jpa.reposito
 import pe.edu.upc.ice.track.platform.iam.infrastructure.persistence.jpa.specifications.RefreshTokenPersistenceSpecifications;
 
 import java.time.Instant;
-import java.util.Date;
 import java.util.Optional;
 import java.util.function.LongSupplier;
 
@@ -57,7 +56,7 @@ public class RefreshTokenRepositoryImpl implements RefreshTokenRepository {
         rotatedToken.getToken(),
         rotatedToken.getReplacedByToken(),
         rotatedToken.getRevokedAt(),
-        Date.from(rotatedToken.getRevokedAt()));
+        rotatedToken.getRevokedAt());
     return bulk(() -> refreshTokenPersistenceRepository.update(rotation)) > 0;
   }
 
@@ -66,7 +65,7 @@ public class RefreshTokenRepositoryImpl implements RefreshTokenRepository {
   public boolean revoke(String token) {
     if (token == null || token.isBlank()) return false;
     var now = Instant.now();
-    var revocation = RefreshTokenPersistenceSpecifications.revokeActiveByToken(token, now, Date.from(now));
+    var revocation = RefreshTokenPersistenceSpecifications.revokeActiveByToken(token, now, now);
     return bulk(() -> refreshTokenPersistenceRepository.update(revocation)) > 0;
   }
 
@@ -75,7 +74,7 @@ public class RefreshTokenRepositoryImpl implements RefreshTokenRepository {
   public void revokeAllByUserId(Long userId) {
     if (userId == null) return;
     var now = Instant.now();
-    var revocation = RefreshTokenPersistenceSpecifications.revokeAllActiveByUserId(userId, now, Date.from(now));
+    var revocation = RefreshTokenPersistenceSpecifications.revokeAllActiveByUserId(userId, now, now);
     bulk(() -> refreshTokenPersistenceRepository.update(revocation));
   }
 

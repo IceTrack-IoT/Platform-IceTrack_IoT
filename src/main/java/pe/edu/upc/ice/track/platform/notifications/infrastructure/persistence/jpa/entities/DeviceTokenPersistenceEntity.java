@@ -6,7 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.DevicePlatform;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "device_tokens")
@@ -31,5 +31,5 @@ public class DeviceTokenPersistenceEntity {
   private DevicePlatform platform;
 
   @Column(nullable = false)
-  private LocalDateTime lastSeenAt;
+  private Instant lastSeenAt;
 }

@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.reporting.interfaces.rest.resources;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * The scope and period of a report.
@@ -26,11 +26,11 @@ public record ReportFiltersResource(
     Long technicianId,
 
     @NotNull(message = "{validation.not-blank}")
-    @Schema(description = "Inclusive start of the period", example = "2026-10-01T00:00:00")
-    LocalDateTime from,
+    @Schema(description = "Inclusive start of the period; ISO 8601 with Z or an explicit offset; a value without offset is rejected", example = "2026-10-01T00:00:00Z")
+    Instant from,
 
     @NotNull(message = "{validation.not-blank}")
-    @Schema(description = "Inclusive end of the period", example = "2026-10-31T23:59:59")
-    LocalDateTime to
+    @Schema(description = "Inclusive end of the period; ISO 8601 with Z or an explicit offset; a value without offset is rejected", example = "2026-10-31T23:59:59Z")
+    Instant to
 ) {
 }

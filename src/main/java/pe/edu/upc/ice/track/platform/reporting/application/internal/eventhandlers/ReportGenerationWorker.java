@@ -20,7 +20,7 @@ import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportS
 import pe.edu.upc.ice.track.platform.reporting.domain.repositories.ReportRepository;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -117,7 +117,7 @@ public class ReportGenerationWorker {
       List<KpiValue> kpis = strategy.generate(report.getFilters());
       var payload = writeAsJson(kpis);
       var bytes = renderer.render(new ReportContent(
-          report.getTitle(), report.getType(), report.getFilters(), LocalDateTime.now(), kpis));
+          report.getTitle(), report.getType(), report.getFilters(), Instant.now(), kpis));
 
       var key = "reports/%d/%d.%s".formatted(ownerId, report.getId(), renderer.fileExtension());
       storedKey = key;

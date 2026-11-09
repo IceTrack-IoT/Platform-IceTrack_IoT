@@ -21,7 +21,7 @@ import jakarta.validation.constraints.Size;
     description = "Request to generate a report; the report is generated in the background",
     example = "{\"name\": \"Excursions - October\", \"type\": \"TEMPERATURE_EXCURSION\", \"format\": \"PDF\", "
         + "\"filters\": {\"site_id\": 1, \"equipment_id\": null, \"technician_id\": null, "
-        + "\"from\": \"2026-10-01T00:00:00\", \"to\": \"2026-10-31T23:59:59\"}}")
+        + "\"from\": \"2026-10-01T00:00:00Z\", \"to\": \"2026-10-31T23:59:59Z\"}}")
 public record CreateReportResource(
     @NotBlank(message = "{validation.not-blank}")
     @Size(max = 150, message = "{validation.size.max}")

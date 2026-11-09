@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /** Outbound REST resource representing a notification. */
 @Schema(
@@ -51,10 +51,10 @@ public record NotificationResource(
     boolean isRead,
 
     @Schema(description = "When the notification was read; null while unread",
-        example = "2026-10-23T17:00:00", nullable = true)
-    LocalDateTime readAt,
+        example = "2026-10-23T17:00:00Z", nullable = true)
+    Instant readAt,
 
     @Schema(description = "When the user dismissed the notification; null while not dismissed",
-        example = "2026-10-23T17:05:00", nullable = true)
-    LocalDateTime dismissedAt) {
+        example = "2026-10-23T17:05:00Z", nullable = true)
+    Instant dismissedAt) {
 }

@@ -9,8 +9,8 @@ import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportF
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportStatus;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportType;
 
-import java.time.LocalDateTime;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.Instant;
 
 /**
  * JPA entity for {@link pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates.Report}.
@@ -64,16 +64,16 @@ public class ReportPersistenceEntity {
   private Long technicianId;
 
   @Column(name = "range_from", nullable = false)
-  private LocalDateTime rangeFrom;
+  private Instant rangeFrom;
 
   @Column(name = "range_to", nullable = false)
-  private LocalDateTime rangeTo;
+  private Instant rangeTo;
 
   @Column(name = "requested_at", nullable = false)
-  private LocalDateTime requestedAt;
+  private Instant requestedAt;
 
   @Column(name = "completed_at")
-  private LocalDateTime completedAt;
+  private Instant completedAt;
 
   @Column(name = "file_key", length = 255)
   private String fileKey;

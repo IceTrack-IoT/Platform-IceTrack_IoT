@@ -6,7 +6,7 @@ import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.*;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -39,8 +39,8 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
   private final NotificationType type;
   private final NotificationSeverity severity;
   private boolean isRead;
-  private LocalDateTime readAt;
-  private LocalDateTime dismissedAt;
+  private Instant readAt;
+  private Instant dismissedAt;
 
   /**
    *  Creates a new {@code Notification} from a command. The command is validated for nulls, but
@@ -67,7 +67,7 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
   public static Notification rehydrate(
       Long id, Long recipientUserId, EquipmentId equipmentId, DeviceId deviceId, AlertId sourceAlertId,
       String message, NotificationType type, NotificationSeverity severity,
-      boolean isRead, LocalDateTime readAt, LocalDateTime dismissedAt) {
+      boolean isRead, Instant readAt, Instant dismissedAt) {
     var notification = new Notification(
         new CreateNotificationCommand(recipientUserId, equipmentId, deviceId, sourceAlertId, message, type, severity));
     notification.id = id;
@@ -87,7 +87,7 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
       return;
     }
     this.isRead = true;
-    this.readAt = LocalDateTime.now();
+    this.readAt = Instant.now();
   }
 
   /**
@@ -105,6 +105,6 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
     if (dismissedAt != null) {
       return;
     }
-    this.dismissedAt = LocalDateTime.now();
+    this.dismissedAt = Instant.now();
   }
 }

@@ -4,7 +4,7 @@ import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.KpiValu
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportFilters;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -21,6 +21,6 @@ public record ReportContent(
     String title,
     ReportType type,
     ReportFilters filters,
-    LocalDateTime generatedAt,
+    Instant generatedAt,
     List<KpiValue> kpis) {
 }

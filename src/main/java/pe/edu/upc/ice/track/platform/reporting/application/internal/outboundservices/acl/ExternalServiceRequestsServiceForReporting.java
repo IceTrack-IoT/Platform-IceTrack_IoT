@@ -4,8 +4,6 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.acl.ServiceRequestContextFacade;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,12 +17,8 @@ import java.util.Optional;
  * exists. It talks to it exclusively through {@link ServiceRequestContextFacade}: no service
  * request aggregate, repository or command is reachable from here.</p>
  *
- * <p><strong>Time translation.</strong> Reporting expresses its window as {@link LocalDateTime}
- * - the same local wall-clock time Monitoring stamps its alerts with through
- * {@code LocalDateTime.now()} - while Service Request and Feedback Management stores absolute
- * {@link Instant}s. This class is the single place where one is turned into the other, reading
- * the local time in the JVM default zone, which is the zone those {@code LocalDateTime.now()}
- * stamps were taken in.</p>
+ * <p>Reporting and Service Request and Feedback Management both express moments as UTC
+ * {@link Instant}s, so a report window is passed through unchanged.</p>
  */
 @Service
 public class ExternalServiceRequestsServiceForReporting {
@@ -43,9 +37,9 @@ public class ExternalServiceRequestsServiceForReporting {
    *         maintenance service request within the window
    */
   public List<Long> fetchEquipmentIdsWithCompletedPreventiveMaintenanceInRange(
-      Long siteId, LocalDateTime from, LocalDateTime to) {
+      Long siteId, Instant from, Instant to) {
     return serviceRequestContextFacade.fetchEquipmentIdsWithCompletedPreventiveMaintenanceInRange(
-        siteId, toInstant(from), toInstant(to));
+        siteId, from, to);
   }
 
   /**
@@ -55,9 +49,9 @@ public class ExternalServiceRequestsServiceForReporting {
    * @return number of service requests this technician completed within the window
    */
   public long countCompletedServiceRequestsByTechnicianInRange(
-      Long technicianId, LocalDateTime from, LocalDateTime to) {
+      Long technicianId, Instant from, Instant to) {
     return serviceRequestContextFacade.countCompletedServiceRequestsByTechnicianInRange(
-        technicianId, toInstant(from), toInstant(to));
+        technicianId, from, to);
   }
 
   /**
@@ -69,7 +63,4 @@ public class ExternalServiceRequestsServiceForReporting {
     return Optional.ofNullable(serviceRequestContextFacade.fetchAverageRatingByTechnician(technicianId));
   }
 
-  private static Instant toInstant(LocalDateTime localDateTime) {
-    return localDateTime == null ? null : localDateTime.atZone(ZoneId.systemDefault()).toInstant();
-  }
 }

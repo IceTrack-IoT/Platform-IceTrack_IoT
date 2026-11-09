@@ -5,7 +5,6 @@ import org.springframework.data.jpa.domain.UpdateSpecification;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.persistence.jpa.entities.RefreshTokenPersistenceEntity;
 
 import java.time.Instant;
-import java.util.Date;
 import java.util.Objects;
 
 /**
@@ -40,14 +39,14 @@ public final class RefreshTokenPersistenceSpecifications {
    * @return the update, affecting one row at most
    */
   public static UpdateSpecification<RefreshTokenPersistenceEntity> rotateActiveByToken(
-      String token, String replacedByToken, Instant revokedAt, Date updatedAt) {
+      String token, String replacedByToken, Instant revokedAt, Instant updatedAt) {
     Objects.requireNonNull(token, "token must not be null");
     Objects.requireNonNull(replacedByToken, "replacedByToken must not be null");
     return (root, update, criteriaBuilder) -> {
       update.set(root.<Boolean>get(REVOKED), Boolean.TRUE);
       update.set(root.<Instant>get(REVOKED_AT), revokedAt);
       update.set(root.<String>get(REPLACED_BY_TOKEN), replacedByToken);
-      update.set(root.<Date>get(UPDATED_AT), updatedAt);
+      update.set(root.<Instant>get(UPDATED_AT), updatedAt);
       return criteriaBuilder.and(
           criteriaBuilder.equal(root.get(TOKEN), token),
           criteriaBuilder.isFalse(root.<Boolean>get(REVOKED)));
@@ -64,12 +63,12 @@ public final class RefreshTokenPersistenceSpecifications {
    * @return the update, affecting one row at most
    */
   public static UpdateSpecification<RefreshTokenPersistenceEntity> revokeActiveByToken(
-      String token, Instant revokedAt, Date updatedAt) {
+      String token, Instant revokedAt, Instant updatedAt) {
     Objects.requireNonNull(token, "token must not be null");
     return (root, update, criteriaBuilder) -> {
       update.set(root.<Boolean>get(REVOKED), Boolean.TRUE);
       update.set(root.<Instant>get(REVOKED_AT), revokedAt);
-      update.set(root.<Date>get(UPDATED_AT), updatedAt);
+      update.set(root.<Instant>get(UPDATED_AT), updatedAt);
       return criteriaBuilder.and(
           criteriaBuilder.equal(root.get(TOKEN), token),
           criteriaBuilder.isFalse(root.<Boolean>get(REVOKED)));
@@ -85,12 +84,12 @@ public final class RefreshTokenPersistenceSpecifications {
    * @return the update
    */
   public static UpdateSpecification<RefreshTokenPersistenceEntity> revokeAllActiveByUserId(
-      Long userId, Instant revokedAt, Date updatedAt) {
+      Long userId, Instant revokedAt, Instant updatedAt) {
     Objects.requireNonNull(userId, "userId must not be null");
     return (root, update, criteriaBuilder) -> {
       update.set(root.<Boolean>get(REVOKED), Boolean.TRUE);
       update.set(root.<Instant>get(REVOKED_AT), revokedAt);
-      update.set(root.<Date>get(UPDATED_AT), updatedAt);
+      update.set(root.<Instant>get(UPDATED_AT), updatedAt);
       return criteriaBuilder.and(
           criteriaBuilder.equal(root.get(USER_ID), userId),
           criteriaBuilder.isFalse(root.<Boolean>get(REVOKED)));

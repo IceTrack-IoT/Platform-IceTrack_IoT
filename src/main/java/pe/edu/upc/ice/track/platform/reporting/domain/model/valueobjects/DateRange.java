@@ -1,7 +1,7 @@
 package pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -14,7 +14,7 @@ import java.util.Objects;
  * @param from inclusive start of the window; required
  * @param to   inclusive end of the window; required, not before {@code from}
  */
-public record DateRange(LocalDateTime from, LocalDateTime to) {
+public record DateRange(Instant from, Instant to) {
 
   public DateRange {
     Objects.requireNonNull(from, "from must not be null");

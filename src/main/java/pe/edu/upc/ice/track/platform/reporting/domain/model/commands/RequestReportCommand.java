@@ -3,7 +3,7 @@ package pe.edu.upc.ice.track.platform.reporting.domain.model.commands;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportFormat;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Command to request a new report on behalf of the authenticated caller.
@@ -33,6 +33,6 @@ public record RequestReportCommand(
     Long siteId,
     Long equipmentId,
     Long technicianId,
-    LocalDateTime from,
-    LocalDateTime to) {
+    Instant from,
+    Instant to) {
 }
