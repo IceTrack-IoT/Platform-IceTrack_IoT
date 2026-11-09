@@ -119,16 +119,6 @@ Defaults come from `src/main/resources/application.properties`:
 
 **Thread pools.** Readings are ingested on the request threads and hold a database connection for a few milliseconds. Slow work has its own bounded pool: the default `@Async` pool for push notifications, `reportTaskExecutor` (1 to 2 threads) for reports, and `streamTaskExecutor` (4 to 8 threads, queue of 1000) for every write to a telemetry stream. When the stream pool's queue is full, the oldest pending update is dropped with a warning. Two scheduler threads run the periodic jobs, so a slow outbox run never delays the stream heartbeat. These defaults are sized for 500 reading batches per minute with a p95 ingestion latency of at most 500 ms; the device API key check on every edge request is a SHA-256 digest looked up through the unique index on `devices.api_key_digest`, so it costs microseconds.
 
-**Upgrading an existing database.** `ddl-auto=update` adds the new tables and columns but never rewrites the `CHECK` constraints Hibernate generated for enum columns when their tables were first created, so new enum values would be rejected. Run once before deploying this version:
-
-```sql
-ALTER TABLE edge_events DROP CONSTRAINT IF EXISTS edge_events_type_check;
-ALTER TABLE edge_events DROP CONSTRAINT IF EXISTS edge_events_result_check;
-ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
-```
-
-Hibernate recreates no constraint on an existing table; the values are still validated by the application enums.
-
 ## API conventions
 
 **Naming.** Every JSON field and every query parameter is `snake_case`. The query parameters below were renamed in this version, and the old names are no longer read, so clients must be updated with it:
@@ -349,14 +339,6 @@ A site's `location` and `navigation_url` are omitted from the JSON when it has n
 For a `TEMPERATURE_EXCURSION` report, each unit gets its Mean Kinetic Temperature (Arrhenius form, activation energy 83.144 kJ/mol), the standard deviation of its temperatures, the degree-minutes outside its threshold band, and the share of time in range. Readings taken during maintenance are excluded, so are dismissed alerts and any alert opened inside a maintenance window, and durations lose the part that overlaps a window; the same window exclusion applies to the uptime report. A unit's time between two readings is credited at most 60 minutes. If no unit in scope recorded any telemetry in the period, the report is `FAILED` with `Insufficient telemetry data for the period`.
 
 Files are stored at `reports/{ownerId}/{reportId}.{ext}` in the private bucket. A storage failure is retried three times with backoff before the report is marked `FAILED`.
-
-**Upgrading an existing database** (run once, before deploying this version):
-
-```sql
-ALTER TABLE reports DROP CONSTRAINT IF EXISTS reports_format_check;
-UPDATE reports SET format = 'XLSX' WHERE format = 'EXCEL';
-ALTER TABLE reports ALTER COLUMN completed_at TYPE timestamp USING completed_at::timestamp;
-```
 
 Clients must be updated for the renamed fields: the report request uses `name` and `filters`, and the report response uses `name` and `failure_reason`.
 
