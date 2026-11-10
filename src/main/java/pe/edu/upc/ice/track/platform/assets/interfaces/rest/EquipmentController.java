@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,8 +29,11 @@ import pe.edu.upc.ice.track.platform.assets.application.commandservices.Equipmen
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentDirectoryQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ChangeStatusResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ChangeThresholdResource;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentDirectoryEntryResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.EquipmentTypeResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.RegisterEquipmentResource;
@@ -38,12 +43,19 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthor
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ChangeStatusCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ChangeThresholdCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.EquipmentDirectoryEntryResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.EquipmentResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.RegisterEquipmentCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.UpdateEquipmentCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ConditionalResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * REST controller exposing the refrigeration units of an owner.
@@ -65,6 +77,11 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  * <p>The listing answers a plain array by default and a {@code PagedEquipmentResource} only when
  * the caller supplies both {@code page} and {@code size}, so pagination was added without
  * breaking the shape a non-paginating client already expects.</p>
+ *
+ * <p>The directory is the lean, conditional counterpart of the listing: only the identity of every
+ * unit, with an {@code ETag}, for the screens that need to name units rather than monitor them.
+ * Every {@link EquipmentResource} carries the name of the unit's site, so neither read needs the
+ * site list to show where a unit is installed.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/assets/equipments", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -191,6 +208,56 @@ public class EquipmentController {
     return ResponseEntity.ok(result.content().stream()
         .map(EquipmentResourceFromEntityAssembler::toResourceFromEntity)
         .toList());
+  }
+
+  /**
+   * Answers the authenticated owner's equipment directory: the identity of every unit, with the name
+   * of its site, in one conditional read.
+   *
+   * @param siteId         Restrict to a single site of the caller, sent as {@code site_id}, optional
+   * @param status         Restrict to these statuses, comma-separated or repeated; optional
+   * @param ifNoneMatch    The entity tag of the directory the caller already holds, optional
+   * @param authentication The authenticated principal, whose name identifies the caller
+   * @return The {@link EquipmentDirectoryEntryResource} array with its {@code ETag}, 304 when the
+   *         caller's copy is current, or 404 when the site is not reachable by the caller
+   */
+  @GetMapping("/directory")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(
+      summary = "Get my equipment directory",
+      description = "Returns the identity of every unit of the authenticated owner - id, uid, name, type, "
+          + "status and site, with the site name - sorted by name, unpaged. It carries no telemetry, "
+          + "threshold or configuration version, so it only changes when a unit or a site is created, "
+          + "renamed or changes status. The ETag header identifies the answer; sending it back in "
+          + "If-None-Match answers 304 with an empty body while nothing changed.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Directory found; the ETag header identifies it",
+          content = @Content(array = @ArraySchema(schema = @Schema(implementation = EquipmentDirectoryEntryResource.class)))),
+      @ApiResponse(responseCode = "304", description = "Directory unchanged since the ETag in If-None-Match; empty body"),
+      @ApiResponse(responseCode = "400", description = "Invalid filter value, such as an unknown status"),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
+      @ApiResponse(responseCode = "404", description = "SITE_NOT_FOUND - no such site is reachable by the caller")
+  })
+  public ResponseEntity<?> getMyEquipmentDirectory(
+      @RequestParam(name = "site_id", required = false)
+      @Parameter(description = "Restrict to a single site of the caller", example = "1")
+      Long siteId,
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to these statuses, comma-separated", example = "ACTIVE,MAINTENANCE")
+      List<StatusEquipmentResource> status,
+      @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false)
+      @Parameter(description = "ETag of the directory the caller already holds", example = "\"3f2a9c0d1b7e4a5f8c6d2e1b0a9f8e7d\"")
+      String ifNoneMatch,
+      Authentication authentication) {
+    var query = new GetEquipmentDirectoryQuery(authentication.getName(), siteId, toDomainStatuses(status));
+    return ConditionalResponseAssembler.toConditionalResponseFromResult(
+        equipmentQueryService.handle(query),
+        EquipmentDirectoryEntryResourceFromEntityAssembler::toResourcesFromEntities,
+        ifNoneMatch);
   }
 
   /**
@@ -358,5 +425,19 @@ public class EquipmentController {
         equipmentCommandService.handle(command),
         EquipmentResourceFromEntityAssembler::toResourceFromEntity,
         HttpStatus.OK);
+  }
+
+  /**
+   * Translates the status filter into its domain counterpart. An empty entry, as left by a trailing
+   * comma, is ignored rather than failing the whole request.
+   */
+  private static Set<StatusEquipment> toDomainStatuses(List<StatusEquipmentResource> statuses) {
+    if (statuses == null) {
+      return Set.of();
+    }
+    return statuses.stream()
+        .filter(Objects::nonNull)
+        .map(StatusEquipmentResource::toDomain)
+        .collect(Collectors.toUnmodifiableSet());
   }
 }

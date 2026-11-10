@@ -4,7 +4,10 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentDirectoryQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentPage;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
 import java.util.List;
 import java.util.Optional;
@@ -45,4 +48,14 @@ public interface EquipmentQueryService {
    * @return one {@link EquipmentPage} of matching units, paged or whole according to the query
    */
   EquipmentPage handle(GetEquipmentByOwnerQuery query);
+
+  /**
+   * List the whole equipment directory of the caller, narrowed by the optional filters of the query.
+   *
+   * @param query The {@link GetEquipmentDirectoryQuery} Query
+   * @return every matching unit, ordered by name and carrying the name of its site; or a
+   *         {@code SITE_NOT_FOUND} failure when the query names a site that does not exist or is not
+   *         the caller's
+   */
+  Result<List<Equipment>, ApplicationError> handle(GetEquipmentDirectoryQuery query);
 }

@@ -7,6 +7,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEqui
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Equipment repository port.
@@ -21,6 +22,9 @@ import java.util.Optional;
  * <p>Pagination is expressed as a page index and a page size and answered with the domain
  * {@link EquipmentPage} rather than through a framework page type, so that this port stays free of
  * any framework type.</p>
+ *
+ * <p>Every unit this port answers carries the name of its site, attached from the same join, so a
+ * caller can show a unit with its site without reading the site itself.</p>
  */
 public interface EquipmentRepository {
 
@@ -66,6 +70,21 @@ public interface EquipmentRepository {
   EquipmentPage findPageByOwnerId(
       Long ownerId, Long siteId, StatusEquipment status, EquipmentType equipmentType, String search,
       int page, int size);
+
+  /**
+   * Find every unit of an owner, optionally narrowed by site and by a set of statuses, ordered by
+   * name and then by identifier.
+   *
+   * <p>The whole directory in one read, with no paging and no cap: its callers need the identity of
+   * every unit the owner has, and a truncated directory would silently hide units from them. The
+   * filters are combined with the ownership rule, never in place of it.</p>
+   *
+   * @param ownerId  the owner identifier; required
+   * @param siteId   restrict to a single site, may be {@code null}
+   * @param statuses restrict to these statuses; {@code null} or empty does not restrict
+   * @return the matching units, empty when the owner is missing or owns none
+   */
+  List<Equipment> findAllByOwnerId(Long ownerId, Long siteId, Set<StatusEquipment> statuses);
 
   /**
    * Check whether a unit's own identifier is already taken.

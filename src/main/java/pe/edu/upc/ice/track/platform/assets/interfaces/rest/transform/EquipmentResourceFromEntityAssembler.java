@@ -24,6 +24,7 @@ public class EquipmentResourceFromEntityAssembler {
     return new EquipmentResource(
         entity.getEquipmentId(),
         entity.getSiteId(),
+        entity.getSiteName(),
         entity.getUid(),
         entity.getName(),
         EquipmentTypeResource.fromDomain(entity.getEquipmentType()),

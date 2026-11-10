@@ -40,6 +40,11 @@ import java.util.Objects;
  * {@link #enterMaintenance} remembers the status the unit held in {@code statusBeforeMaintenance} and
  * {@link #leaveMaintenance} restores it when the window closes.</p>
  *
+ * <p>{@code siteName} is a read-only companion of {@code siteId}: the name the site carried when the
+ * unit was loaded. It belongs to the {@link Site} aggregate, which stays the only place it can be
+ * changed; the repository attaches it through {@link #attachSiteName} so a unit can be shown with
+ * its site without a second read. It takes part in no rule and is never written back.</p>
+ *
  * <p>No JPA or persistence annotation is present here - the mapping lives exclusively in
  * {@code EquipmentPersistenceEntity}.</p>
  */
@@ -85,6 +90,12 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * the window closes; {@code null} while no window holds the unit in maintenance.
    */
   private StatusEquipment statusBeforeMaintenance;
+
+  /**
+   * Name of the site the unit is installed at, as it read when the unit was loaded; {@code null}
+   * for a unit that was not read back from persistence yet, or whose site no longer exists.
+   */
+  private String siteName;
 
   /**
    * Registers a new equipment unit at a site.
@@ -317,6 +328,18 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    */
   public boolean isInstalledAt(Long candidateSiteId) {
     return siteId.equals(candidateSiteId);
+  }
+
+  /**
+   * Attaches the name of the site this unit is installed at, as read together with the unit.
+   *
+   * <p>Called by the repository adapter when it loads or saves a unit. The name is display data
+   * owned by the {@link Site} aggregate: attaching it changes nothing that is persisted.</p>
+   *
+   * @param siteName the current name of the site, or {@code null} when it could not be resolved
+   */
+  public void attachSiteName(String siteName) {
+    this.siteName = siteName;
   }
 
   /**

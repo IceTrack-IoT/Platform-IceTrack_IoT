@@ -1,6 +1,9 @@
 package pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.specifications;
 
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.domain.UpdateSpecification;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
@@ -10,12 +13,14 @@ import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entit
 
 import java.util.ArrayList;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 /**
- * Criteria API specifications over {@link EquipmentPersistenceEntity}: the owner listing query and
- * the bulk update that increments the edge configuration version.
+ * Criteria API specifications over {@link EquipmentPersistenceEntity}: the owner listing and
+ * directory queries and the bulk update that increments the edge configuration version.
  *
  * <p>The listing filters are optional and combine freely, so the {@code WHERE} clause is assembled
  * from the filters actually supplied instead of being written once with a
@@ -70,13 +75,7 @@ public final class EquipmentPersistenceSpecifications {
     var searchPattern = toContainsPattern(search);
     return (root, query, criteriaBuilder) -> {
       var predicates = new ArrayList<Predicate>();
-
-      var ownedSiteIds = Objects.requireNonNull(query, "query must not be null").subquery(Long.class);
-      var site = ownedSiteIds.from(SitePersistenceEntity.class);
-      ownedSiteIds
-          .select(site.<Long>get(SITE_IDENTIFIER))
-          .where(criteriaBuilder.equal(site.get(SITE_OWNER_PROFILES_ID), ownerProfilesId));
-      predicates.add(root.get(SITE_ID).in(ownedSiteIds));
+      predicates.add(installedAtSiteOwnedBy(root, query, criteriaBuilder, ownerProfilesId));
 
       if (siteId != null) {
         predicates.add(criteriaBuilder.equal(root.get(SITE_ID), siteId));
@@ -94,6 +93,55 @@ public final class EquipmentPersistenceSpecifications {
       }
       return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
     };
+  }
+
+  /**
+   * Builds the specification behind an owner's equipment directory: every unit of the owner,
+   * optionally narrowed to one site and to a set of statuses.
+   *
+   * <p>Same ownership rule as {@link #ownerListing}, {@code AND}-ed with the filters that were
+   * supplied.</p>
+   *
+   * @param ownerProfilesId the owner's profile identifier; required
+   * @param siteId          restrict to a single site, or {@code null}
+   * @param statuses        restrict to these statuses; {@code null} or empty does not restrict
+   * @return the specification
+   */
+  public static Specification<EquipmentPersistenceEntity> ownerDirectory(
+      Long ownerProfilesId, Long siteId, Collection<StatusEquipment> statuses) {
+    Objects.requireNonNull(ownerProfilesId, "ownerProfilesId must not be null");
+    var statusFilter = statuses == null || statuses.isEmpty() ? null : Set.copyOf(statuses);
+    return (root, query, criteriaBuilder) -> {
+      var predicates = new ArrayList<Predicate>();
+      predicates.add(installedAtSiteOwnedBy(root, query, criteriaBuilder, ownerProfilesId));
+      if (siteId != null) {
+        predicates.add(criteriaBuilder.equal(root.get(SITE_ID), siteId));
+      }
+      if (statusFilter != null) {
+        predicates.add(root.get(STATUS).in(statusFilter));
+      }
+      return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
+    };
+  }
+
+  /**
+   * Builds the ownership rule: the unit is installed at one of the owner's sites.
+   *
+   * @param root            the equipment root
+   * @param query           the query the predicate belongs to
+   * @param criteriaBuilder the criteria builder
+   * @param ownerProfilesId the owner's profile identifier
+   * @return the predicate, a subquery on the identifiers of the owner's sites
+   */
+  private static Predicate installedAtSiteOwnedBy(
+      Root<EquipmentPersistenceEntity> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder,
+      Long ownerProfilesId) {
+    var ownedSiteIds = Objects.requireNonNull(query, "query must not be null").subquery(Long.class);
+    var site = ownedSiteIds.from(SitePersistenceEntity.class);
+    ownedSiteIds
+        .select(site.<Long>get(SITE_IDENTIFIER))
+        .where(criteriaBuilder.equal(site.get(SITE_OWNER_PROFILES_ID), ownerProfilesId));
+    return root.get(SITE_ID).in(ownedSiteIds);
   }
 
   /**

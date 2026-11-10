@@ -9,6 +9,9 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentDirectoryQuery;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentPage;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
@@ -41,6 +44,8 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
    * alongside the rows is what tells the client there is more to ask for.</p>
    */
   private static final int MAX_UNPAGED_ROWS = 500;
+
+  private static final String SITE_RESOURCE = "Site";
 
   private final EquipmentRepository equipmentRepository;
   private final SiteRepository siteRepository;
@@ -134,6 +139,29 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
     return equipmentRepository.findPageByOwnerId(
         ownerId, query.siteId(), query.status(), query.equipmentType(), query.search(),
         query.page(), query.size());
+  }
+
+  /**
+   * Lists the caller's whole equipment directory.
+   *
+   * <p>A site filter is checked against the caller before anything is listed: a site that does not
+   * exist and a site of another owner both answer the same failure, so the filter cannot be used to
+   * probe for sites. A caller that holds no owner profile owns no unit, hence an empty directory.</p>
+   *
+   * @param query the query naming the caller and the filters
+   * @return the matching units by name, or a {@code SITE_NOT_FOUND} failure for an unreachable site
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public Result<List<Equipment>, ApplicationError> handle(GetEquipmentDirectoryQuery query) {
+    var ownerId = assetsExternalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
+    if (query.siteId() != null && (ownerId == null || !isSiteOwnedBy(query.siteId(), ownerId))) {
+      return Result.failure(ApplicationError.notFound(SITE_RESOURCE, String.valueOf(query.siteId())));
+    }
+    if (ownerId == null) {
+      return Result.success(List.of());
+    }
+    return Result.success(equipmentRepository.findAllByOwnerId(ownerId, query.siteId(), query.statuses()));
   }
 
   /**

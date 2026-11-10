@@ -13,12 +13,16 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEqui
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.assemblers.EquipmentPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entities.EquipmentPersistenceEntity;
+import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entities.SitePersistenceEntity;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.repositories.EquipmentPersistenceRepository;
+import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.repositories.SitePersistenceRepository;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.specifications.EquipmentPersistenceSpecifications;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Repository adapter that bridges the {@link EquipmentRepository} port with Spring Data JPA.
@@ -30,6 +34,12 @@ import java.util.Optional;
  * <p>Events raised by an <em>update</em> - currently only {@code TemperatureThresholdUpdatedEvent}
  * - are dispatched here too, right after the row is written, so that a change published to the rest
  * of the platform is always one that reached the database.</p>
+ *
+ * <p><strong>Site name.</strong> A unit is joined with its site by identifier, since
+ * {@code EquipmentPersistenceEntity} holds no association. Every unit answered here carries the
+ * name of its site: a single unit reads its site by primary key, which the persistence context
+ * usually already holds because the caller checked the site's owner, and a list reads the names of
+ * all its sites in one statement, never one per unit.</p>
  */
 @Repository
 public class EquipmentRepositoryImpl implements EquipmentRepository {
@@ -37,6 +47,7 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
   private static final Sort LISTING_ORDER = Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"));
 
   private final EquipmentPersistenceRepository equipmentPersistenceRepository;
+  private final SitePersistenceRepository sitePersistenceRepository;
   private final ApplicationEventPublisher eventPublisher;
   private final EntityManager entityManager;
 
@@ -44,15 +55,19 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
    * Constructor
    *
    * @param equipmentPersistenceRepository the Spring Data repository
+   * @param sitePersistenceRepository      the Spring Data repository of the sites, read for the name
+   *                                       of the site a unit is installed at
    * @param eventPublisher                 the Spring event publisher used to dispatch domain events
    * @param entityManager                  the persistence context, flushed and cleared around the
    *                                       configuration version increment
    */
   public EquipmentRepositoryImpl(
       EquipmentPersistenceRepository equipmentPersistenceRepository,
+      SitePersistenceRepository sitePersistenceRepository,
       ApplicationEventPublisher eventPublisher,
       EntityManager entityManager) {
     this.equipmentPersistenceRepository = equipmentPersistenceRepository;
+    this.sitePersistenceRepository = sitePersistenceRepository;
     this.eventPublisher = eventPublisher;
     this.entityManager = entityManager;
   }
@@ -63,8 +78,7 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
     if (equipmentId == null) {
       return Optional.empty();
     }
-    return equipmentPersistenceRepository.findById(equipmentId)
-        .map(EquipmentPersistenceAssembler::toDomainFromPersistence);
+    return equipmentPersistenceRepository.findById(equipmentId).map(this::toDomainWithSiteName);
   }
 
   // inherited javadoc
@@ -73,9 +87,7 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
     if (siteId == null) {
       return List.of();
     }
-    return equipmentPersistenceRepository.findBySiteIdOrderByNameAsc(siteId).stream()
-        .map(EquipmentPersistenceAssembler::toDomainFromPersistence)
-        .toList();
+    return toDomainWithSiteNames(equipmentPersistenceRepository.findBySiteIdOrderByNameAsc(siteId));
   }
 
   /**
@@ -114,10 +126,27 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
       return new EquipmentPage(List.of(), page, size, equipmentPersistenceRepository.count(specification));
     }
     var slice = equipmentPersistenceRepository.findAll(specification, PageRequest.of(page, size, LISTING_ORDER));
-    var content = slice.getContent().stream()
-        .map(EquipmentPersistenceAssembler::toDomainFromPersistence)
-        .toList();
-    return new EquipmentPage(content, page, size, slice.getTotalElements());
+    return new EquipmentPage(toDomainWithSiteNames(slice.getContent()), page, size, slice.getTotalElements());
+  }
+
+  /**
+   * Returns every unit of an owner matching the filters, in the listing order.
+   *
+   * <p>Two statements whatever the number of units: one for the rows, one for the names of their
+   * sites.</p>
+   *
+   * @param ownerId  the owner identifier
+   * @param siteId   restrict to a single site, may be {@code null}
+   * @param statuses restrict to these statuses; {@code null} or empty does not restrict
+   * @return the matching units, by name and then by identifier
+   */
+  @Override
+  public List<Equipment> findAllByOwnerId(Long ownerId, Long siteId, Set<StatusEquipment> statuses) {
+    if (ownerId == null) {
+      return List.of();
+    }
+    var specification = EquipmentPersistenceSpecifications.ownerDirectory(ownerId, siteId, statuses);
+    return toDomainWithSiteNames(equipmentPersistenceRepository.findAll(specification, LISTING_ORDER));
   }
 
   // inherited javadoc
@@ -132,16 +161,13 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
     if (uid == null || uid.isBlank()) {
       return Optional.empty();
     }
-    return equipmentPersistenceRepository.findByEquipmentUid(uid.trim())
-        .map(EquipmentPersistenceAssembler::toDomainFromPersistence);
+    return equipmentPersistenceRepository.findByEquipmentUid(uid.trim()).map(this::toDomainWithSiteName);
   }
 
   // inherited javadoc
   @Override
   public List<Equipment> findOnline() {
-    return equipmentPersistenceRepository.findByOnlineTrueOrderByIdAsc().stream()
-        .map(EquipmentPersistenceAssembler::toDomainFromPersistence)
-        .toList();
+    return toDomainWithSiteNames(equipmentPersistenceRepository.findByOnlineTrueOrderByIdAsc());
   }
 
   /**
@@ -154,6 +180,10 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
    * therefore published, in that order, so a caller that registers a unit and immediately changes
    * its threshold emits the creation and the threshold change rather than only one of them.</p>
    *
+   * <p>The site name the incoming aggregate was loaded with is carried over to the copy answered,
+   * since saving a unit never moves it to another site; a unit that carries none, such as one just
+   * built for registration, has it read.</p>
+   *
    * @param equipment the unit to persist
    * @return the persisted unit
    */
@@ -162,7 +192,13 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
     var isNew = equipment.getEquipmentId() == null;
     var savedEntity = equipmentPersistenceRepository.save(
         EquipmentPersistenceAssembler.toPersistenceFromDomain(equipment));
-    var savedEquipment = EquipmentPersistenceAssembler.toDomainFromPersistence(savedEntity);
+    Equipment savedEquipment;
+    if (equipment.getSiteName() == null) {
+      savedEquipment = toDomainWithSiteName(savedEntity);
+    } else {
+      savedEquipment = EquipmentPersistenceAssembler.toDomainFromPersistence(savedEntity);
+      savedEquipment.attachSiteName(equipment.getSiteName());
+    }
     publishPendingEvents(equipment);
     if (isNew) {
       savedEquipment.onRegistered();
@@ -206,6 +242,43 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
       return Optional.empty();
     }
     return equipmentPersistenceRepository.findById(equipmentId).map(EquipmentPersistenceEntity::getConfigVersion);
+  }
+
+  /**
+   * Rebuilds one unit and attaches the name of its site, read by primary key.
+   *
+   * @param entity the persisted row
+   * @return the unit, carrying its site name when the site exists
+   */
+  private Equipment toDomainWithSiteName(EquipmentPersistenceEntity entity) {
+    var equipment = EquipmentPersistenceAssembler.toDomainFromPersistence(entity);
+    sitePersistenceRepository.findById(entity.getSiteId())
+        .map(SitePersistenceEntity::getName)
+        .ifPresent(equipment::attachSiteName);
+    return equipment;
+  }
+
+  /**
+   * Rebuilds a list of units and attaches the name of the site of each, reading the names of every
+   * site involved in a single statement.
+   *
+   * @param entities the persisted rows, in the order to answer them
+   * @return the units, in the same order
+   */
+  private List<Equipment> toDomainWithSiteNames(List<EquipmentPersistenceEntity> entities) {
+    if (entities.isEmpty()) {
+      return List.of();
+    }
+    var siteIds = entities.stream().map(EquipmentPersistenceEntity::getSiteId).collect(Collectors.toSet());
+    var siteNames = sitePersistenceRepository.findAllById(siteIds).stream()
+        .collect(Collectors.toMap(SitePersistenceEntity::getId, SitePersistenceEntity::getName));
+    return entities.stream()
+        .map(entity -> {
+          var equipment = EquipmentPersistenceAssembler.toDomainFromPersistence(entity);
+          equipment.attachSiteName(siteNames.get(entity.getSiteId()));
+          return equipment;
+        })
+        .toList();
   }
 
   /**

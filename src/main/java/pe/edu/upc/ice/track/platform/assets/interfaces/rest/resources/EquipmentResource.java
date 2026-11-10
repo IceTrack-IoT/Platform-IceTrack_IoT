@@ -11,17 +11,27 @@ import java.time.Instant;
  * the detail a unit opens with. The telemetry columns {@code online}, {@code last_reading_at} and
  * {@code last_known_temperature} are exposed but not writable: they are written by the Monitoring
  * and Alerting context, never through these endpoints.</p>
+ *
+ * <p>{@code site_name} is read-only too: it is the name of the site at the time of the read, there
+ * so a client can show where a unit is installed without also listing the sites. A site is renamed
+ * through the site endpoints.</p>
  */
 @Schema(
     name = "EquipmentResponse",
     description = "Equipment information response",
-    example = "{\"id\": 10, \"site_id\": 1, \"uid\": \"ESP32-0001\", \"name\": \"Refrigerador 1\", \"equipment_type\": \"REFRIGERATOR\", \"status\": \"ACTIVE\", \"online\": true, \"min_celsius\": 2.0, \"max_celsius\": 8.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30Z\", \"last_known_temperature\": 4.5, \"config_version\": 3}")
+    example = "{\"id\": 10, \"site_id\": 1, \"site_name\": \"Sede Central\", \"uid\": \"ESP32-0001\", \"name\": \"Refrigerador 1\", \"equipment_type\": \"REFRIGERATOR\", \"status\": \"ACTIVE\", \"online\": true, \"min_celsius\": 2.0, \"max_celsius\": 8.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30Z\", \"last_known_temperature\": 4.5, \"config_version\": 3}")
 public record EquipmentResource(
     @Schema(description = "Equipment unique identifier", example = "10")
     Long id,
 
     @Schema(description = "Identifier of the site the unit is installed at", example = "1")
     Long siteId,
+
+    @Schema(
+        description = "Name of the site the unit is installed at, at the time of the read; read-only",
+        example = "Sede Central",
+        accessMode = Schema.AccessMode.READ_ONLY)
+    String siteName,
 
     @Schema(description = "The unit's own identifier, unique across the platform", example = "ESP32-0001")
     String uid,
