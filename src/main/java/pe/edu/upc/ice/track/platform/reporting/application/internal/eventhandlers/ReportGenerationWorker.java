@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.reporting.application.internal.eventhandle
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionPhase;
@@ -17,7 +18,9 @@ import pe.edu.upc.ice.track.platform.reporting.domain.model.events.ReportRequest
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.KpiValue;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportFile;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportStatus;
+import pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates.Report;
 import pe.edu.upc.ice.track.platform.reporting.domain.repositories.ReportRepository;
+import pe.edu.upc.ice.track.platform.reporting.interfaces.events.ReportStatusChangedIntegrationEvent;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -62,6 +65,7 @@ public class ReportGenerationWorker {
   private final ReportRepository reportRepository;
   private final ObjectMapper objectMapper;
   private final ExternalProfilesServiceForReporting externalProfilesService;
+  private final ApplicationEventPublisher eventPublisher;
 
   public ReportGenerationWorker(
       Map<String, ReportGenerationStrategy> strategies,
@@ -69,13 +73,15 @@ public class ReportGenerationWorker {
       ReportFileStorage fileStorage,
       ReportRepository reportRepository,
       ObjectMapper objectMapper,
-      ExternalProfilesServiceForReporting externalProfilesService) {
+      ExternalProfilesServiceForReporting externalProfilesService,
+      ApplicationEventPublisher eventPublisher) {
     this.strategies = strategies;
     this.renderers = renderers;
     this.fileStorage = fileStorage;
     this.reportRepository = reportRepository;
     this.objectMapper = objectMapper;
     this.externalProfilesService = externalProfilesService;
+    this.eventPublisher = eventPublisher;
   }
 
   /**
@@ -101,12 +107,14 @@ public class ReportGenerationWorker {
       log.info("Report {} is not pending; generation skipped", reportId);
       return;
     }
+    var ownerProfileId = externalProfilesService.fetchOwnerIdByUserId(report.getUserId().userId());
     report.markAsGenerating();
     reportRepository.save(report);
+    announceStatusChange(report, ReportStatus.PENDING, ownerProfileId.orElse(null));
 
     String storedKey = null;
     try {
-      var ownerId = externalProfilesService.fetchOwnerIdByUserId(report.getUserId().userId())
+      var ownerId = ownerProfileId
           .orElseThrow(() -> new IllegalStateException("The requester no longer has an owner profile"));
       var strategy = strategies.get(report.getType().name());
       var renderer = renderers.get(report.getFormat().name());
@@ -139,10 +147,27 @@ public class ReportGenerationWorker {
 
     try {
       reportRepository.save(report);
+      announceStatusChange(report, ReportStatus.GENERATING, ownerProfileId.orElse(null));
     } catch (RuntimeException ex) {
       log.error("Report {} could not be recorded; its stored file is removed", report.getId(), ex);
       deleteQuietly(report.getFile() != null ? report.getFile().key() : null);
     }
+  }
+
+  /**
+   * Announces a stored status change to the other bounded contexts, so the owner's open screens learn
+   * it without polling. A report whose requester no longer has an owner profile concerns nobody.
+   *
+   * @param report         the report, already saved in its new status
+   * @param previousStatus the status it left
+   * @param ownerProfileId the owner profile of the requester, or {@code null}
+   */
+  private void announceStatusChange(Report report, ReportStatus previousStatus, Long ownerProfileId) {
+    if (ownerProfileId == null) {
+      return;
+    }
+    eventPublisher.publishEvent(new ReportStatusChangedIntegrationEvent(
+        report.getId(), ownerProfileId, previousStatus.name(), report.getStatus().name(), Instant.now()));
   }
 
   /**

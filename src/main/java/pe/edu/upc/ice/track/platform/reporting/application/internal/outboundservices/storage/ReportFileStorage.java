@@ -29,11 +29,15 @@ public interface ReportFileStorage {
   /**
    * Produces a temporary URL from which the file can be downloaded without credentials.
    *
-   * @param key      the object name of the file; required
-   * @param validFor how long the URL must keep working; required
-   * @return the temporary download URL
+   * <p>Where the storage supports it, the URL also asks the browser to save the file as an
+   * attachment named {@code downloadFileName} instead of opening it in place.</p>
+   *
+   * @param key              the object name of the file; required
+   * @param validFor         how long the URL must keep working; required
+   * @param downloadFileName the name the browser should save the file under; required
+   * @return the temporary download URL and the instant it stops working
    */
-  String generateDownloadUrl(String key, Duration validFor);
+  SignedDownloadUrl generateDownloadUrl(String key, Duration validFor, String downloadFileName);
 
   /**
    * Deletes a file. Deleting a key that does not exist is not an error.

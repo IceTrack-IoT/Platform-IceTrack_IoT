@@ -4,12 +4,17 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Resource representing a report, as returned to API consumers.
  *
  * <p>{@code download_url} is present only for a {@code COMPLETED} report that was read by id; it is
- * omitted otherwise, and a new one is issued on every read.</p>
+ * omitted otherwise, and a new one is issued on every read. {@code GET /reports/{id}/download-link}
+ * issues one on its own, with its expiry and the file details.</p>
+ *
+ * <p>A summary - every item of a paged listing, and of a plain listing asked with
+ * {@code include=summary} - omits {@code result_payload} and {@code kpis} as well.</p>
  *
  * @param id            identifier of the report
  * @param name          display name of the report
@@ -27,6 +32,7 @@ import java.time.Instant;
  * @param requestedAt   when the report was requested
  * @param completedAt   when the report reached {@code COMPLETED} or {@code FAILED}; {@code null} while in progress
  * @param downloadUrl   a signed URL valid for 15 minutes; present only for a {@code COMPLETED} report read by id
+ * @param kpis          the KPIs of a {@code COMPLETED} report as a JSON array; omitted otherwise and in summaries
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(
@@ -91,6 +97,10 @@ public record ReportResource(
 
     @Schema(description = "Signed download URL valid for 15 minutes; only for a COMPLETED report read by id",
         nullable = true)
-    String downloadUrl
+    String downloadUrl,
+
+    @Schema(description = "The KPIs of a completed report, the same values as result_payload but as a JSON array "
+        + "with a stable key and a numeric value; omitted when not COMPLETED and in summaries", nullable = true)
+    List<KpiResource> kpis
 ) {
 }

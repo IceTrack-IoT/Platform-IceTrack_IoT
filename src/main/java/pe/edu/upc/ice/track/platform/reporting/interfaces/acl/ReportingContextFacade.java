@@ -1,11 +1,10 @@
 package pe.edu.upc.ice.track.platform.reporting.interfaces.acl;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates.Report;
+import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportListFilter;
 import pe.edu.upc.ice.track.platform.reporting.domain.repositories.ReportRepository;
-
-import java.util.Comparator;
-import java.util.List;
 
 /**
  * Anti-Corruption Layer facade exposing {@code reporting} to other bounded contexts (e.g.
@@ -35,11 +34,13 @@ public class ReportingContextFacade {
    * @param userId identifier of the user
    * @return how many reports the user has requested
    */
+  @Transactional(readOnly = true)
   public int countReportsByUser(Long userId) {
     if (userId == null) {
       return 0;
     }
-    return reportRepository.findByUserId(userId).size();
+    // A one-row page carries the total, so the reports themselves are never loaded.
+    return Math.toIntExact(reportRepository.findPageByUserId(userId, ReportListFilter.NONE, 0, 1).totalElements());
   }
 
   /**
@@ -49,13 +50,15 @@ public class ReportingContextFacade {
    * @param userId identifier of the user
    * @return the latest report's status name (e.g. {@code "COMPLETED"}), or {@code null}
    */
+  @Transactional(readOnly = true)
   public String fetchLatestReportStatusByUser(Long userId) {
     if (userId == null) {
       return null;
     }
-    List<Report> reports = reportRepository.findByUserId(userId);
-    return reports.stream()
-        .max(Comparator.comparing(Report::getRequestedAt))
+    // The listing is ordered most recently requested first, so the first row of the first page is
+    // the latest report.
+    return reportRepository.findPageByUserId(userId, ReportListFilter.NONE, 0, 1).content().stream()
+        .findFirst()
         .map(report -> report.getStatus().name())
         .orElse(null);
   }

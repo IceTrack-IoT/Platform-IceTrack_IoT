@@ -6,7 +6,9 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDoma
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 
 
+import java.text.Normalizer;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -31,6 +33,9 @@ import java.util.Objects;
  */
 @Getter
 public class Report extends AbstractDomainAggregateRoot<Report> {
+
+  /** Longest part of a suggested file name before its extension. */
+  private static final int MAX_FILE_NAME_STEM_LENGTH = 100;
 
   private Long id;
   private final String title;
@@ -123,6 +128,48 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
    */
   public boolean hasFile() {
     return status == ReportStatus.COMPLETED && file != null;
+  }
+
+  /**
+   * Suggests the name a downloaded copy of this report's file should be saved under: the report
+   * name in lower case, with accents dropped and every run of other characters than letters and
+   * digits replaced by one hyphen, followed by the extension of the stored file. For example
+   * {@code "Excursions - October 2026"} stored as a PDF becomes
+   * {@code "excursions-october-2026.pdf"}. A name left empty by that rule falls back to
+   * {@code report-<id>}.
+   *
+   * @return the suggested file name, extension included
+   * @throws IllegalStateException when the report has no file
+   */
+  public String suggestedFileName() {
+    if (!hasFile()) {
+      throw new IllegalStateException("Report " + id + " has no file to name");
+    }
+    var stem = Normalizer.normalize(title, Normalizer.Form.NFD)
+        .replaceAll("\\p{M}+", "")
+        .toLowerCase(Locale.ROOT)
+        .replaceAll("[^a-z0-9]+", "-")
+        .replaceAll("^-+|-+$", "");
+    if (stem.length() > MAX_FILE_NAME_STEM_LENGTH) {
+      stem = stem.substring(0, MAX_FILE_NAME_STEM_LENGTH).replaceAll("-+$", "");
+    }
+    if (stem.isEmpty()) {
+      stem = "report-" + id;
+    }
+    return stem + "." + fileExtension();
+  }
+
+  /**
+   * The extension of the stored file, read from its key, or the format's name when the key has
+   * none.
+   */
+  private String fileExtension() {
+    var key = file.key();
+    var lastSegment = key.substring(key.lastIndexOf('/') + 1);
+    var dot = lastSegment.lastIndexOf('.');
+    return dot >= 0 && dot < lastSegment.length() - 1
+        ? lastSegment.substring(dot + 1).toLowerCase(Locale.ROOT)
+        : format.name().toLowerCase(Locale.ROOT);
   }
 
   /**

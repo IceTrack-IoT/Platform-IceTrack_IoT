@@ -4,12 +4,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.storage.ReportFileStorage;
+import pe.edu.upc.ice.track.platform.reporting.application.internal.outboundservices.storage.SignedDownloadUrl;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -48,9 +50,15 @@ public class LocalReportFileStorage implements ReportFileStorage {
     }
   }
 
+  /**
+   * Answers the {@code file:} URI of the stored file. A disk has no signature to expire and no
+   * response header to set, so the expiry is only the requested lifetime and the file name is not
+   * applied.
+   */
   @Override
-  public String generateDownloadUrl(String key, Duration validFor) {
-    return resolve(key).toUri().toString();
+  public SignedDownloadUrl generateDownloadUrl(String key, Duration validFor, String downloadFileName) {
+    Objects.requireNonNull(validFor, "validFor must not be null");
+    return new SignedDownloadUrl(resolve(key).toUri().toString(), Instant.now().plus(validFor));
   }
 
   @Override

@@ -45,8 +45,8 @@ public class TechnicianPerformanceStrategy implements ReportGenerationStrategy {
     Optional<Double> averageRating = serviceRequestsService.fetchAverageRatingByTechnician(technicianId);
 
     List<KpiValue> kpis = new ArrayList<>();
-    kpis.add(new KpiValue("Completed service requests", (double) completedCount, "count"));
-    averageRating.ifPresent(rating -> kpis.add(new KpiValue("Average rating", rating, "stars")));
+    kpis.add(new KpiValue("completed_service_requests", "Completed service requests", (double) completedCount, "count"));
+    averageRating.ifPresent(rating -> kpis.add(new KpiValue("average_rating", "Average rating", rating, "stars")));
     return kpis;
   }
 }

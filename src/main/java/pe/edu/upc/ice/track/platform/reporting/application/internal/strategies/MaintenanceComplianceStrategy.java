@@ -52,8 +52,8 @@ public class MaintenanceComplianceStrategy implements ReportGenerationStrategy {
         : (compliantCount * 100d) / siteEquipmentIds.size();
 
     return List.of(
-        new KpiValue("Units in scope", (double) siteEquipmentIds.size(), "count"),
-        new KpiValue("Compliant units", (double) compliantCount, "count"),
-        new KpiValue("Compliance rate", compliancePercentage, "%"));
+        new KpiValue("units_in_scope", "Units in scope", (double) siteEquipmentIds.size(), "count"),
+        new KpiValue("compliant_units", "Compliant units", (double) compliantCount, "count"),
+        new KpiValue("compliance_rate_pct", "Compliance rate", compliancePercentage, "%"));
   }
 }

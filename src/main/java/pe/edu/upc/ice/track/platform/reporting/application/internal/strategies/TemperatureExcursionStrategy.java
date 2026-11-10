@@ -61,8 +61,10 @@ public class TemperatureExcursionStrategy implements ReportGenerationStrategy {
           equipmentId, TEMPERATURE_EXCURSION, range.from(), range.to());
       totalExcursions += excursions;
       totalHours += hours;
-      kpis.add(new KpiValue("Excursions - Unit " + equipmentId, (double) excursions, "count"));
-      kpis.add(new KpiValue("Excursion hours - Unit " + equipmentId, hours, "h"));
+      kpis.add(new KpiValue(KpiValue.perUnitKey("excursion_count", equipmentId),
+          "Excursions - Unit " + equipmentId, (double) excursions, "count"));
+      kpis.add(new KpiValue(KpiValue.perUnitKey("excursion_hours", equipmentId),
+          "Excursion hours - Unit " + equipmentId, hours, "h"));
 
       var samples = monitoringService.fetchTemperatureSamplesByEquipmentInRange(equipmentId, range.from(), range.to());
       var band = assetsService.fetchTemperatureThresholdRange(equipmentId);
@@ -71,18 +73,22 @@ public class TemperatureExcursionStrategy implements ReportGenerationStrategy {
       }
       unitsWithTelemetry++;
       var exposure = ThermalExposureCalculator.of(samples, band.get()[0], band.get()[1]);
-      kpis.add(new KpiValue("Mean kinetic temperature - Unit " + equipmentId, exposure.meanKineticTemperature(), "C"));
-      kpis.add(new KpiValue("Temperature standard deviation - Unit " + equipmentId, exposure.standardDeviation(), "C"));
-      kpis.add(new KpiValue("Degree-minutes outside range - Unit " + equipmentId, exposure.degreeMinutes(), "degree-min"));
-      kpis.add(new KpiValue("Time in range - Unit " + equipmentId, exposure.percentInRange(), "%"));
+      kpis.add(new KpiValue(KpiValue.perUnitKey("mean_kinetic_temperature", equipmentId),
+          "Mean kinetic temperature - Unit " + equipmentId, exposure.meanKineticTemperature(), "C"));
+      kpis.add(new KpiValue(KpiValue.perUnitKey("temperature_std_dev", equipmentId),
+          "Temperature standard deviation - Unit " + equipmentId, exposure.standardDeviation(), "C"));
+      kpis.add(new KpiValue(KpiValue.perUnitKey("degree_minutes_out_of_range", equipmentId),
+          "Degree-minutes outside range - Unit " + equipmentId, exposure.degreeMinutes(), "degree-min"));
+      kpis.add(new KpiValue(KpiValue.perUnitKey("time_in_range_pct", equipmentId),
+          "Time in range - Unit " + equipmentId, exposure.percentInRange(), "%"));
     }
 
     if (unitsWithTelemetry == 0) {
       throw new InsufficientTelemetryException();
     }
 
-    kpis.add(0, new KpiValue("Total excursion hours", totalHours, "h"));
-    kpis.add(0, new KpiValue("Total excursions", (double) totalExcursions, "count"));
+    kpis.add(0, new KpiValue("excursion_hours", "Total excursion hours", totalHours, "h"));
+    kpis.add(0, new KpiValue("excursion_count", "Total excursions", (double) totalExcursions, "count"));
     return kpis;
   }
 }

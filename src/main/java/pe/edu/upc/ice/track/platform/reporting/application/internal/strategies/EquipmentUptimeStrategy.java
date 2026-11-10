@@ -58,13 +58,14 @@ public class EquipmentUptimeStrategy implements ReportGenerationStrategy {
       double uptimeHours = Math.max(0d, windowHours - offlineHours);
       double uptimePercentage = windowHours > 0 ? (uptimeHours / windowHours) * 100d : 0d;
       uptimeSum += uptimePercentage;
-      kpis.add(new KpiValue("Uptime - Unit " + equipmentId, uptimePercentage, "%"));
+      kpis.add(new KpiValue(KpiValue.perUnitKey("uptime_pct", equipmentId),
+          "Uptime - Unit " + equipmentId, uptimePercentage, "%"));
     }
 
     if (!equipmentIds.isEmpty()) {
-      kpis.add(0, new KpiValue("Average uptime", uptimeSum / equipmentIds.size(), "%"));
+      kpis.add(0, new KpiValue("average_uptime_pct", "Average uptime", uptimeSum / equipmentIds.size(), "%"));
     } else {
-      kpis.add(new KpiValue("Average uptime", 0d, "%"));
+      kpis.add(new KpiValue("average_uptime_pct", "Average uptime", 0d, "%"));
     }
     return kpis;
   }
