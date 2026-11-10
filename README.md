@@ -24,6 +24,7 @@ Exposes versioned resources under `/api/v1/*` (e.g. `/api/v1/authentication`, `/
 - [Alerts and notifications](#alerts-and-notifications)
 - [Edge devices](#edge-devices)
 - [Edge configuration, events and grants](#edge-configuration-events-and-grants)
+- [Service requests](#service-requests)
 - [Maintenance windows](#maintenance-windows)
 - [Sites, address verification and reports](#sites-address-verification-and-reports)
 - [Real-time telemetry stream](#real-time-telemetry-stream)
@@ -103,6 +104,9 @@ Defaults come from `src/main/resources/application.properties`:
 | `EDGE_GRANT_TTL_HOURS` | `24` | Lifetime of the edge grant issued when a technician accepts a service request |
 | `MAINTENANCE_WINDOW_EXPIRY_GRACE_MINUTES` | `30` | Minutes after its expiration an open maintenance window is closed by the platform as `EXPIRED`, when its gateway never reported the end |
 | `MAINTENANCE_WINDOW_EXPIRY_SWEEP_MS` | `60000` | Interval of the sweep that closes those overdue windows |
+| `OFFLINE_DETECTION_ENABLED` | `true` | Runs the offline detection, which marks silent units offline and raises `DEVICE_OFFLINE` alerts |
+| `OFFLINE_DETECTION_DELAY_MS` / `OFFLINE_DETECTION_INITIAL_DELAY_MS` | `60000` / `60000` | Interval between two detection rounds (one synchronization window), and delay before the first |
+| `OFFLINE_DETECTION_LOCK_LEASE_MS` | `50000` | Lease a round takes in `scheduled_task_locks`, so only one instance runs it; keep it shorter than the interval |
 | `OUTBOX_DISPATCH_DELAY_MS` | `2000` | Interval at which the transactional outbox delivers pending integration events |
 | `ADDRESS_VALIDATION_SECRET` | none (required) | Base64-encoded key, at least 32 decoded bytes, that signs address validation tokens (`openssl rand -base64 32`); startup fails when it is missing, not Base64 or too short. It is separate from `JWT_SECRET` |
 | `GOOGLE_MAPS_API_KEY` | `YOUR_MAPS_DEMO_KEY` | Google Maps Geocoding key; with the placeholder every address validation answers `503` |
@@ -117,7 +121,7 @@ Defaults come from `src/main/resources/application.properties`:
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.
 
-**Thread pools.** Readings are ingested on the request threads and hold a database connection for a few milliseconds. Slow work has its own bounded pool: the default `@Async` pool for push notifications, `reportTaskExecutor` (1 to 2 threads) for reports, and `streamTaskExecutor` (4 to 8 threads, queue of 1000) for every write to a telemetry stream. When the stream pool's queue is full, the oldest pending update is dropped with a warning. Two scheduler threads run the periodic jobs, so a slow outbox run never delays the stream heartbeat. These defaults are sized for 500 reading batches per minute with a p95 ingestion latency of at most 500 ms; the device API key check on every edge request is a SHA-256 digest looked up through the unique index on `devices.api_key_digest`, so it costs microseconds.
+**Thread pools.** Readings are ingested on the request threads and hold a database connection for a few milliseconds. Slow work has its own bounded pool: the default `@Async` pool for push notifications, `reportTaskExecutor` (1 to 2 threads) for reports, and `streamTaskExecutor` (4 to 8 threads, queue of 1000) for every write to a telemetry stream. When the stream pool's queue is full, the oldest pending update is dropped with a warning. Three scheduler threads run the periodic jobs, so a slow outbox run or offline detection round never delays the stream heartbeat. These defaults are sized for 500 reading batches per minute with a p95 ingestion latency of at most 500 ms; the device API key check on every edge request is a SHA-256 digest looked up through the unique index on `devices.api_key_digest`, so it costs microseconds.
 
 ## API conventions
 
@@ -134,7 +138,9 @@ Path variables keep their names (`{equipmentId}`, `{siteId}`, ...): they only ap
 
 **Equipment directory and site names.** `GET /api/v1/assets/equipments/directory` (owner JWT) returns the identity of every unit of the caller, sorted by name and unpaged: `id`, `uid`, `name`, `equipment_type`, `status`, `site_id` and `site_name`. Optional `site_id` and `status` (comma-separated). It carries no telemetry, so it only changes when a unit or a site is created, renamed or changes status. Every `EquipmentResource` also carries the read-only `site_name`.
 
-**Conditional reads.** The equipment directory and `GET /api/v1/alert-policies` return an `ETag`, a digest of the answer. Sending it back in `If-None-Match` answers `304` with an empty body while the answer is unchanged. CORS exposes `ETag` and `Retry-After`, so a browser application can read both.
+**Conditional reads.** The equipment directory and `GET /api/v1/alert-policies` return an `ETag`, a digest of the answer. Sending it back in `If-None-Match` answers `304` with an empty body while the answer is unchanged. CORS exposes `ETag`, `Retry-After` and `X-Telemetry-Bucket`, so a browser application can read them.
+
+**Equipment connectivity.** Every `EquipmentResource` carries `connectivity`, evaluated by the server on every read with the offline detection's rule: `state` (`REPORTING`, `SILENT`, `NEVER_REPORTED`, or `NOT_MONITORED` for a `DEACTIVATED` unit), `last_received_at` (server arrival time of the latest batch, stored in `equipments.last_received_at`), `silent_after_seconds` (60 × the policy's `missed_sync_windows_for_offline`), `silent_since` (only when `SILENT`), `under_maintenance` and `evaluated_at`. A client keeps it current with `skew = evaluated_at - now`. `online` is deprecated and kept for compatibility. The equipment directory does not carry `connectivity`, so its `ETag` stays stable.
 
 **Errors.** Error answers carry the standard body `{"code": "...", "message": "...", "details": "..."}` (`ErrorResponse` in the OpenAPI document). The `401` of the edge routes is empty, and an endpoint documents its own body where it differs, such as the candidates of `422 ADDRESS_NOT_VERIFIED`. `message` is always present (a code without a message of its own falls back to a generic text), and validation `details` name the snake_case request properties (`Field min_celsius: ...`), sorted and without repetitions. The OpenAPI document declares the standard body for these codes on every operation, without per-method repetition:
 
@@ -193,11 +199,18 @@ The actor is always the authenticated caller (IAM user id). `reason` is mandator
 | `GET /api/v1/alert-policies` | The policy applicable to each unit: `{equipment_id, source, policy}`, `source` being `EQUIPMENT` or `DEFAULT`. Optional `equipment_id` list of at most 100; units of another owner are left out, not refused. Conditional (`ETag` / `304`) |
 | `GET /api/v1/dashboard/summary` | The dashboard totals: sites, units per status, units `reporting` / `silent` / `never_reported` (judged by the server clock against each unit's offline window), active alerts per status and severity, service requests per status and linked devices. Optional `site_id` |
 
+**Offline detection.** Every `OFFLINE_DETECTION_DELAY_MS` (60 s) a connected unit whose latest batch arrived at least its offline window ago (60 s × `missed_sync_windows_for_offline`, 3 minutes by default) is marked offline and gets a `DEVICE_OFFLINE` alert, unless a maintenance window covers it; the owner is notified and the stream receives the alert and a `connectivity-changed` event. The next batch resolves the alert. With several instances, one runs each round: it takes a lease in the `scheduled_task_locks` table first. `EQUIPMENT_UPTIME` reports are computed from these alerts.
+
+**Telemetry history.** `GET /api/v1/telemetry/equipment/{id}?from=...&to=...` returns every stored batch. With `bucket` (`1m`, `5m`, `15m`, `1h`, `6h` or `auto`) the batches are aggregated into epoch-aligned buckets, oldest first, each with `bucket_start`, `bucket_end`, `min_temperature`, `max_temperature`, `avg_temperature` and `avg_humidity` (weighted by `sample_count`), `sample_count`, `batch_count`, `under_maintenance`, `door_open_seconds` and `last_received_at`. Empty buckets are omitted, so a gap is a real gap in reporting. `auto` picks the smallest bucket that keeps the answer at or below `max_points` (10 to 2000, default 500); the `X-Telemetry-Bucket` header names the bucket used. An unknown bucket, `max_points` out of range, `from` after `to`, or a fixed bucket that would exceed 2000 points answers `400`.
+
 Thermal excursion alerts are opened only by the edge gateway's `THERMAL_EXCURSION_DETECTED` event (see [Edge configuration, events and grants](#edge-configuration-events-and-grants)), with severity `CRITICAL`, never by a single reading batch. Every alert response also carries the triggering reading (`triggering_reading_id`, `triggering_temperature`, `triggering_recorded_at`) and `total_duration_seconds` once closed.
 
 **Notifications** (`/api/v1/notifications`, the recipient is always the authenticated caller, owner or technician):
 
-- `GET /api/v1/notifications?page=0&size=20&unread_only=false` returns `{items, page, size, total_elements, total_pages}`, most recent first. Dismissed notifications are never listed. `size` defaults to `20` and is capped at `100`; a negative `page` or a `size` below `1` answers `400`.
+- `GET /api/v1/notifications?page=0&size=20&unread_only=false` returns `{items, page, size, total_elements, total_pages}`, most recent first. Dismissed notifications are never listed. `size` defaults to `20` and is capped at `100`; a negative `page` or a `size` below `1` answers `400`. Optional filters, combined with each other: `severity` and `type` (comma-separated; an unknown value answers `400 VALIDATION_ERROR` naming the parameter) and `equipment_id`. They only narrow the caller's own notifications, so a unit of another owner yields an empty page.
+- `PUT /api/v1/notifications/read-all` marks every unread notification of the caller as read, or only those matching the optional `severity`, `type` and `equipment_id` filters. No body. Idempotent: a second call updates `0`.
+- `PUT /api/v1/notifications/read` with `{"notification_ids": [12, 13, 20]}` (1 to 100 identifiers, otherwise `400`) marks those notifications as read; identifiers not addressed to the caller, already read or dismissed are skipped silently.
+- Both bulk reads answer `200` with `{"updated_count": 7, "unread_count": 0}`, the unread count after the change, so the badge needs no second request.
 - Every notification carries `created_at`, when it was raised, and `service_request_id` when it is about a service request (assignment, rejection, cancellation, or a maintenance window linked to a request), `null` otherwise. Notifications stored before `created_at` existed carry the moment the column was added.
 - `GET /api/v1/notifications/unread-count` returns `{"unread_count": 7}`: notifications neither read nor dismissed.
 - `PUT`/`DELETE /api/v1/notifications/device-tokens` register or remove the caller's FCM token; `403` only for an account with neither an owner nor a technician profile.
@@ -307,6 +320,16 @@ Grants expire after `EDGE_GRANT_TTL_HOURS`. Every issuance and revocation moves 
 
 Every response carries `alert_id` and `maintenance_window_id` (each `null` when it does not apply). A resent `event_uid` answers `200` with the stored outcome; one already used by another device answers `409`. Reading batches no longer open alerts. They only resolve the active one as a fallback for a lost normalization event, and only once every batch of the last `sustained_excursion_minutes` (at least one per minute, all recorded after the excursion began, none taken during maintenance) lies back within range by `hysteresis_margin_celsius` on the breached side.
 
+## Service requests
+
+**Listing** (`GET /api/v1/service-requests`, owner or technician JWT). An owner lists the requests it created, a technician the requests assigned to it. Always paged (`{content, page, size, total_elements, total_pages}`), newest first. Filters, combined with each other: `status`, `type` (`PREVENTIVE_MAINTENANCE`, `REPAIR`) and `priority` (`LOW`, `MEDIUM`, `HIGH`, `URGENT`), comma-separated; `equipment_id`, `site_id`, `source_alert_id`; `created_from` and `created_to`, inclusive instants (`created_from` after `created_to` answers `400`). The filters only narrow the caller's own requests, so a unit, site or alert of another owner yields an empty page. An unknown enum value answers `400 VALIDATION_ERROR` naming the parameter.
+
+**Summary view.** `view=summary` (default `full`) answers lighter items, without history, intervention details or maintenance windows: `id`, `equipment_id`, `site_id`, `technician_id`, `type`, `priority`, `status`, `created_at`, `assigned_at`, `started_at`, `completed_at`, `canceled_at`, `equipment_name`, `site_name`, `technician_name`, `has_intervention`, `has_review` and `source_alert_id`. Any other `view` answers `400`.
+
+**Display names.** Every `ServiceRequestResource` carries the read-only `equipment_name`, `site_name` and `technician_name` (the assigned technician's full name, `null` while unassigned). Each is `null` when the other context no longer knows the value. A listing resolves them with one read per owner on the page and one for the technicians, never one per request.
+
+**Linking a repair to its alert.** `POST /api/v1/service-requests` accepts an optional `source_alert_id`. The alert must be one of the caller's and raised on the same `equipment_id`, in any status, since the repair may come after the alert closed. An alert of another of the caller's units answers `400 VALIDATION_ERROR` (`Field source_alert_id: belongs to another unit`); an unknown alert, or one of another owner, answers `404 ALERT_NOT_FOUND`. Every request carries `source_alert_id` (`null` when it has none), stored in the `service_requests.source_alert_id` column.
+
 ## Maintenance windows
 
 A maintenance window is the period a unit is being worked on, as reported by its gateway with `MAINTENANCE_WINDOW_STARTED` / `MAINTENANCE_WINDOW_ENDED` events (see above). A unit has at most one active window, shared by the mobile app and the hardware button.
@@ -350,7 +373,13 @@ The coverage check uses bounding boxes around the two jurisdictions. It is an ap
 
 A site's `location` and `navigation_url` are omitted from the JSON when it has no coordinates. Sites created before verification keep their stored `geocoding_status` (`PENDING`, `FAILED` or `NOT_FOUND`) and carry no location until they are moved to a verified address.
 
-**Report requests.** `POST /api/v1/reports` (owner JWT) takes `name`, `type`, `format` (`PDF`, `XLSX` or `CSV`) and `filters` (`site_id`, `equipment_id`, `technician_id`, `from`, `to`). The requester is the authenticated caller; there is no `user_id`. The answer is `202 Accepted` with the report in `PENDING`. Poll `GET /api/v1/reports/{id}`: a `COMPLETED` report carries a `download_url` signed for 15 minutes, a `FAILED` one carries `failure_reason`. A report of another owner answers `404 NOT_FOUND`. The download route `GET /api/v1/reports/{id}/download` has been removed.
+**Report requests.** `POST /api/v1/reports` (owner JWT) takes `name`, `type`, `format` (`PDF`, `XLSX` or `CSV`) and `filters` (`site_id`, `equipment_id`, `technician_id`, `from`, `to`). The requester is the authenticated caller; there is no `user_id`. The answer is `202 Accepted` with the report in `PENDING`. Poll `GET /api/v1/reports/{id}`: a `COMPLETED` report carries a `download_url` signed for 15 minutes and `kpis`, a `FAILED` one carries `failure_reason`. A report of another owner answers `404 REPORT_NOT_FOUND`. The download route `GET /api/v1/reports/{id}/download` has been removed.
+
+**Download links.** `GET /api/v1/reports/{id}/download-link` (owner JWT) answers `200` with `Cache-Control: no-store` and `{download_url, expires_at, file_name, content_type, size_bytes}`. `expires_at` is read from the signature itself, so it is the instant the link stops working. The link asks the browser to save the file as `file_name` (the report name in lower case with hyphens, plus the extension, e.g. `excursions-october-2026.pdf`) instead of opening it; the local storage adapter returns a `file:` URI and ignores the name. A report that is not `COMPLETED` answers `409 INVALID_STATUS_TRANSITION`, `details` naming its status.
+
+**KPIs.** A `COMPLETED` report carries `kpis`, the same values as `result_payload` as a JSON array of `{key, label, value, unit}`: `key` is a stable machine key (`excursion_count`, `excursion_hours`, `uptime_pct`, `time_in_range_pct`, ...; a per-unit KPI ends in `.unit_<equipment_id>`), `value` is always a number, and `unit` is empty for a plain count (`%`, `h`, `°C`, `°C·min` or `stars` otherwise). `result_payload` is kept as it was. Reports generated before keys existed get a key derived from their label (`Total excursions` becomes `total_excursions`).
+
+**History.** `GET /api/v1/reports` lists the caller's reports, most recent first. Filters, combined with each other: `search` (case-insensitive fragment of the name, at most 150 characters), `type` and `status` (comma-separated), `requested_from` and `requested_to` (inclusive instants; `requested_from` after `requested_to` answers `400`). Without paging the answer is the plain array; `include=summary` leaves `result_payload` and `kpis` out of each item. When both `page` and `size` are sent the answer is `{content, page, size, total_elements, total_pages}` (`size` capped at `100`), whose items are always summaries. No list item carries a `download_url`.
 
 For a `TEMPERATURE_EXCURSION` report, each unit gets its Mean Kinetic Temperature (Arrhenius form, activation energy 83.144 kJ/mol), the standard deviation of its temperatures, the degree-minutes outside its threshold band, and the share of time in range. Readings taken during maintenance are excluded, so are dismissed alerts and any alert opened inside a maintenance window, and durations lose the part that overlaps a window; the same window exclusion applies to the uptime report. A unit's time between two readings is credited at most 60 minutes. If no unit in scope recorded any telemetry in the period, the report is `FAILED` with `Insufficient telemetry data for the period`.
 
@@ -360,7 +389,7 @@ Clients must be updated for the renamed fields: the report request uses `name` a
 
 ## Real-time telemetry stream
 
-The dashboard receives the readings and alert status changes of the owner's units over Server-Sent Events, without polling. A browser `EventSource` cannot send an `Authorization` header, so the stream is opened in two steps:
+The web application receives the owner's events over one Server-Sent Events connection, without polling: readings and alert status changes of the owner's units, notifications, report status changes, device lifecycle changes and connectivity changes. A browser `EventSource` cannot send an `Authorization` header, so the stream is opened in two steps:
 
 1. `POST /api/v1/telemetry/stream-ticket` (owner JWT) answers `200` with `{"ticket": "st_<64 hex>", "expires_in": 60}` and `Cache-Control: no-store`. The ticket is bound to the authenticated owner, valid for 60 seconds and redeemable once. An owner may hold up to `TELEMETRY_STREAM_MAX_PENDING_TICKETS_PER_OWNER` unredeemed tickets; one more answers `429 TOO_MANY_REQUESTS` with `Retry-After: 60`. A technician gets `403`.
 2. `GET /api/v1/telemetry/stream?ticket=st_...` (no JWT) consumes the ticket, whatever the outcome, and opens a `text/event-stream` response for 30 minutes. A missing, malformed, unknown, used or expired ticket answers `401 UNAUTHORIZED` with the standard JSON body; `EventSource` does not retry a `401`, so request a new ticket and reconnect.
@@ -374,14 +403,21 @@ stream.addEventListener('telemetry-update', (e) => render(JSON.parse(e.data)));
 
 | Event | Data |
 |---|---|
-| `stream-opened` | First event: `timeout_seconds`, `heartbeat_seconds`, and a `retry` of 5 seconds |
+| `stream-opened` | First event: `timeout_seconds`, `heartbeat_seconds`, `replayed`, `replay_complete`, and a `retry` of 5 seconds |
 | `telemetry-update` with `"type": "READING_RECORDED"` | `reading_uid`, `equipment_id`, `device_id`, `min/max/avg_temperature`, `humidity`, `sample_count`, `recorded_at`, `received_at`, `under_maintenance` |
 | `telemetry-update` with `"type": "ALERT_STATUS_CHANGED"` | `alert_id`, `equipment_id`, `alert_type`, `severity`, `previous_status` (`null` when just raised), `status`, `peak_temperature`, `changed_at` |
+| `notification-created` | `notification_id`, `type`, `severity`, `equipment_id`, `source_alert_id`, `created_at`, `unread_count` (after this notification); no message text |
+| `unread-count-changed` | `unread_count`, `changed_at`: a notification arrived, or one or several were read or dismissed |
+| `report-status-changed` | `report_id`, `previous_status`, `status` (`GENERATING`, `COMPLETED` or `FAILED`), `changed_at` |
+| `device-status-changed` | `device_id`, `paired_equipment_id` (`null` once unpaired), `previous_status`, `status`, `changed_at`: a board was paired, rotated (both statuses `PAIRED`), revoked or unpaired, from any session |
+| `connectivity-changed` | `equipment_id`, `device_id`, `previous_state`, `state`, `last_received_at`, `under_maintenance`, `changed_at`: offline detection found the unit silent, its next batch brought it back, it was deactivated or reactivated, or a maintenance window opened or closed |
 | comment `heartbeat` | Every `TELEMETRY_STREAM_HEARTBEAT_MS`, so proxies keep idle streams open |
 
-An alert update is sent when an alert opens and on every later transition, manual or automatic. Events are pushed only once the change is committed, so a rejected or duplicate batch is never streamed.
+An alert update is sent when an alert opens and on every later transition, manual or automatic. Events are pushed only once the change is committed, so a rejected or duplicate batch is never streamed. `last_seen_at` changes of devices are not pushed: `telemetry-update` already announces every batch.
 
-**Tenant isolation.** Streams are kept per owner profile, the one the ticket was issued for. The recipient of an event is resolved from the unit itself (unit, then site, then owner), and the event is written to that owner's streams only; a unit whose owner cannot be resolved is streamed to nobody.
+**Replay.** Every event but `stream-opened` carries an SSE `id` (`<instance start in epoch ms>-<sequence>`, increasing per owner). The instance keeps each owner's last 1000 events of the last 5 minutes, whichever is fewer, while the owner has a stream open and for 5 minutes after the last one closed. Reconnect with `GET /api/v1/telemetry/stream?ticket=...&last_event_id=<id of the last event received>` (a query parameter, because every reconnection builds a new `EventSource` and the browser never sends `Last-Event-ID`): the events after it are sent right after `stream-opened`, before live events. `replay_complete: false` means some events are no longer kept (or the id comes from another instance or before a restart) and the client must reload over REST.
+
+**Tenant isolation.** Streams and replay buffers are kept per owner profile, the one the ticket was issued for. The recipient of an event is resolved by the context that owns the change: from the unit (unit, then site, then owner) for readings, alerts, connectivity and devices, from the recipient for notifications, and from the requester's owner profile for reports. The event is written to that owner's streams only; a change whose owner cannot be resolved is streamed to nobody.
 
 **Limits.** An owner keeps up to `TELEMETRY_STREAM_MAX_PER_OWNER` streams open (browser tabs); opening one more closes the oldest. A stream is dropped as soon as a write to it fails, or when it times out; the browser then needs a new ticket. Writes run on `streamTaskExecutor`, never on a request thread, and opening a stream uses no database connection. Tickets and streams live in the instance's memory: with several replicas, route a client's ticket and stream to the same instance (sticky sessions) and fan events out between instances, for example through PostgreSQL `LISTEN/NOTIFY`. Behind nginx, the `X-Accel-Buffering: no` header the stream sends disables response buffering.
 
