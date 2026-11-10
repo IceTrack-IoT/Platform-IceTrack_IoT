@@ -1,5 +1,7 @@
 package pe.edu.upc.ice.track.platform.notifications.interfaces.rest;
 
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -8,77 +10,224 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import pe.edu.upc.ice.track.platform.notifications.application.commandservices.NotificationCommandService;
+import pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.acl.ExternalProfilesServiceForNotifications;
 import pe.edu.upc.ice.track.platform.notifications.application.queryservices.NotificationQueryService;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.DismissNotificationCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkAllNotificationsAsReadCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationAsReadCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationsAsReadCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationByIdQuery;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationsByRecipientQuery;
-import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationsByRecipientQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationCountQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.BulkReadResult;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationFilter;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationPage;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.BulkNotificationReadRequest;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.BulkReadResultResource;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.NotificationResource;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.NotificationSeverityResource;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.NotificationTypeResource;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.PagedNotificationResource;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.UnreadNotificationCountResource;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.transform.NotificationResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
- * REST controller for notification listing, detail and read/dismiss transitions.
+ * REST controller for the authenticated caller's notification inbox: listing, detail and
+ * read/dismiss transitions, one at a time or in bulk.
  *
  * <p>There is no creation endpoint: a notification is never created from a direct HTTP
- * request, only from an {@code AlertRaisedEventHandler} (or a future equivalent) reacting to
- * an integration event from another bounded context.</p>
+ * request, only by an inbound listener reacting to an integration event from another bounded
+ * context (alerts and maintenance windows, service request assignments, rejections and
+ * cancellations). Owners and technicians each read their own inbox.</p>
  *
- * <p>NOTE: {@code recipientUserId} is taken as a request parameter pending JWT wiring, the same
- * simplification already flagged in Asset Management's controllers ({@code ownerId} hardcoded).
- * Once authentication is wired, it should be resolved from the authenticated principal instead.</p>
+ * <p>The recipient is always derived from the authenticated principal, never taken from the
+ * request, the same way {@code DeviceTokensController} does. A notification addressed
+ * to anybody else answers 404, exactly like a missing one, so identifiers cannot be harvested; the
+ * bulk reads skip such identifiers silently for the same reason.</p>
+ *
+ * <p>The inbox is paginated and only lists active notifications: a dismissed notification is
+ * hidden, but kept. It can be narrowed by severity, type and unit; those filters only ever narrow
+ * the caller's own notifications. {@code /unread-count} feeds the unread badge, and both bulk reads
+ * answer the new unread count so the badge needs no second request.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/notifications", produces = MediaType.APPLICATION_JSON_VALUE)
 @Tag(name = "Notifications", description = "Notification management endpoints")
 public class NotificationsController {
 
+  /** Placeholder recipient used only to validate the paging values of a caller who has no inbox. */
+  private static final Long NO_RECIPIENT = 0L;
+
   private final NotificationCommandService notificationCommandService;
   private final NotificationQueryService notificationQueryService;
+  private final ExternalProfilesServiceForNotifications externalProfilesService;
 
   public NotificationsController(
       NotificationCommandService notificationCommandService,
-      NotificationQueryService notificationQueryService) {
+      NotificationQueryService notificationQueryService,
+      ExternalProfilesServiceForNotifications externalProfilesService) {
     this.notificationCommandService = notificationCommandService;
     this.notificationQueryService = notificationQueryService;
+    this.externalProfilesService = externalProfilesService;
   }
 
   @GetMapping
   @Operation(
-      summary = "Get notifications by recipient",
-      description = "Retrieves a list of notifications for a specific recipient, optionally filtered to return only unread ones.",
+      summary = "List my notifications",
+      description = "Returns one page of the authenticated caller's active (not dismissed) notifications, most "
+          + "recent first, optionally only the unread ones, and optionally narrowed by severity, type and unit. "
+          + "The filters combine with each other and only narrow the caller's own notifications, so a unit of "
+          + "another owner yields an empty page. The recipient is derived from the access token. size defaults "
+          + "to 20 and is capped at 100.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
-          description = "Notifications retrieved successfully",
-          content = @Content(schema = @Schema(implementation = NotificationResource.class))
+          description = "Page of notifications; empty when the caller has none",
+          content = @Content(schema = @Schema(implementation = PagedNotificationResource.class))
       ),
-      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - Insufficient permissions")
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - a negative page, a size below 1, or an unknown severity or type",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
   })
-  public ResponseEntity<List<NotificationResource>> getNotificationsByRecipient(
-      @Parameter(description = "ID of the notification recipient user", required = true)
-      @RequestParam Long recipientUserId,
-      @Parameter(description = "Flag to filter only unread notifications")
-      @RequestParam(defaultValue = "false") boolean onlyUnread) {
-    var notifications = onlyUnread
-        ? notificationQueryService.handle(new GetUnreadNotificationsByRecipientQuery(recipientUserId))
-        : notificationQueryService.handle(new GetNotificationsByRecipientQuery(recipientUserId));
-    return ResponseEntity.ok(notifications.stream().map(NotificationResourceFromEntityAssembler::toResourceFromEntity).toList());
+  public ResponseEntity<PagedNotificationResource> listMyNotifications(
+      @Parameter(description = "Zero-based page index", example = "0")
+      @RequestParam(defaultValue = "0") int page,
+      @Parameter(description = "Page size, from 1 to 100; larger values are capped at 100", example = "20")
+      @RequestParam(defaultValue = "" + GetNotificationsByRecipientQuery.DEFAULT_PAGE_SIZE) int size,
+      @Parameter(description = "Return only notifications not yet read", example = "false")
+      @RequestParam(name = "unread_only", defaultValue = "false") boolean unreadOnly,
+      @Parameter(description = "Restrict to these severities, comma-separated", example = "WARNING,CRITICAL")
+      @RequestParam(required = false) List<NotificationSeverityResource> severity,
+      @Parameter(description = "Restrict to these kinds of notification, comma-separated", example = "TEMPERATURE_EXCURSION")
+      @RequestParam(required = false) List<NotificationTypeResource> type,
+      @Parameter(description = "Restrict to the notifications about one unit", example = "10")
+      @RequestParam(name = "equipment_id", required = false) Long equipmentId,
+      Authentication authentication) {
+    var filter = toFilter(severity, type, equipmentId);
+    var recipient = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName());
+    if (recipient.isEmpty()) {
+      // An account without an owner or technician profile has no inbox. The paging values are still
+      // validated, so the answer does not depend on whether the caller has one.
+      var emptyQuery = new GetNotificationsByRecipientQuery(NO_RECIPIENT, unreadOnly, filter, page, size);
+      return ResponseEntity.ok(NotificationResourceFromEntityAssembler.toPagedResourceFromPage(
+          NotificationPage.empty(emptyQuery.page(), emptyQuery.size())));
+    }
+    var query = new GetNotificationsByRecipientQuery(recipient.get(), unreadOnly, filter, page, size);
+    var notifications = notificationQueryService.handle(query);
+    return ResponseEntity.ok(NotificationResourceFromEntityAssembler.toPagedResourceFromPage(notifications));
+  }
+
+  @GetMapping("/unread-count")
+  @Operation(
+      summary = "Count my unread notifications",
+      description = "Returns how many of the authenticated caller's notifications are neither read nor dismissed, "
+          + "for the unread badge. The recipient is derived from the access token.",
+      security = @SecurityRequirement(name = "bearerAuth")
+  )
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Unread count; 0 when the caller has none",
+          content = @Content(schema = @Schema(implementation = UnreadNotificationCountResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
+  })
+  public ResponseEntity<UnreadNotificationCountResource> countMyUnreadNotifications(Authentication authentication) {
+    var unreadCount = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
+        .map(recipient -> notificationQueryService.handle(new GetUnreadNotificationCountQuery(recipient)))
+        .orElse(0L);
+    return ResponseEntity.ok(new UnreadNotificationCountResource(unreadCount));
+  }
+
+  @PutMapping("/read-all")
+  @Operation(
+      summary = "Mark all my notifications as read",
+      description = "Marks every active, unread notification of the authenticated caller as read, or only those "
+          + "matching the optional severity, type and unit filters, which work as on the listing. Idempotent: a "
+          + "second call updates 0. Answers how many changed and the unread count afterward. No request body.",
+      security = @SecurityRequirement(name = "bearerAuth")
+  )
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Matching notifications marked as read",
+          content = @Content(schema = @Schema(implementation = BulkReadResultResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - an unknown severity or type",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
+  })
+  public ResponseEntity<BulkReadResultResource> markAllMyNotificationsAsRead(
+      @Parameter(description = "Restrict to these severities, comma-separated", example = "INFO")
+      @RequestParam(required = false) List<NotificationSeverityResource> severity,
+      @Parameter(description = "Restrict to these kinds of notification, comma-separated", example = "SERVICE_REQUEST_UPDATE")
+      @RequestParam(required = false) List<NotificationTypeResource> type,
+      @Parameter(description = "Restrict to the notifications about one unit", example = "10")
+      @RequestParam(name = "equipment_id", required = false) Long equipmentId,
+      Authentication authentication) {
+    var filter = toFilter(severity, type, equipmentId);
+    var result = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
+        .map(recipient -> notificationCommandService.handle(new MarkAllNotificationsAsReadCommand(recipient, filter)))
+        .orElseGet(BulkReadResult::nothing);
+    return ResponseEntity.ok(toBulkReadResultResource(result));
+  }
+
+  @PutMapping(value = "/read", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @Operation(
+      summary = "Mark several of my notifications as read",
+      description = "Marks the listed notifications of the authenticated caller as read, from 1 to 100 identifiers. "
+          + "Identifiers not addressed to the caller, already read or dismissed are skipped silently. Answers how "
+          + "many changed and the unread count afterward.",
+      security = @SecurityRequirement(name = "bearerAuth")
+  )
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Listed notifications marked as read",
+          content = @Content(schema = @Schema(implementation = BulkReadResultResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - notification_ids missing, empty, or holding more than 100 identifiers",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
+  })
+  public ResponseEntity<BulkReadResultResource> markSeveralOfMyNotificationsAsRead(
+      @Valid @RequestBody BulkNotificationReadRequest resource,
+      Authentication authentication) {
+    var result = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
+        .map(recipient -> notificationCommandService.handle(
+            MarkNotificationsAsReadCommand.of(recipient, resource.notificationIds())))
+        .orElseGet(BulkReadResult::nothing);
+    return ResponseEntity.ok(toBulkReadResultResource(result));
   }
 
   @GetMapping("/{notificationId}")
   @Operation(
       summary = "Get notification by ID",
-      description = "Retrieves details of a specific notification by its unique identifier.",
+      description = "Retrieves one of the authenticated caller's notifications by its unique identifier.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
@@ -87,22 +236,24 @@ public class NotificationsController {
           description = "Notification found and retrieved successfully",
           content = @Content(schema = @Schema(implementation = NotificationResource.class))
       ),
-      @ApiResponse(responseCode = "404", description = "Notification not found"),
-      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - Insufficient permissions")
+      @ApiResponse(responseCode = "404", description = "NOTIFICATION_NOT_FOUND - no such notification is addressed to the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
   })
-  public ResponseEntity<NotificationResource> getNotificationById(
+  public ResponseEntity<?> getNotificationById(
       @Parameter(description = "ID of the notification to retrieve", required = true)
-      @PathVariable Long notificationId) {
-    return notificationQueryService.handle(new GetNotificationByIdQuery(notificationId))
-        .map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
-        .orElse(ResponseEntity.notFound().build());
+      @PathVariable Long notificationId,
+      Authentication authentication) {
+    return externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
+        .flatMap(recipient -> notificationQueryService.handle(new GetNotificationByIdQuery(notificationId, recipient)))
+        .<ResponseEntity<?>>map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
+        .orElseGet(() -> notificationNotFound(notificationId));
   }
 
   @PutMapping("/{notificationId}/read")
   @Operation(
       summary = "Mark notification as read",
-      description = "Updates the status of a specific notification to mark it as read.",
+      description = "Marks one of the authenticated caller's notifications as read.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
@@ -111,22 +262,24 @@ public class NotificationsController {
           description = "Notification marked as read successfully",
           content = @Content(schema = @Schema(implementation = NotificationResource.class))
       ),
-      @ApiResponse(responseCode = "404", description = "Notification not found"),
-      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - Insufficient permissions")
+      @ApiResponse(responseCode = "404", description = "NOTIFICATION_NOT_FOUND - no such notification is addressed to the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
   })
-  public ResponseEntity<NotificationResource> markNotificationAsRead(
+  public ResponseEntity<?> markNotificationAsRead(
       @Parameter(description = "ID of the notification to mark as read", required = true)
-      @PathVariable Long notificationId) {
-    return notificationCommandService.handle(new MarkNotificationAsReadCommand(notificationId))
-        .map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
-        .orElse(ResponseEntity.notFound().build());
+      @PathVariable Long notificationId,
+      Authentication authentication) {
+    return externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
+        .flatMap(recipient -> notificationCommandService.handle(new MarkNotificationAsReadCommand(notificationId, recipient)))
+        .<ResponseEntity<?>>map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
+        .orElseGet(() -> notificationNotFound(notificationId));
   }
 
   @PutMapping("/{notificationId}/dismiss")
   @Operation(
       summary = "Dismiss notification",
-      description = "Updates the status of a specific notification to dismiss it.",
+      description = "Dismisses one of the authenticated caller's notifications from the active inbox.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
@@ -135,15 +288,46 @@ public class NotificationsController {
           description = "Notification dismissed successfully",
           content = @Content(schema = @Schema(implementation = NotificationResource.class))
       ),
-      @ApiResponse(responseCode = "404", description = "Notification not found"),
-      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - Insufficient permissions")
+      @ApiResponse(responseCode = "404", description = "NOTIFICATION_NOT_FOUND - no such notification is addressed to the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
   })
-  public ResponseEntity<NotificationResource> dismissNotification(
+  public ResponseEntity<?> dismissNotification(
       @Parameter(description = "ID of the notification to dismiss", required = true)
-      @PathVariable Long notificationId) {
-    return notificationCommandService.handle(new DismissNotificationCommand(notificationId))
-        .map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
-        .orElse(ResponseEntity.notFound().build());
+      @PathVariable Long notificationId,
+      Authentication authentication) {
+    return externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
+        .flatMap(recipient -> notificationCommandService.handle(new DismissNotificationCommand(notificationId, recipient)))
+        .<ResponseEntity<?>>map(notification -> ResponseEntity.ok(NotificationResourceFromEntityAssembler.toResourceFromEntity(notification)))
+        .orElseGet(() -> notificationNotFound(notificationId));
+  }
+
+  /** Answers a notification that does not exist or is not addressed to the caller. */
+  private static ResponseEntity<ErrorResource> notificationNotFound(Long notificationId) {
+    return ErrorResponseAssembler.toErrorResponseFromApplicationError(
+        ApplicationError.notFound("Notification", String.valueOf(notificationId)));
+  }
+
+  /**
+   * Translates the severity, type and unit query parameters into a domain filter. An empty entry,
+   * as left by a trailing comma, is ignored rather than failing the whole request.
+   */
+  private static NotificationFilter toFilter(
+      List<NotificationSeverityResource> severities, List<NotificationTypeResource> types, Long equipmentId) {
+    return new NotificationFilter(
+        toDomainSet(severities, NotificationSeverityResource::toDomain),
+        toDomainSet(types, NotificationTypeResource::toDomain),
+        equipmentId);
+  }
+
+  private static <R, D> Set<D> toDomainSet(List<R> values, Function<R, D> toDomain) {
+    if (values == null) {
+      return Set.of();
+    }
+    return values.stream().filter(Objects::nonNull).map(toDomain).collect(Collectors.toUnmodifiableSet());
+  }
+
+  private static BulkReadResultResource toBulkReadResultResource(BulkReadResult result) {
+    return new BulkReadResultResource(result.updatedCount(), result.unreadCount());
   }
 }

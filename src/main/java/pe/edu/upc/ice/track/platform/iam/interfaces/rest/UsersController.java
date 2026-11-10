@@ -1,5 +1,8 @@
 package pe.edu.upc.ice.track.platform.iam.interfaces.rest;
 
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -10,13 +13,13 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.iam.application.queryservices.UserQueryService;
-import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetAllUsersQuery;
-import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByIdQuery;
+import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByUsernameQuery;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources.UserResource;
 import pe.edu.upc.ice.track.platform.iam.interfaces.rest.transform.UserResourceFromEntityAssembler;
 
@@ -36,15 +39,22 @@ public class UsersController {
   }
 
   /**
-   * Retrieves all users.
+   * Retrieves the caller's own account, as a list.
    *
-   * @return list of user resources
+   * <p>There is no account directory: listing every username and role to any
+   * authenticated caller made account enumeration trivial. The list shape is kept so existing
+   * clients keep working; {@code /api/v1/authentication/me} is the preferred way to read the
+   * current account.</p>
+   *
+   * @param authentication the authenticated principal
+   * @return a list holding the caller's own user resource
    * @see UserResource
    */
   @GetMapping
   @Operation(
-      summary = "Get all users",
-      description = "Retrieves a list of all users in the system with their roles.",
+      summary = "Get my account",
+      description = "Returns a list holding only the authenticated caller's own account. "
+          + "Other accounts are never listed.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
@@ -56,24 +66,27 @@ public class UsersController {
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - Insufficient permissions")
   })
-  public ResponseEntity<List<UserResource>> getAllUsers() {
-    var getAllUsersQuery = new GetAllUsersQuery();
-    var users = userQueryService.handle(getAllUsersQuery);
-    var userResources = users.stream().map(UserResourceFromEntityAssembler::toResourceFromEntity).toList();
+  public ResponseEntity<List<UserResource>> getAllUsers(Authentication authentication) {
+    var userResources = userQueryService.handle(new GetUserByUsernameQuery(authentication.getName())).stream()
+        .map(UserResourceFromEntityAssembler::toResourceFromEntity)
+        .toList();
     return ResponseEntity.ok(userResources);
   }
 
   /**
-   * Retrieves a user by identifier.
+   * Retrieves the caller's own account by identifier.
    *
    * @param userId user identifier
-   * @return user resource when found
+   * @param authentication the authenticated principal
+   * @return user resource when it is the caller's own account, 404 otherwise (another account is
+   *         answered exactly like a missing one, so identifiers cannot be harvested)
    * @see UserResource
    */
   @GetMapping(value = "/{userId}")
   @Operation(
       summary = "Get user by ID",
-      description = "Retrieves a specific user's information by unique identifier.",
+      description = "Retrieves the caller's own account by its unique identifier; any other "
+          + "identifier answers 404.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
@@ -84,23 +97,23 @@ public class UsersController {
       ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - Insufficient permissions"),
-      @ApiResponse(responseCode = "404", description = "User not found")
+      @ApiResponse(responseCode = "404", description = "USER_NOT_FOUND - not the caller's own identifier",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
   })
-  public ResponseEntity<UserResource> getUserById(
+  public ResponseEntity<?> getUserById(
       @PathVariable
       @Parameter(
           description = "Unique user identifier",
           example = "1",
           required = true
       )
-      Long userId
+      Long userId,
+      Authentication authentication
   ) {
-    var getUserByIdQuery = new GetUserByIdQuery(userId);
-    var user = userQueryService.handle(getUserByIdQuery);
-    if (user.isEmpty()) {
-      return ResponseEntity.notFound().build();
-    }
-    var userResource = UserResourceFromEntityAssembler.toResourceFromEntity(user.get());
-    return ResponseEntity.ok(userResource);
+    return userQueryService.handle(new GetUserByUsernameQuery(authentication.getName()))
+        .filter(user -> user.getId().equals(userId))
+        .<ResponseEntity<?>>map(user -> ResponseEntity.ok(UserResourceFromEntityAssembler.toResourceFromEntity(user)))
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound("User", String.valueOf(userId))));
   }
 }

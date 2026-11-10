@@ -13,11 +13,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
  */
 @Schema(
     name = "EquipmentType",
-    description = "Kind of refrigeration unit",
-    example = "FREEZER")
+    description = "Kind of positive-temperature refrigeration unit",
+    example = "REFRIGERATOR")
 public enum EquipmentTypeResource {
 
-  FREEZER,
   DISPLAY_CASE,
   COLD_ROOM,
   REFRIGERATOR,

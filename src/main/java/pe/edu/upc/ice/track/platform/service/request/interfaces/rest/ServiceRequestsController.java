@@ -1,0 +1,655 @@
+package pe.edu.upc.ice.track.platform.service.request.interfaces.rest;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import pe.edu.upc.ice.track.platform.service.request.application.commandservices.ServiceRequestCommandService;
+import pe.edu.upc.ice.track.platform.service.request.application.queryservices.ReviewQueryService;
+import pe.edu.upc.ice.track.platform.service.request.application.queryservices.ServiceRequestQueryService;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.AcceptServiceRequestCommand;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegenerateEdgeGrantCommand;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetReviewByServiceRequestIdQuery;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestByIdQuery;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestDisplayDetailsQuery;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListServiceRequestsQuery;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestDisplayDetails;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestFilter;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.AssignTechnicianResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.CancelServiceRequestResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.CreateServiceRequestResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.IssuedEdgeGrantResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.PagedServiceRequestResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.PagedServiceRequestSummaryResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.RejectServiceRequestResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ReviewResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServicePriorityResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServiceRequestResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServiceStatusResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServiceTypeResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.StartServiceRequestResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.AssignTechnicianCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.CancelServiceRequestCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.CreateServiceRequestCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.IssuedEdgeGrantResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.RejectServiceRequestCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.ReviewResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.ServiceRequestResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.StartServiceRequestCommandFromResourceAssembler;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * REST controller exposing the lifecycle of service requests.
+ *
+ * <p>Every action is scoped to the authenticated caller: the controller only hands the principal's
+ * username - and, for the reads open to both roles, the role it acts in - to the command and query
+ * services, which resolve it to an owner or a technician profile and apply the ownership rules. A
+ * request of another owner, or not assigned to the calling technician, is reported exactly like a
+ * request that does not exist.</p>
+ *
+ * <p>Every endpoint declares its roles through method security, so an account outside them is
+ * answered with 403 before a service is reached. Creating, assigning and canceling are
+ * {@code OWNER_ROLE} only; accepting, rejecting and starting are {@code TECHNICIAN_ROLE} only; the
+ * reads are open to both. An illegal move of the state machine is answered with
+ * {@code 409 INVALID_STATUS_TRANSITION}.</p>
+ */
+@RestController
+@RequestMapping(value = "/api/v1/service-requests", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Service Requests", description = "Maintenance and repair service request endpoints: creation, assignment, lifecycle and history")
+public class ServiceRequestsController {
+
+  private static final String SERVICE_REQUEST_RESOURCE = "Service_Request";
+  private static final String REVIEW_RESOURCE = "Review";
+  private static final String ASSIGNED_TO_ME = "me";
+  private static final String VIEW_FULL = "full";
+  private static final String VIEW_SUMMARY = "summary";
+
+  private final ServiceRequestCommandService serviceRequestCommandService;
+  private final ServiceRequestQueryService serviceRequestQueryService;
+  private final ReviewQueryService reviewQueryService;
+
+  /**
+   * Constructor
+   *
+   * @param serviceRequestCommandService The {@link ServiceRequestCommandService} instance
+   * @param serviceRequestQueryService   The {@link ServiceRequestQueryService} instance
+   * @param reviewQueryService           The {@link ReviewQueryService} instance
+   */
+  public ServiceRequestsController(
+      ServiceRequestCommandService serviceRequestCommandService,
+      ServiceRequestQueryService serviceRequestQueryService,
+      ReviewQueryService reviewQueryService) {
+    this.serviceRequestCommandService = serviceRequestCommandService;
+    this.serviceRequestQueryService = serviceRequestQueryService;
+    this.reviewQueryService = reviewQueryService;
+  }
+
+  /**
+   * Creates a service request for one of the authenticated owner's units.
+   *
+   * @param resource       The {@link CreateServiceRequestResource} payload
+   * @param authentication The authenticated principal, whose name identifies the caller
+   * @return The created {@link ServiceRequestResource}, with 201 Created
+   */
+  @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(
+      summary = "Create a service request",
+      description = "Creates a maintenance or repair request for a unit of the authenticated owner. "
+          + "The request starts PENDING, without a technician. A corrective request may name the alert it "
+          + "answers in source_alert_id: the alert must be one of the caller's, raised on the same unit, in any "
+          + "status.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "201",
+          description = "Service request created",
+          content = @Content(schema = @Schema(implementation = ServiceRequestResource.class))),
+      @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR - invalid input data, or source_alert_id "
+          + "names an alert of another unit (details: Field source_alert_id: belongs to another unit)",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
+      @ApiResponse(responseCode = "404", description = "EQUIPMENT_NOT_FOUND - no such equipment is reachable by the "
+          + "caller; ALERT_NOT_FOUND - no such alert is reachable by the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
+  })
+  public ResponseEntity<?> createServiceRequest(
+      @Valid @RequestBody CreateServiceRequestResource resource,
+      Authentication authentication) {
+    var command = CreateServiceRequestCommandFromResourceAssembler.toCommandFromResource(authentication.getName(), resource);
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        serviceRequestCommandService.handle(command),
+        this::toResource,
+        HttpStatus.CREATED);
+  }
+
+  /**
+   * Lists one page of the caller's service requests, newest first.
+   *
+   * @param status         Restrict to these statuses, comma-separated or repeated; optional
+   * @param assignedTo     {@code me} for the requests assigned to the calling technician, sent as the
+   *                       {@code assigned_to} query parameter; optional
+   * @param equipmentId    Restrict to the requests for one unit; optional
+   * @param siteId         Restrict to the requests raised for one site; optional
+   * @param type           Restrict to these kinds of work; optional
+   * @param priority       Restrict to these urgencies; optional
+   * @param createdFrom    Inclusive lower bound of the creation instant; optional
+   * @param createdTo      Inclusive upper bound of the creation instant; optional
+   * @param sourceAlertId  Restrict to the requests opened for one alert; optional
+   * @param view           {@code full} (default) or {@code summary}; optional
+   * @param page           Zero-based page index; defaults to 0
+   * @param size           Page size, from 1 to 100; defaults to 20
+   * @param authentication The authenticated principal, whose name and role identify the caller
+   * @return A {@link PagedServiceRequestResource}, or a {@link PagedServiceRequestSummaryResource}
+   *         for {@code view=summary}
+   */
+  @GetMapping
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
+  @Operation(
+      summary = "List my service requests",
+      description = "An owner lists the requests it created; a technician lists the requests assigned "
+          + "to it, which assigned_to=me makes explicit. Optionally filtered by status, unit, site, type, priority, "
+          + "creation period and source alert; every filter combines with the others and only narrows the caller's "
+          + "own requests, so a unit, site or alert of another owner yields an empty page. Always paged and ordered "
+          + "by creation date, newest first. view=summary answers PagedServiceRequestSummaryResponse items, without "
+          + "history, intervention details or maintenance windows.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Service requests found: PagedServiceRequestResponse, or PagedServiceRequestSummaryResponse "
+              + "for view=summary",
+          content = @Content(schema = @Schema(
+              oneOf = {PagedServiceRequestResource.class, PagedServiceRequestSummaryResource.class}))),
+      @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR - invalid filter or paging value, such as an "
+          + "unknown status, type, priority or view, created_from after created_to, a page size above 100, or "
+          + "assigned_to=me sent by an owner",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician")
+  })
+  public ResponseEntity<?> listServiceRequests(
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to these statuses, comma-separated", example = "PENDING,ACCEPTED")
+      List<ServiceStatusResource> status,
+      @RequestParam(name = "assigned_to", required = false)
+      @Parameter(description = "Only accepts 'me', for the requests assigned to the calling technician", example = "me")
+      String assignedTo,
+      @RequestParam(name = "equipment_id", required = false)
+      @Parameter(description = "Restrict to the requests for one unit of the caller", example = "10")
+      Long equipmentId,
+      @RequestParam(name = "site_id", required = false)
+      @Parameter(description = "Restrict to the requests raised for one site of the caller", example = "1")
+      Long siteId,
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to these kinds of work, comma-separated", example = "REPAIR")
+      List<ServiceTypeResource> type,
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to these urgencies, comma-separated", example = "HIGH,URGENT")
+      List<ServicePriorityResource> priority,
+      @RequestParam(name = "created_from", required = false)
+      @Parameter(description = "Inclusive lower bound of created_at, ISO 8601 with Z or an offset",
+          example = "2026-10-01T00:00:00Z")
+      Instant createdFrom,
+      @RequestParam(name = "created_to", required = false)
+      @Parameter(description = "Inclusive upper bound of created_at, ISO 8601 with Z or an offset",
+          example = "2026-10-31T23:59:59Z")
+      Instant createdTo,
+      @RequestParam(name = "source_alert_id", required = false)
+      @Parameter(description = "Restrict to the requests opened for one alert", example = "301")
+      Long sourceAlertId,
+      @RequestParam(required = false)
+      @Parameter(description = "'full' (default) for whole requests, or 'summary' for list items without history, "
+          + "intervention details or maintenance windows", example = "summary")
+      String view,
+      @RequestParam(required = false)
+      @Parameter(description = "Zero-based page index", example = "0")
+      Integer page,
+      @RequestParam(required = false)
+      @Parameter(description = "Page size, from 1 to 100", example = "20")
+      Integer size,
+      Authentication authentication) {
+    var summary = isSummaryView(view);
+    var filter = new ServiceRequestFilter(
+        toDomainSet(status, ServiceStatusResource::toDomain),
+        equipmentId,
+        siteId,
+        toDomainSet(type, ServiceTypeResource::toDomain),
+        toDomainSet(priority, ServicePriorityResource::toDomain),
+        createdFrom,
+        createdTo,
+        sourceAlertId);
+    var query = new ListServiceRequestsQuery(
+        authentication.getName(),
+        CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication),
+        filter,
+        isAssignedToMe(assignedTo),
+        page,
+        size);
+    var requests = serviceRequestQueryService.handle(query);
+    var details = displayDetailsOf(requests.content(), summary);
+    if (summary) {
+      return ResponseEntity.ok(ServiceRequestResourceFromEntityAssembler.toPagedSummaryResourceFromPage(requests, details));
+    }
+    return ResponseEntity.ok(ServiceRequestResourceFromEntityAssembler.toPagedResourceFromPage(requests, details));
+  }
+
+  /**
+   * Fetches one of the caller's service requests with its status history.
+   *
+   * @param serviceRequestId The service request identifier
+   * @param authentication   The authenticated principal, whose name and role identify the caller
+   * @return The {@link ServiceRequestResource}, or 404 when it is not reachable by the caller
+   */
+  @GetMapping("/{serviceRequestId}")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
+  @Operation(
+      summary = "Get a service request by ID",
+      description = "Retrieves a request with its full status history and the maintenance windows opened on the "
+          + "unit while its work was in progress (maintenance_windows, oldest first, with origin, technician, "
+          + "start, end and closure reason). Only its owner and its assigned technician can read it.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Service request found",
+          content = @Content(schema = @Schema(implementation = ServiceRequestResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician"),
+      @ApiResponse(responseCode = "404", description = "No such service request is reachable by the caller")
+  })
+  public ResponseEntity<?> getServiceRequestById(
+      @PathVariable
+      @Parameter(description = "Service request unique identifier", example = "42", required = true)
+      Long serviceRequestId,
+      Authentication authentication) {
+    var serviceRequest = serviceRequestQueryService.handle(new GetServiceRequestByIdQuery(
+        serviceRequestId,
+        authentication.getName(),
+        CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication)));
+    if (serviceRequest.isEmpty()) {
+      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
+          ApplicationError.notFound(SERVICE_REQUEST_RESOURCE, String.valueOf(serviceRequestId)));
+    }
+    return ResponseEntity.ok(toResource(serviceRequest.get()));
+  }
+
+  /**
+   * Assigns a technician to one of the authenticated owner's service requests.
+   *
+   * @param serviceRequestId The service request identifier
+   * @param resource         The {@link AssignTechnicianResource} payload
+   * @param authentication   The authenticated principal, whose name identifies the caller
+   * @return The updated {@link ServiceRequestResource}
+   */
+  @PutMapping(value = "/{serviceRequestId}/assign", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(
+      summary = "Assign a technician",
+      description = "Assigns a technician to a PENDING or ACCEPTED request, replacing the current one "
+          + "if any. The request goes back to PENDING until the new technician accepts it.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Technician assigned",
+          content = @Content(schema = @Schema(implementation = ServiceRequestResource.class))),
+      @ApiResponse(responseCode = "400", description = "Invalid input data"),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
+      @ApiResponse(responseCode = "404", description = "No such service request is reachable by the caller"),
+      @ApiResponse(responseCode = "409", description = "TECHNICIAN_NOT_ELIGIBLE, INVALID_STATUS_TRANSITION or CONCURRENT_MODIFICATION_CONFLICT")
+  })
+  public ResponseEntity<?> assignTechnician(
+      @PathVariable
+      @Parameter(description = "Service request unique identifier", example = "42", required = true)
+      Long serviceRequestId,
+      @Valid @RequestBody AssignTechnicianResource resource,
+      Authentication authentication) {
+    var command = AssignTechnicianCommandFromResourceAssembler.toCommandFromResource(
+        serviceRequestId, authentication.getName(), resource);
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        serviceRequestCommandService.handle(command),
+        this::toResource,
+        HttpStatus.OK);
+  }
+
+  /**
+   * Accepts a service request assigned to the authenticated technician.
+   *
+   * @param serviceRequestId The service request identifier
+   * @param authentication   The authenticated principal, whose name identifies the caller
+   * @return The updated {@link ServiceRequestResource}
+   */
+  @PutMapping("/{serviceRequestId}/accept")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
+  @Operation(
+      summary = "Accept a service request",
+      description = "Accepts a PENDING request assigned to the authenticated technician and issues an edge "
+          + "grant for the unit's gateway. The response carries edge_grant with its plaintext token "
+          + "(it_grt_...), shown only here; only its SHA-256 digest is stored. The gateway learns the grant on "
+          + "its next configuration poll. Reassigning, canceling or completing the request revokes it.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Service request accepted; edge_grant.token is shown only once",
+          content = @Content(schema = @Schema(implementation = ServiceRequestResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not a technician"),
+      @ApiResponse(responseCode = "404", description = "No such service request is assigned to the caller"),
+      @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION or CONCURRENT_MODIFICATION_CONFLICT")
+  })
+  public ResponseEntity<?> acceptServiceRequest(
+      @PathVariable
+      @Parameter(description = "Service request unique identifier", example = "42", required = true)
+      Long serviceRequestId,
+      Authentication authentication) {
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        serviceRequestCommandService.handle(new AcceptServiceRequestCommand(serviceRequestId, authentication.getName())),
+        accepted -> ServiceRequestResourceFromEntityAssembler.toResourceFromAccepted(
+            accepted, displayDetailsOf(List.of(accepted.serviceRequest()), false)),
+        HttpStatus.OK);
+  }
+
+  /**
+   * Replaces the edge grant of a service request assigned to the authenticated technician.
+   *
+   * @param serviceRequestId The service request identifier
+   * @param authentication   The authenticated principal, whose name identifies the caller
+   * @return The new {@link IssuedEdgeGrantResource}, token included
+   */
+  @PostMapping("/{serviceRequestId}/edge-grant")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
+  @Operation(
+      summary = "Regenerate the edge grant of a service request",
+      description = "Issues a new edge grant to the assigned technician of an ACCEPTED or IN_PROGRESS request, "
+          + "for example after the previous token was lost, and revokes the previous grant. The new plaintext "
+          + "token is shown only in this response.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "New edge grant issued; token is shown only once",
+          content = @Content(schema = @Schema(implementation = IssuedEdgeGrantResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "ACCESS_DENIED - the caller is not a technician, or the "
+          + "request is assigned to another technician",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "404", description = "SERVICE_REQUEST_NOT_FOUND",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION - the request is neither "
+          + "ACCEPTED nor IN_PROGRESS",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
+  })
+  public ResponseEntity<?> regenerateEdgeGrant(
+      @PathVariable
+      @Parameter(description = "Service request unique identifier", example = "42", required = true)
+      Long serviceRequestId,
+      Authentication authentication) {
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        serviceRequestCommandService.handle(new RegenerateEdgeGrantCommand(serviceRequestId, authentication.getName())),
+        IssuedEdgeGrantResourceFromEntityAssembler::toResourceFromEntity,
+        HttpStatus.OK);
+  }
+
+  /**
+   * Rejects a service request assigned to the authenticated technician.
+   *
+   * @param serviceRequestId The service request identifier
+   * @param resource         The {@link RejectServiceRequestResource} payload
+   * @param authentication   The authenticated principal, whose name identifies the caller
+   * @return The updated {@link ServiceRequestResource}
+   */
+  @PutMapping(value = "/{serviceRequestId}/reject", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
+  @Operation(
+      summary = "Reject a service request",
+      description = "Rejects a PENDING request assigned to the authenticated technician. The request "
+          + "stays PENDING without a technician, so the owner can assign another one.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Service request rejected",
+          content = @Content(schema = @Schema(implementation = ServiceRequestResource.class))),
+      @ApiResponse(responseCode = "400", description = "Missing reason"),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not a technician"),
+      @ApiResponse(responseCode = "404", description = "No such service request is assigned to the caller"),
+      @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION or CONCURRENT_MODIFICATION_CONFLICT")
+  })
+  public ResponseEntity<?> rejectServiceRequest(
+      @PathVariable
+      @Parameter(description = "Service request unique identifier", example = "42", required = true)
+      Long serviceRequestId,
+      @Valid @RequestBody RejectServiceRequestResource resource,
+      Authentication authentication) {
+    var command = RejectServiceRequestCommandFromResourceAssembler.toCommandFromResource(
+        serviceRequestId, authentication.getName(), resource);
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        serviceRequestCommandService.handle(command),
+        this::toResource,
+        HttpStatus.OK);
+  }
+
+  /**
+   * Starts the work on a service request assigned to the authenticated technician.
+   *
+   * @param serviceRequestId The service request identifier
+   * @param resource         The optional {@link StartServiceRequestResource} payload
+   * @param authentication   The authenticated principal, whose name identifies the caller
+   * @return The updated {@link ServiceRequestResource}
+   */
+  @PutMapping("/{serviceRequestId}/start")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_TECHNICIAN + "')")
+  @Operation(
+      summary = "Start a service request",
+      description = "Moves an ACCEPTED request assigned to the authenticated technician to IN_PROGRESS. "
+          + "The body is optional and carries the start instant reported by the device; repeating the "
+          + "call with the same instant is an idempotent no-op.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Service request started",
+          content = @Content(schema = @Schema(implementation = ServiceRequestResource.class))),
+      @ApiResponse(responseCode = "400", description = "A start instant in the future"),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not a technician"),
+      @ApiResponse(responseCode = "404", description = "No such service request is assigned to the caller"),
+      @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION or CONCURRENT_MODIFICATION_CONFLICT")
+  })
+  public ResponseEntity<?> startServiceRequest(
+      @PathVariable
+      @Parameter(description = "Service request unique identifier", example = "42", required = true)
+      Long serviceRequestId,
+      @RequestBody(required = false) StartServiceRequestResource resource,
+      Authentication authentication) {
+    var command = StartServiceRequestCommandFromResourceAssembler.toCommandFromResource(
+        serviceRequestId, authentication.getName(), resource);
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        serviceRequestCommandService.handle(command),
+        this::toResource,
+        HttpStatus.OK);
+  }
+
+  /**
+   * Cancels one of the authenticated owner's service requests.
+   *
+   * @param serviceRequestId The service request identifier
+   * @param resource         The {@link CancelServiceRequestResource} payload
+   * @param authentication   The authenticated principal, whose name identifies the caller
+   * @return The updated {@link ServiceRequestResource}
+   */
+  @PutMapping(value = "/{serviceRequestId}/cancel", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(
+      summary = "Cancel a service request",
+      description = "Cancels a PENDING or ACCEPTED request of the authenticated owner. A request whose "
+          + "work already started, or that is already closed, cannot be canceled.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Service request canceled",
+          content = @Content(schema = @Schema(implementation = ServiceRequestResource.class))),
+      @ApiResponse(responseCode = "400", description = "Missing reason"),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
+      @ApiResponse(responseCode = "404", description = "No such service request is reachable by the caller"),
+      @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION or CONCURRENT_MODIFICATION_CONFLICT")
+  })
+  public ResponseEntity<?> cancelServiceRequest(
+      @PathVariable
+      @Parameter(description = "Service request unique identifier", example = "42", required = true)
+      Long serviceRequestId,
+      @Valid @RequestBody CancelServiceRequestResource resource,
+      Authentication authentication) {
+    var command = CancelServiceRequestCommandFromResourceAssembler.toCommandFromResource(
+        serviceRequestId, authentication.getName(), resource);
+    return ResponseEntityAssembler.toResponseEntityFromResult(
+        serviceRequestCommandService.handle(command),
+        this::toResource,
+        HttpStatus.OK);
+  }
+
+  /**
+   * Fetches the review of one of the caller's service requests.
+   *
+   * @param serviceRequestId The service request identifier
+   * @param authentication   The authenticated principal, whose name and role identify the caller
+   * @return The {@link ReviewResource}, or 404 when there is none the caller may read
+   */
+  @GetMapping("/{serviceRequestId}/review")
+  @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
+  @Operation(
+      summary = "Get the review of a service request",
+      description = "Retrieves the review of a request. Only the owner who wrote it and the technician "
+          + "it is about can read it.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Review found",
+          content = @Content(schema = @Schema(implementation = ReviewResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician"),
+      @ApiResponse(responseCode = "404", description = "No review of that request is reachable by the caller")
+  })
+  public ResponseEntity<?> getServiceRequestReview(
+      @PathVariable
+      @Parameter(description = "Service request unique identifier", example = "42", required = true)
+      Long serviceRequestId,
+      Authentication authentication) {
+    var review = reviewQueryService.handle(new GetReviewByServiceRequestIdQuery(
+        serviceRequestId,
+        authentication.getName(),
+        CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication)));
+    if (review.isEmpty()) {
+      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
+          ApplicationError.notFound(REVIEW_RESOURCE, "service request " + serviceRequestId));
+    }
+    return ResponseEntity.ok(ReviewResourceFromEntityAssembler.toResourceFromEntity(review.get()));
+  }
+
+  /**
+   * Converts one request into its full resource, with the names of its unit, site and technician.
+   *
+   * @param serviceRequest the request, already scoped to the caller
+   * @return the resource
+   */
+  private ServiceRequestResource toResource(ServiceRequest serviceRequest) {
+    return ServiceRequestResourceFromEntityAssembler.toResourceFromEntity(
+        serviceRequest, displayDetailsOf(List.of(serviceRequest), false));
+  }
+
+  /**
+   * Resolves the names the given requests are shown with, and optionally their reviews, in one call.
+   *
+   * @param serviceRequests the requests, already scoped to the caller
+   * @param includeReviews  whether to resolve which of them were reviewed
+   * @return the details
+   */
+  private ServiceRequestDisplayDetails displayDetailsOf(List<ServiceRequest> serviceRequests, boolean includeReviews) {
+    return serviceRequestQueryService.handle(new GetServiceRequestDisplayDetailsQuery(serviceRequests, includeReviews));
+  }
+
+  /**
+   * Translates a multi-value enum parameter into its domain counterpart. An empty entry, as left by a
+   * trailing comma, is ignored rather than failing the whole request.
+   */
+  private static <R, D> Set<D> toDomainSet(List<R> values, Function<R, D> toDomain) {
+    if (values == null) {
+      return Set.of();
+    }
+    return values.stream()
+        .filter(Objects::nonNull)
+        .map(toDomain)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  /**
+   * Reads the {@code view} parameter: {@code full}, the default, or {@code summary}.
+   *
+   * @throws IllegalArgumentException for any other value, answered with 400 by
+   *                                  {@code GlobalExceptionHandler}
+   */
+  private static boolean isSummaryView(String view) {
+    if (view == null || view.isBlank() || VIEW_FULL.equalsIgnoreCase(view.strip())) {
+      return false;
+    }
+    if (VIEW_SUMMARY.equalsIgnoreCase(view.strip())) {
+      return true;
+    }
+    throw new IllegalArgumentException("Parameter 'view' must be one of [full, summary]");
+  }
+
+  /**
+   * Reads the {@code assigned_to} parameter, which only accepts {@code me}.
+   *
+   * @throws IllegalArgumentException for any other value, answered with 400 by
+   *                                  {@code GlobalExceptionHandler}
+   */
+  private static boolean isAssignedToMe(String assignedTo) {
+    if (assignedTo == null || assignedTo.isBlank()) {
+      return false;
+    }
+    if (ASSIGNED_TO_ME.equalsIgnoreCase(assignedTo.strip())) {
+      return true;
+    }
+    throw new IllegalArgumentException("Parameter 'assigned_to' only accepts 'me'");
+  }
+}

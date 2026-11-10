@@ -3,12 +3,17 @@ package pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.enti
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Address;
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Phone;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingStatus;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.SiteContactPhone;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.converters.AddressPersistenceConverter;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.converters.PhonePersistenceConverter;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
@@ -26,6 +31,14 @@ import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entit
  *
  * <p>The index on {@code owner_profiles_id} is not decorative: every listing an owner opens is
  * scoped by it, so without it each page of the dashboard would be a sequential scan.</p>
+ *
+ * <p>The location is flattened into three nullable columns rather than embedded, so the
+ * {@code GeoLocation} value object stays free of JPA too. The columns added for geocoding, the
+ * equipment counter and the version all carry a database default, because the schema is evolved
+ * by {@code ddl-auto=update} and a {@code NOT NULL} column without a default cannot be added to a
+ * table that already holds rows. Sites created before address verification may keep a status other
+ * than {@code RESOLVED} and no coordinates; they are reported without a location and are not
+ * geocoded again.</p>
  */
 @Getter
 @Setter
@@ -48,7 +61,7 @@ public class SitePersistenceEntity extends AuditableAbstractPersistenceEntity {
   private String name;
 
   @Convert(converter = AddressPersistenceConverter.class)
-  @Column(name = "address", nullable = false, length = 50)
+  @Column(name = "address", nullable = false, length = 255)
   private Address address;
 
   @Column(name = "contact_name", nullable = false, length = 30)
@@ -56,7 +69,38 @@ public class SitePersistenceEntity extends AuditableAbstractPersistenceEntity {
 
   @Convert(converter = PhonePersistenceConverter.class)
   @Column(name = "phone", nullable = false, length = 20)
-  private Phone phone;
+  private SiteContactPhone phone;
+
+  @ColumnDefault("0")
+  @Column(name = "equipment_count", nullable = false)
+  private Integer equipmentCount;
+
+  /** Stored as {@code STRING}, never as an ordinal, for the same reason as the equipment enums. */
+  @Enumerated(EnumType.STRING)
+  @ColumnDefault("'PENDING'")
+  @Column(name = "geocoding_status", nullable = false, length = 20)
+  private GeocodingStatus geocodingStatus;
+
+  /** Latitude of the resolved location; {@code null} unless the status is {@code RESOLVED}. */
+  @Column(name = "latitude")
+  private Double latitude;
+
+  /** Longitude of the resolved location; {@code null} unless the status is {@code RESOLVED}. */
+  @Column(name = "longitude")
+  private Double longitude;
+
+  /** The geocoding provider's place identifier, when it supplied one. */
+  @Column(name = "place_id")
+  private String placeId;
+
+  /**
+   * Optimistic lock. A site has two independent writers - the owner's edits and the asynchronous
+   * geocoding write-back - and without it the slower one would silently overwrite the other.
+   */
+  @Version
+  @ColumnDefault("0")
+  @Column(name = "version", nullable = false)
+  private Long version;
 
   public SitePersistenceEntity() {
   }

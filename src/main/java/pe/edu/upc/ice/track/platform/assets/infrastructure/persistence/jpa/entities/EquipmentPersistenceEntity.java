@@ -9,11 +9,12 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.Check;
+import org.hibernate.annotations.ColumnDefault;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * JPA persistence entity for an {@code Equipment}, mapped to the {@code equipments} table.
@@ -23,11 +24,11 @@ import java.time.LocalDateTime;
  *
  * <p>Three index groups, each matching a query this context actually serves:</p>
  * <ul>
- *   <li>{@code equipment_uid} is unique, because a uid printed on a device is what Device
+ *   <li>{@code equipment_uid} is unique, because an uid printed on a device is what Device
  *       Management resolves a unit by and two units answering to the same uid would make that
  *       resolution ambiguous;</li>
  *   <li>{@code site_id} serves the "equipment of a site" listing;</li>
- *   <li>{@code (status, equipment_type)} serves the US-11 dashboard filters, which always narrow
+ *   <li>{@code (status, equipment_type)} serves the dashboard filters, which always narrow
  *       by those two columns and are read far more often than they are written.</li>
  * </ul>
  *
@@ -48,7 +49,8 @@ import java.time.LocalDateTime;
         @Index(name = "idx_equipments_uid", columnList = "equipment_uid", unique = true),
         @Index(name = "idx_equipments_site_id", columnList = "site_id"),
         @Index(name = "idx_equipments_status_type", columnList = "status, equipment_type")})
-@Check(constraints = "threshold_min_celsius < threshold_max_celsius AND reminder_interval_days > 0")
+@Check(constraints = "threshold_min_celsius >= 0 AND threshold_max_celsius <= 30 "
+    + "AND threshold_min_celsius < threshold_max_celsius AND reminder_interval_days > 0")
 public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEntity {
 
   /**
@@ -85,7 +87,8 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
 
   /**
    * Lowest acceptable temperature in Celsius. Kept as its own column, next to its maximum, so the
-   * database can enforce {@code min < max} and so a band stays queryable by Monitoring.
+   * database can enforce the 0 to 30 °C bounds and {@code min < max}, and so a band stays
+   * queryable by Monitoring.
    */
   @Column(name = "threshold_min_celsius", nullable = false)
   private Double thresholdMinCelsius;
@@ -102,7 +105,7 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
    * exposed here; nullable because a unit may not have reported yet.
    */
   @Column(name = "last_reading_at")
-  private LocalDateTime lastReadingAt;
+  private Instant lastReadingAt;
 
   /**
    * Last temperature known for this unit, in Celsius. Written by the Monitoring and Alerting
@@ -110,6 +113,43 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
    */
   @Column(name = "last_known_temperature")
   private Double lastKnownTemperature;
+
+  /**
+   * Version of the edge configuration of the unit, the ETag of the gateway's configuration poll.
+   *
+   * <p>Written on insert only ({@code updatable = false}): saving the aggregate never rewrites it,
+   * so a save based on a copy read before a concurrent increment cannot roll the version back.
+   * Every increment is a single {@code UPDATE ... SET config_version = config_version + 1}
+   * issued by the repository adapter. The column default lets the schema update add it to a table
+   * that already holds rows.</p>
+   */
+  @ColumnDefault("1")
+  @Column(name = "config_version", nullable = false, updatable = false)
+  private Integer configVersion;
+
+  /**
+   * The status to restore when the maintenance window holding the unit in {@code MAINTENANCE}
+   * closes; {@code NULL} while no window holds it.
+   */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "status_before_maintenance", length = 50)
+  private StatusEquipment statusBeforeMaintenance;
+
+  /**
+   * When the platform received the unit's latest reading batch, by the server clock. Written by the
+   * Monitoring and Alerting context; nullable because a unit may not have reported yet, or reported
+   * only before this column existed.
+   */
+  @Column(name = "last_received_at")
+  private Instant lastReceivedAt;
+
+  /**
+   * Whether a maintenance window currently covers the unit. The column default lets the schema update
+   * add it to a table that already holds rows.
+   */
+  @ColumnDefault("false")
+  @Column(name = "under_maintenance", nullable = false)
+  private boolean underMaintenance;
 
   public EquipmentPersistenceEntity() {
   }

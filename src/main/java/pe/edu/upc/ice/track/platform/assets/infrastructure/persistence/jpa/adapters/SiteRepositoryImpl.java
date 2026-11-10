@@ -14,10 +14,9 @@ import java.util.Optional;
  * Repository adapter that bridges the {@link SiteRepository} port with Spring Data JPA.
  *
  * <p>Also acts as the event-publishing boundary: a brand-new {@link Site} is only asked to raise
- * its {@code SiteCreatedEvent} <em>after</em> the insert, because the event carries the
- * persistence identity and there is nothing to announce before it exists. Publishing here, rather
- * than from the command service, is what guarantees that identity is present and that the event
- * follows the same fate as the transaction that produced the row.</p>
+ * its {@code SiteCreatedEvent} <em>after</em> the insert, because the event carries the persistence
+ * identity. Publishing here guarantees that identity is present and that the event follows the same
+ * fate as the transaction that produced the row.</p>
  */
 @Repository
 public class SiteRepositoryImpl implements SiteRepository {
@@ -65,7 +64,7 @@ public class SiteRepositoryImpl implements SiteRepository {
   }
 
   /**
-   * Persists a site and, when it was new, announces it.
+   * Persists a site and dispatches the domain events it raised.
    *
    * @param site the site to persist
    * @return the persisted site
@@ -73,14 +72,13 @@ public class SiteRepositoryImpl implements SiteRepository {
   @Override
   public Site save(Site site) {
     var isNew = site.getSiteId() == null;
-    var savedEntity = sitePersistenceRepository.save(
-        SitePersistenceAssembler.toPersistenceFromDomain(site));
+    var savedEntity = sitePersistenceRepository.save(SitePersistenceAssembler.toPersistenceFromDomain(site));
     var savedSite = SitePersistenceAssembler.toDomainFromPersistence(savedEntity);
     if (isNew) {
       savedSite.onCreated();
-      savedSite.domainEvents().forEach(eventPublisher::publishEvent);
-      savedSite.clearDomainEvents();
     }
+    savedSite.domainEvents().forEach(eventPublisher::publishEvent);
+    savedSite.clearDomainEvents();
     return savedSite;
   }
 }

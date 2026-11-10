@@ -1,5 +1,6 @@
 package pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform;
 
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -13,11 +14,18 @@ import java.text.MessageFormat;
 import java.util.Locale;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
+import java.util.UUID;
 
 /**
  * Assembler for converting application errors to HTTP responses.
+ *
+ * <p>Server errors (any 5xx) never reach the client with their details: whatever an application
+ * service or exception handler put there (exception messages, SQL fragments, class names) is
+ * logged together with a random reference, and the client receives only that reference, which
+ * support can use to find the log entry.</p>
  */
 @NullMarked
+@Slf4j
 public final class ErrorResponseAssembler {
   private static final String MESSAGES_BASENAME = "messages";
 
@@ -32,16 +40,52 @@ public final class ErrorResponseAssembler {
    * @return a ResponseEntity with the appropriate HTTP status and error resource
    */
   public static ResponseEntity<ErrorResource> toErrorResponseFromApplicationError(ApplicationError error) {
+    return toErrorResponseFromApplicationError(error, null);
+  }
+
+  /**
+   * Maps an ApplicationError to an HTTP response, logging the cause of a server error.
+   *
+   * <p>For a 5xx status the error, its details and the cause (when given) are logged under a new
+   * reference, and the response carries the reference instead of the details.</p>
+   *
+   * @param error the ApplicationError to map
+   * @param cause the exception behind the error, logged with its stack trace; may be {@code null}
+   * @return a ResponseEntity with the appropriate HTTP status and error resource
+   */
+  public static ResponseEntity<ErrorResource> toErrorResponseFromApplicationError(
+      ApplicationError error, @Nullable Throwable cause) {
     HttpStatusCode status = toStatusFromErrorCode(error.code());
-    String localizedMessage = toLocalizedMessageFromApplicationError(error);
-    ErrorResource resource = new ErrorResource(error.code(), localizedMessage, error.details());
+    ApplicationError exposed = status.is5xxServerError() ? withReferenceInsteadOfDetails(error, cause) : error;
+    String localizedMessage = toLocalizedMessageFromApplicationError(exposed);
+    ErrorResource resource = new ErrorResource(exposed.code(), localizedMessage, exposed.details());
     return new ResponseEntity<>(resource, status);
   }
 
-  private static String toLocalizedMessageFromApplicationError(ApplicationError error) {
-    String specificKey = toSpecificMessageKeyFromErrorCode(error.code());
-    return toLocalizedMessageOrNull(specificKey, error.details(), toEntityNameFromErrorCode(error.code()));
+  private static ApplicationError withReferenceInsteadOfDetails(ApplicationError error, @Nullable Throwable cause) {
+    var reference = UUID.randomUUID().toString();
+    if (cause != null) {
+      log.error("Server error {} [reference {}]: {} - {}", error.code(), reference, error.message(), error.details(), cause);
+    } else {
+      log.error("Server error {} [reference {}]: {} - {}", error.code(), reference, error.message(), error.details());
+    }
+    return new ApplicationError(error.code(), error.message(), "Reference: " + reference);
+  }
 
+  /**
+   * Resolves the client-facing message of an error: the text of its own {@code error.<code>.message}
+   * key, else the text of the generic key for its family ({@code _NOT_FOUND}, {@code _CONFLICT}, ...),
+   * else {@code error.generic.message}. Every error body therefore carries a message.
+   */
+  private static @Nullable String toLocalizedMessageFromApplicationError(ApplicationError error) {
+    String entityName = toEntityNameFromErrorCode(error.code());
+    String specificMessage = toLocalizedMessageOrNull(
+        toSpecificMessageKeyFromErrorCode(error.code()), error.details(), entityName);
+    if (specificMessage != null) {
+      return specificMessage;
+    }
+    String familyMessage = toLocalizedMessageOrNull(toMessageKeyFromErrorCode(error.code()), error.details(), entityName);
+    return familyMessage != null ? familyMessage : toLocalizedMessageOrNull("error.generic.message");
   }
 
   private static String toSpecificMessageKeyFromErrorCode(String errorCode) {
@@ -100,16 +144,26 @@ public final class ErrorResponseAssembler {
   /**
    * Determines the appropriate HTTP status code for a given error code.
    *
+   * <p>Conflicts are recognized by their {@code _CONFLICT} suffix, except for the state machine
+   * codes, whose names describe the rule that was broken rather than the resource, and which are
+   * listed explicitly. The authentication codes are listed explicitly too: {@code BAD_CREDENTIALS}
+   * and {@code INVALID_TOKEN} are 401, {@code ROLE_CHANNEL_MISMATCH} is 403,
+   * {@code ACCOUNT_LINK_REQUIRED} is 409 and {@code TOO_MANY_REQUESTS} is 429.</p>
+   *
    * @param errorCode the error code string (e.g., "PROFILE_NOT_FOUND", "VALIDATION_ERROR")
    * @return the corresponding HttpStatus
    */
   public static HttpStatusCode toStatusFromErrorCode(String errorCode) {
     return switch (errorCode) {
-      case "VALIDATION_ERROR" -> HttpStatus.BAD_REQUEST;
+      case "VALIDATION_ERROR", "ADDRESS_VALIDATION_REQUIRED", "PIN_OUT_OF_RANGE" -> HttpStatus.BAD_REQUEST;
+      case "INVALID_STATUS_TRANSITION", "TECHNICIAN_NOT_ELIGIBLE", "REVIEW_NOT_ALLOWED", "ACCOUNT_LINK_REQUIRED" ->
+          HttpStatus.CONFLICT;
       case String s when s.endsWith("_NOT_FOUND") -> HttpStatus.NOT_FOUND;
-      case "BUSINESS_RULE_VIOLATION" -> HttpStatusCode.valueOf(422);
-      case "UNAUTHORIZED" -> HttpStatus.UNAUTHORIZED;
-      case "ACCESS_DENIED" -> HttpStatus.FORBIDDEN;
+      case "BUSINESS_RULE_VIOLATION", "ADDRESS_OUT_OF_COVERAGE", "ADDRESS_NOT_VERIFIED" -> HttpStatusCode.valueOf(422);
+      case "UNAUTHORIZED", "BAD_CREDENTIALS", "INVALID_TOKEN" -> HttpStatus.UNAUTHORIZED;
+      case "ACCESS_DENIED", "ROLE_CHANNEL_MISMATCH" -> HttpStatus.FORBIDDEN;
+      case "TOO_MANY_REQUESTS" -> HttpStatus.TOO_MANY_REQUESTS;
+      case "GEOCODING_UNAVAILABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
       case String s when s.endsWith("_CONFLICT") -> HttpStatus.CONFLICT;
       default -> HttpStatus.INTERNAL_SERVER_ERROR;
     };

@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.monitoring.domain.repositories;
 
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.SensorReading;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,7 +37,7 @@ public interface SensorReadingRepository {
    * @return  a list of sensor readings matching the criteria
    */
   List<SensorReading> findByEquipmentIdAndRecordedAtBetween(
-      Long equipmentId, LocalDateTime from, LocalDateTime to);
+      Long equipmentId, Instant from, Instant to);
 
   /**
    *  Fetches the most recent sensor readings for a given equipment, limited by the specified number of readings.
@@ -46,4 +46,15 @@ public interface SensorReadingRepository {
    * @return a list of the most recent sensor readings for the equipment, ordered by recordedAt descending
    */
   List<SensorReading> findTopByEquipmentIdOrderByRecordedAtDesc(Long equipmentId, int limit);
+
+  /**
+   * Fetches the reading of an equipment the platform received last, by the server clock.
+   *
+   * <p>Offline detection judges silence by when readings arrived, not by when the device says it took
+   * them, so a drifting device clock never makes a reporting unit look silent.</p>
+   *
+   * @param equipmentId the identifier of the equipment
+   * @return the latest received reading, or empty when the equipment never reported
+   */
+  Optional<SensorReading> findLatestReceivedByEquipmentId(Long equipmentId);
 }

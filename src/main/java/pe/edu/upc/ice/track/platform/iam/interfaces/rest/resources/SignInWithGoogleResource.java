@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * Resource received to verify a Google OIDC id_token against the registered accounts.
@@ -13,8 +14,8 @@ import jakarta.validation.constraints.NotBlank;
  */
 @Schema(
     name = "SignInWithGoogleRequest",
-    description = "Request carrying the Google OIDC id_token obtained by the frontend",
-    example = "{\"id_token\": \"eyJhbGciOiJSUzI1NiIsImtpZCI6IjE2YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5Y\"}"
+    description = "Request carrying the Google OIDC id_token obtained by the frontend and the client application it comes from",
+    example = "{\"id_token\": \"eyJhbGciOiJSUzI1NiIsImtpZCI6IjE2YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5Y\", \"channel\": \"WEB\"}"
 )
 public record SignInWithGoogleResource(
     @NotBlank(message = "{validation.not-blank}")
@@ -23,6 +24,14 @@ public record SignInWithGoogleResource(
         example = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjE2YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5YzQ0YjA3ZjM0YjY5Y",
         requiredMode = Schema.RequiredMode.REQUIRED
     )
-    String idToken
+    String idToken,
+
+    @NotNull(message = "{validation.not-null}")
+    @Schema(
+        description = "Client application: WEB for owners, MOBILE for technicians",
+        example = "WEB",
+        requiredMode = Schema.RequiredMode.REQUIRED
+    )
+    ClientChannelResource channel
 ) {
 }

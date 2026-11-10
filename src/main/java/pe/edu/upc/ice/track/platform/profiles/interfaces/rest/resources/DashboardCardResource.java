@@ -1,13 +1,12 @@
 package pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Resource for a card of a dashboard configuration.
  *
- * <p>The visibility flag is named explicitly: left to the bean conventions, the {@code isVisible}
- * accessor could be read as a property called {@code visible}.</p>
+ * <p>The visibility flag is exposed as {@code is_visible}: the platform-wide {@code SNAKE_CASE}
+ * strategy turns the {@code isVisible} record component into that JSON property.</p>
  */
 @Schema(
     name = "DashboardCardResponse",
@@ -26,7 +25,6 @@ public record DashboardCardResource(
         + "positions 1 to N, with no gap and no repeat", example = "1")
     Integer order,
 
-    @JsonProperty("is_visible")
     @Schema(description = "Whether the card is shown; a hidden card keeps its data", example = "true")
     boolean isVisible
 ) {

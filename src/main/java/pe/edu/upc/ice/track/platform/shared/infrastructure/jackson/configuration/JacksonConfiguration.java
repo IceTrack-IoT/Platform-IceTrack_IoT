@@ -4,6 +4,9 @@ import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomize
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.PropertyNamingStrategies;
+import tools.jackson.databind.module.SimpleModule;
+
+import java.time.Instant;
 
 /**
  * Configures Jackson to use {@code snake_case} for all REST resource fields.
@@ -16,6 +19,10 @@ import tools.jackson.databind.PropertyNamingStrategies;
  * without per-field annotations. It mirrors the
  * {@code spring.jackson.property-naming-strategy=SNAKE_CASE} property as an explicit,
  * type-safe guarantee.</p>
+ *
+ * <p>Moments are {@link Instant}s, written as ISO 8601 UTC with {@code Z} (Jackson's default for
+ * {@code Instant}) and read only from ISO 8601 strings that state their offset
+ * ({@link IsoInstantDeserializer}).</p>
  */
 @Configuration
 public class JacksonConfiguration {
@@ -23,5 +30,11 @@ public class JacksonConfiguration {
   @Bean
   public JsonMapperBuilderCustomizer snakeCaseJsonMapperBuilderCustomizer() {
     return builder -> builder.propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+  }
+
+  @Bean
+  public JsonMapperBuilderCustomizer isoInstantJsonMapperBuilderCustomizer() {
+    return builder -> builder.addModule(
+        new SimpleModule("iso-instants").addDeserializer(Instant.class, new IsoInstantDeserializer()));
   }
 }

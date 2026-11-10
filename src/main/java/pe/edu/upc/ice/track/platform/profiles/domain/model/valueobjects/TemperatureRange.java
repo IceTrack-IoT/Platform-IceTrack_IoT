@@ -9,10 +9,10 @@ import java.util.Set;
  * <p>The temperature window a dashboard filters on by default: its bounds, the unit they are
  * expressed in, and the label the clients display.</p>
  *
- * @param min   the lower bound, such as {@code -22}; required, never above {@code max}
- * @param max   the upper bound, such as {@code -18}; required, never below {@code min}
+ * @param min   the lower bound, such as {@code 2}; required, never above {@code max}
+ * @param max   the upper bound, such as {@code 8}; required, never below {@code min}
  * @param unit  the unit of both bounds, {@code "C"} (Celsius) or {@code "F"} (Fahrenheit); required
- * @param label the human-readable range, such as {@code "-18°C to -22°C"}; required
+ * @param label the human-readable range, such as {@code "2°C to 8°C"}; required
  */
 public record TemperatureRange(Integer min, Integer max, String unit, String label) {
 

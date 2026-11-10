@@ -38,7 +38,8 @@ public record AuthErrorResource(
         })
     String code,
 
-    @Schema(description = "Human-readable description of the error")
+    @Schema(description = "Human-readable description of the error",
+        example = "The provided refresh token was already rotated within the acceptable grace period window.")
     String message
 ) {
 }

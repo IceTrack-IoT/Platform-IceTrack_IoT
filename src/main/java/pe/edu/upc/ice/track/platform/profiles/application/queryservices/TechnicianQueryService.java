@@ -2,8 +2,12 @@ package pe.edu.upc.ice.track.platform.profiles.application.queryservices;
 
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.TechnicianProfile;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetAllTechniciansQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetPublicTechnicianDirectoryQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByUserIdQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianMetricsQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.readmodels.TechnicianDirectoryPage;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.readmodels.TechnicianMetrics;
 
 import java.util.List;
 import java.util.Optional;
@@ -36,4 +40,20 @@ public interface TechnicianQueryService {
    * @return every technician profile
    */
   List<TechnicianProfile> handle(GetAllTechniciansQuery query);
+
+  /**
+   * Handle Get Technician Metrics Query.
+   *
+   * @param query the query
+   * @return the technician's projected metrics, or empty when nothing was projected for it yet
+   */
+  Optional<TechnicianMetrics> handle(GetTechnicianMetricsQuery query);
+
+  /**
+   * Handle Get Public Technician Directory Query.
+   *
+   * @param query the query naming the filters, the order and the requested page
+   * @return one page of the technicians matching the filters, each with its projected statistics
+   */
+  TechnicianDirectoryPage handle(GetPublicTechnicianDirectoryQuery query);
 }

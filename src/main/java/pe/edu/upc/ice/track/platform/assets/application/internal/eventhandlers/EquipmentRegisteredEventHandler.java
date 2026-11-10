@@ -1,51 +1,46 @@
 package pe.edu.upc.ice.track.platform.assets.application.internal.eventhandlers;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.assets.domain.model.events.EquipmentRegisteredEvent;
-import pe.edu.upc.ice.track.platform.assets.interfaces.events.EquipmentRegisteredIntegrationEvent;
+import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 
 /**
  * Internal application-layer handler for the {@link EquipmentRegisteredEvent} domain event.
  *
- * <p>Translates the internal domain event into an {@link EquipmentRegisteredIntegrationEvent} and
- * re-publishes it on the Spring event bus for cross-context consumers.</p>
+ * <p>Keeps the equipment counter of the site the unit was installed at. It runs synchronously,
+ * inside the transaction that registered the unit, so the unit and the counter are committed or
+ * rolled back together and the counter never drifts from the units actually saved.</p>
  */
 @Service
 @Slf4j
 public class EquipmentRegisteredEventHandler {
 
-  private final ApplicationEventPublisher eventPublisher;
+  private final SiteRepository siteRepository;
 
   /**
-   * Constructor.
+   * Constructor
    *
-   * @param eventPublisher Spring application event publisher
+   * @param siteRepository the {@link SiteRepository} instance
    */
-  public EquipmentRegisteredEventHandler(ApplicationEventPublisher eventPublisher) {
-    this.eventPublisher = eventPublisher;
+  public EquipmentRegisteredEventHandler(SiteRepository siteRepository) {
+    this.siteRepository = siteRepository;
   }
 
   /**
-   * Receives the internal {@link EquipmentRegisteredEvent} and publishes the corresponding
-   * {@link EquipmentRegisteredIntegrationEvent}.
+   * Receives the {@link EquipmentRegisteredEvent} once the new unit has been persisted.
    *
-   * @param event the internal domain event
+   * @param event the domain event
    */
   @EventListener
   public void on(EquipmentRegisteredEvent event) {
     log.info("Equipment registered: id={}, siteId={}, uid='{}', type={}, threshold=[{}, {}]C",
         event.equipmentId(), event.siteId(), event.uid(), event.equipmentType(),
         event.minCelsius(), event.maxCelsius());
-    eventPublisher.publishEvent(new EquipmentRegisteredIntegrationEvent(
-        event.equipmentId(),
-        event.siteId(),
-        event.uid(),
-        event.equipmentType() == null ? null : event.equipmentType().name(),
-        event.minCelsius(),
-        event.maxCelsius(),
-        event.registeredAt()));
+    siteRepository.findById(event.siteId()).ifPresent(site -> {
+      site.incrementEquipmentCount();
+      siteRepository.save(site);
+    });
   }
 }

@@ -2,7 +2,7 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.events;
 
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Domain event published when the acceptable temperature band of an {@link Equipment} changes.
@@ -24,7 +24,7 @@ public record TemperatureThresholdUpdatedEvent(
     Long siteId,
     Double minCelsius,
     Double maxCelsius,
-    LocalDateTime changedAt) {
+    Instant changedAt) {
 
   /**
    * Extracts the event fields from an {@link Equipment} whose threshold has just been replaced.
@@ -38,6 +38,6 @@ public record TemperatureThresholdUpdatedEvent(
         equipment.getSiteId(),
         equipment.getTemperatureThreshold().minCelsius(),
         equipment.getTemperatureThreshold().maxCelsius(),
-        LocalDateTime.now());
+        Instant.now());
   }
 }

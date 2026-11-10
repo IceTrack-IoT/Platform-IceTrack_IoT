@@ -22,6 +22,11 @@ import java.io.IOException;
  * This class is responsible for filtering requests and setting the user authentication.
  * It extends the OncePerRequestFilter class.
  * </p>
+ * <p>
+ * No token material is ever logged, not even a prefix: a bearer token is a credential, and log
+ * files are read by far more people and systems than the API is. A request without a bearer token
+ * simply continues unauthenticated, and the security rules decide whether that is acceptable.
+ * </p>
  * @see OncePerRequestFilter
  */
 @Slf4j
@@ -46,19 +51,20 @@ public class BearerAuthorizationRequestFilter extends OncePerRequestFilter {
    */
   @Override
   protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain filterChain) throws ServletException, IOException {
-    try {
-      String token = tokenService.getBearerTokenFrom(request);
-      log.info("Token: {}", token.substring(0, Math.min(token.length(), 10)) + "...");
-      if (token != null && tokenService.validateToken(token)) {
-        String username = tokenService.getUsernameFromToken(token);
-        var userDetails = userDetailsService.loadUserByUsername(username);
-        SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationTokenBuilder.build(userDetails, request));
-      } else {
-        log.info("Token is not valid");
+    String token = tokenService.getBearerTokenFrom(request);
+    if (token != null) {
+      try {
+        if (tokenService.validateToken(token)) {
+          String username = tokenService.getUsernameFromToken(token);
+          var userDetails = userDetailsService.loadUserByUsername(username);
+          SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationTokenBuilder.build(userDetails, request));
+        } else {
+          log.debug("Bearer token rejected for {} {}", request.getMethod(), request.getRequestURI());
+        }
+      } catch (RuntimeException e) {
+        // The exception type only: messages from the user lookup or the token parser can echo input.
+        log.warn("Cannot set user authentication: {}", e.getClass().getSimpleName());
       }
-
-    } catch (Exception e) {
-      log.error("Cannot set user authentication: {}", e.getMessage());
     }
     filterChain.doFilter(request, response);
   }

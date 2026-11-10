@@ -1,8 +1,10 @@
 package pe.edu.upc.ice.track.platform.iam.infrastructure.tokens.jwt.services;
 
 import io.jsonwebtoken.*;
+import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-import io.jsonwebtoken.security.SignatureException;
+import io.jsonwebtoken.security.MacAlgorithm;
+import io.jsonwebtoken.security.SecurityException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.DateUtils;
@@ -14,16 +16,21 @@ import org.springframework.util.StringUtils;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.tokens.jwt.BearerTokenService;
 
 import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.function.Function;
 
 /**
  * Token service implementation for JWT tokens.
  * This class is responsible for generating and validating JWT tokens.
- * It uses the secret and expiration minutes from the application.properties file.
  * Access tokens are kept short-lived because they are validated statelessly and therefore cannot
  * be revoked; sessions are extended through refresh tokens instead.
+ *
+ * <p><strong>Key handling.</strong> {@code authorization.jwt.secret} is
+ * Base64 and is decoded to raw key bytes, rather than used as the bytes of its own text. The
+ * decoded key must hold at least 64 bytes (512 bits, RFC 7518 §3.2 for HS512), and the application
+ * refuses to start otherwise: there is no committed fallback secret, so a missing, blank, malformed
+ * or short secret fails fast at startup instead of signing tokens with a key anyone can read.
+ * Tokens are always signed with HS512, and the parser rejects any other algorithm.</p>
  */
 @Service
 @Slf4j
@@ -34,12 +41,59 @@ public class TokenServiceImpl implements BearerTokenService {
 
   private static final int TOKEN_BEGIN_INDEX = 7;
 
+  /** HS512 requires a key of at least 512 bits. */
+  static final int MIN_KEY_BYTES = 64;
 
-  @Value("${authorization.jwt.secret}")
-  private String secret;
+  private static final MacAlgorithm SIGNATURE_ALGORITHM = Jwts.SIG.HS512;
 
-  @Value("${authorization.jwt.expiration.minutes}")
-  private int expirationMinutes;
+  private final SecretKey signingKey;
+  private final int expirationMinutes;
+
+  /**
+   * Builds the service and validates the signing key once, at startup.
+   *
+   * @param secret            the Base64-encoded signing secret; required, at least 64 decoded bytes
+   * @param expirationMinutes the access token lifetime, in minutes; strictly positive
+   * @throws IllegalStateException when the secret is missing, blank, not Base64 or too short, or
+   *                               the lifetime is not positive, which aborts application startup
+   */
+  public TokenServiceImpl(
+      @Value("${authorization.jwt.secret:}") String secret,
+      @Value("${authorization.jwt.expiration.minutes}") int expirationMinutes) {
+    this.signingKey = signingKeyFrom(secret);
+    if (expirationMinutes <= 0) {
+      throw new IllegalStateException("authorization.jwt.expiration.minutes must be a positive number of minutes");
+    }
+    this.expirationMinutes = expirationMinutes;
+  }
+
+  /**
+   * Decodes and validates the signing secret.
+   *
+   * @param secret the Base64-encoded secret, as configured
+   * @return the HMAC-SHA key built from the decoded bytes
+   * @throws IllegalStateException when the secret cannot be used for HS512
+   */
+  static SecretKey signingKeyFrom(String secret) {
+    if (secret == null || secret.isBlank()) {
+      throw new IllegalStateException(
+          "authorization.jwt.secret is not set: define the JWT_SECRET environment variable "
+              + "(generate one with: openssl rand -base64 64 | tr -d '\\n')");
+    }
+    byte[] keyBytes;
+    try {
+      keyBytes = Decoders.BASE64.decode(secret.trim());
+    } catch (RuntimeException exception) {
+      // The exception message is not chained into ours on purpose: it may quote the secret.
+      throw new IllegalStateException("authorization.jwt.secret must be Base64 encoded");
+    }
+    if (keyBytes.length < MIN_KEY_BYTES) {
+      throw new IllegalStateException(
+          "authorization.jwt.secret must decode to at least %d bytes for HS512, but decodes to %d"
+              .formatted(MIN_KEY_BYTES, keyBytes.length));
+    }
+    return Keys.hmacShaKeyFor(keyBytes);
+  }
 
   /**
    * This method generates a JWT token from an authentication object
@@ -68,8 +122,7 @@ public class TokenServiceImpl implements BearerTokenService {
   }
 
   /**
-   * This method generates a JWT token from a username, a role and a secret.
-   * It uses the default expiration minutes from the application.properties file.
+   * Generates an HS512-signed JWT token from a username and a role, using the configured lifetime.
    * @param username the username
    * @param role the role name; the claim is omitted when {@code null}
    * @return String the JWT token
@@ -77,7 +130,6 @@ public class TokenServiceImpl implements BearerTokenService {
   private String buildTokenWithDefaultParameters(String username, String role) {
     var issuedAt = new Date();
     var expiration = DateUtils.addMinutes(issuedAt, expirationMinutes);
-    var key = getSigningKey();
     var builder = Jwts.builder()
         .subject(username)
         .issuedAt(issuedAt)
@@ -85,7 +137,7 @@ public class TokenServiceImpl implements BearerTokenService {
     if (role != null) {
       builder.claim(ROLE_CLAIM_NAME, role);
     }
-    return builder.signWith(key).compact();
+    return builder.signWith(signingKey, SIGNATURE_ALGORITHM).compact();
   }
 
   /**
@@ -99,26 +151,23 @@ public class TokenServiceImpl implements BearerTokenService {
   }
 
   /**
-   * This method validates a JWT token
+   * This method validates a JWT token.
+   *
+   * <p>Rejections are logged at debug level by exception type only: neither the token nor the
+   * parser's message (which may quote parts of the token) is ever written to the log.</p>
+   *
    * @param token the token
    * @return boolean true if the token is valid, false otherwise
    */
   @Override
   public boolean validateToken(String token) {
     try {
-      Jwts.parser().verifyWith(getSigningKey()).build().parseSignedClaims(token);
-      log.info("Token is valid");
+      parse(token);
       return true;
-    }  catch (SignatureException e) {
-      log.error("Invalid JSON Web Token Signature: {}", e.getMessage());
-    } catch (MalformedJwtException e) {
-      log.error("Invalid JSON Web Token: {}", e.getMessage());
     } catch (ExpiredJwtException e) {
-      log.error("JSON Web Token is expired: {}", e.getMessage());
-    } catch (UnsupportedJwtException e) {
-      log.error("JSON Web Token is unsupported: {}", e.getMessage());
-    } catch (IllegalArgumentException e) {
-      log.error("JSON Web Token claims string is empty: {}", e.getMessage());
+      log.debug("Rejected bearer token: expired");
+    } catch (SecurityException | MalformedJwtException | UnsupportedJwtException | IllegalArgumentException e) {
+      log.debug("Rejected bearer token: {}", e.getClass().getSimpleName());
     }
     return false;
   }
@@ -131,26 +180,22 @@ public class TokenServiceImpl implements BearerTokenService {
    * @return T the claim
    */
   private <T> T extractClaim(String token, Function<Claims, T> claimsResolvers) {
-    final Claims claims = extractAllClaims(token);
-    return claimsResolvers.apply(claims);
+    return claimsResolvers.apply(parse(token).getPayload());
   }
 
   /**
-   * Extract all claims from a token
-   * @param token the token
-   * @return Claims the claims
+   * Verifies the signature and expiry of a token, and that it was signed with HS512.
+   *
+   * @param token the compact JWS
+   * @return the parsed, verified token
+   * @throws JwtException when the token is invalid, expired or signed with another algorithm
    */
-  private Claims extractAllClaims(String token) {
-    return Jwts.parser().verifyWith(getSigningKey()).build().parseSignedClaims(token).getPayload();
-  }
-
-  /**
-   * Get the signing key
-   * @return SecretKey the signing key
-   */
-  private SecretKey getSigningKey() {
-    byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-    return Keys.hmacShaKeyFor(keyBytes);
+  private Jws<Claims> parse(String token) {
+    var jws = Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token);
+    if (!SIGNATURE_ALGORITHM.getId().equals(jws.getHeader().getAlgorithm())) {
+      throw new UnsupportedJwtException("Unexpected JWT signature algorithm");
+    }
+    return jws;
   }
 
   private boolean isTokenPresentIn(String authorizationParameter) {

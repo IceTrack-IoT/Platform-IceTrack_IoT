@@ -1,13 +1,15 @@
 package pe.edu.upc.ice.track.platform.assets.domain.model.queries;
 
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
+
 /**
  * Query to fetch a single equipment unit by its identifier.
  *
- * <p>{@code ownerId} is nullable on purpose: this query is also the one the ACL facade uses to
- * answer other bounded contexts, which legitimately ask about a unit without being its owner.</p>
- *
  * @param equipmentId identifier of the unit; required
- * @param ownerId     identifier of the owner requesting the unit, may be {@code null}
+ * @param username    username of the authenticated caller, resolved by the query service to the
+ *                    owner the unit must belong to when the caller acts as an owner; required
+ * @param callerRole  the role the caller acts in; {@code null} is treated as
+ *                    {@link CallerRole#OWNER}
  */
-public record GetEquipmentByIdQuery(Long equipmentId, Long ownerId) {
+public record GetEquipmentByIdQuery(Long equipmentId, String username, CallerRole callerRole) {
 }

@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Positive;
 @Schema(
     name = "UpdateDefaultsRequest",
     description = "Dashboard defaults update request",
-    example = "{\"default_site_id\": 3, \"default_temperature_range\": {\"min\": -22, \"max\": -18, \"unit\": \"C\", \"label\": \"-18°C to -22°C\"}}"
+    example = "{\"default_site_id\": 3, \"default_temperature_range\": {\"min\": 2, \"max\": 8, \"unit\": \"C\", \"label\": \"2°C to 8°C\"}}"
 )
 public record UpdateDashboardDefaultsResource(
     @NotNull(message = "{validation.not-null}")

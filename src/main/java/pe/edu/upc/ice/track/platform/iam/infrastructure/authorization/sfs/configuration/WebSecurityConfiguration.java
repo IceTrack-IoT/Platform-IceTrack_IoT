@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.iam.infrastructure.authorization.sfs.confi
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -18,7 +19,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.authorization.sfs.pipeline.BearerAuthorizationRequestFilter;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.hashing.bcrypt.BCryptHashingService;
+import pe.edu.upc.ice.track.platform.iam.infrastructure.security.SignInAttemptRegistry;
+import pe.edu.upc.ice.track.platform.iam.infrastructure.security.SignInRateLimitFilter;
 import pe.edu.upc.ice.track.platform.iam.infrastructure.tokens.jwt.BearerTokenService;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -35,13 +39,36 @@ import java.util.List;
  * {@code spring-boot-starter-oauth2-resource-server} dependency is present only to supply the
  * {@code NimbusJwtDecoder} that validates incoming <em>Google</em> id_tokens at the token
  * exchange endpoint; no {@code spring.security.oauth2.resourceserver.*} property is declared, so
- * Spring Boot's resource-server auto-configuration stays inactive and this filter chain remains
- * the single authority on request authorization.
+ * Spring Boot's resource-server autoconfiguration stays inactive and this filter chain remains
+ * the single authority on user request authorization.
+ * </p>
+ * <p>
+ * This chain has no security matcher and is therefore evaluated last. The edge routes the IoT
+ * boards call ({@code POST /api/v1/telemetry}, {@code POST /api/v1/telemetry/events} and
+ * {@code /api/v1/devices/me/**}) are claimed first by the device API key chain of the Device
+ * Management context, so they never reach the bearer token filter.
+ * </p>
+ * <p>
+ * The endpoints that verify a credential ({@code /sign-in/local}, {@code /google/verify} and
+ * {@code /google/link}) are throttled by {@link SignInRateLimitFilter}, which answers
+ * {@code 429 TOO_MANY_REQUESTS} once a client address or an account has failed too often.
+ * </p>
+ * <p>
+ * {@code GET /api/v1/telemetry/stream} is reachable without a bearer token: browsers open it with
+ * {@code EventSource}, which cannot send one, and it is authenticated by the single-use stream ticket
+ * its query string carries, issued to an owner by {@code POST /api/v1/telemetry/stream-ticket}.
+ * </p>
+ * <p>
+ * A request rejected for lack of a valid bearer token is answered {@code 401} with the standard
+ * {@code {code, message, details}} body, written by {@code UnauthorizedRequestHandlerEntryPoint}.
  * </p>
  */
 @Configuration
 @EnableMethodSecurity
 public class WebSecurityConfiguration {
+
+  /** Server-Sent Events route of the telemetry stream, authenticated by a stream ticket instead of a JWT. */
+  static final String TELEMETRY_STREAM_PATH = "/api/v1/telemetry/stream";
 
   private final UserDetailsService userDetailsService;
 
@@ -51,13 +78,34 @@ public class WebSecurityConfiguration {
 
   private final AuthenticationEntryPoint unauthorizedRequestHandler;
 
+  private final SignInAttemptRegistry signInAttemptRegistry;
+
+  private final ObjectMapper objectMapper;
+
   /**
-   * This method creates the Bearer Authorization Request Filter.
+   * Creates the filter throttling failed sign-in attempts.
+   *
+   * <p>Deliberately not a {@code @Bean}, for the same reason as
+   * {@link #authorizationRequestFilter()}.</p>
+   *
+   * @return The sign-in rate limit filter
+   * @see SignInRateLimitFilter
+   */
+  private SignInRateLimitFilter signInRateLimitFilter() {
+    return new SignInRateLimitFilter(signInAttemptRegistry, objectMapper);
+  }
+
+  /**
+   * Creates the Bearer Authorization Request Filter.
+   *
+   * <p>Deliberately not a {@code @Bean}: Spring Boot registers every {@code Filter} bean as a
+   * servlet filter too, so a bean would also run outside the security chain, edge routes
+   * included.</p>
+   *
    * @return The Bearer Authorization Request Filter
    * @see BearerAuthorizationRequestFilter
    */
-  @Bean
-  public BearerAuthorizationRequestFilter authorizationRequestFilter() {
+  private BearerAuthorizationRequestFilter authorizationRequestFilter() {
     return new BearerAuthorizationRequestFilter(tokenService, userDetailsService);
   }
 
@@ -106,6 +154,10 @@ public class WebSecurityConfiguration {
       cors.setAllowedOrigins(List.of("*"));
       cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE"));
       cors.setAllowedHeaders(List.of("*"));
+      // Without this a browser hides these headers from the web application: ETag is what a
+      // conditional read sends back in If-None-Match, Retry-After is how long to wait after a 429
+      // or a 503, and X-Telemetry-Bucket is the bucket width an aggregated telemetry history used.
+      cors.setExposedHeaders(List.of("ETag", "Retry-After", "X-Telemetry-Bucket"));
       return cors;
     }));
     http.csrf(AbstractHttpConfigurer::disable)
@@ -129,8 +181,12 @@ public class WebSecurityConfiguration {
                 "/swagger-ui/**",
                 "/swagger-resources/**",
                 "/webjars/**").permitAll()
+            // The telemetry stream is opened by a browser EventSource, which cannot send a bearer
+            // token: its single-use stream ticket, checked by the controller, is its credential.
+            .requestMatchers(HttpMethod.GET, TELEMETRY_STREAM_PATH).permitAll()
             .anyRequest().authenticated());
     http.authenticationProvider(authenticationProvider());
+    http.addFilterBefore(signInRateLimitFilter(), UsernamePasswordAuthenticationFilter.class);
     http.addFilterBefore(authorizationRequestFilter(), UsernamePasswordAuthenticationFilter.class);
     return http.build();
 
@@ -142,11 +198,21 @@ public class WebSecurityConfiguration {
    * @param tokenService The token service
    * @param hashingService The hashing service
    * @param authenticationEntryPoint The authentication entry point
+   * @param signInAttemptRegistry The registry counting failed sign-in attempts
+   * @param objectMapper The JSON mapper the sign-in rate limit filter reads and writes bodies with
    */
-  public WebSecurityConfiguration(@Qualifier("defaultUserDetailsService") UserDetailsService userDetailsService, BearerTokenService tokenService, BCryptHashingService hashingService, AuthenticationEntryPoint authenticationEntryPoint) {
+  public WebSecurityConfiguration(
+      @Qualifier("defaultUserDetailsService") UserDetailsService userDetailsService,
+      BearerTokenService tokenService,
+      BCryptHashingService hashingService,
+      AuthenticationEntryPoint authenticationEntryPoint,
+      SignInAttemptRegistry signInAttemptRegistry,
+      ObjectMapper objectMapper) {
     this.userDetailsService = userDetailsService;
     this.tokenService = tokenService;
     this.hashingService = hashingService;
     this.unauthorizedRequestHandler = authenticationEntryPoint;
+    this.signInAttemptRegistry = signInAttemptRegistry;
+    this.objectMapper = objectMapper;
   }
 }

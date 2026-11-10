@@ -1,24 +1,26 @@
 package pe.edu.upc.ice.track.platform.notifications.infrastructure.persistence.jpa.repositories;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import pe.edu.upc.ice.track.platform.notifications.infrastructure.persistence.jpa.entities.NotificationPersistenceEntity;
 
-import java.util.List;
-
-/** Spring Data JPA repository operating on {@link NotificationPersistenceEntity}. */
-public interface NotificationPersistenceRepository extends JpaRepository<NotificationPersistenceEntity, Long> {
+/**
+ * Spring Data JPA repository operating on {@link NotificationPersistenceEntity}.
+ *
+ * <p>The inbox page and the bulk read transitions go through {@link JpaSpecificationExecutor} with
+ * the specifications built by {@code NotificationPersistenceSpecifications}.
+ * {@code NotificationRepositoryImpl} flushes pending writes before each bulk update and clears the
+ * persistence context afterward, so no stale managed instance survives it.</p>
+ */
+public interface NotificationPersistenceRepository
+    extends JpaRepository<NotificationPersistenceEntity, Long>,
+    JpaSpecificationExecutor<NotificationPersistenceEntity> {
 
   /**
-   *  Fetches all notifications for a given recipient user.
+   * Counts a recipient's notifications neither read nor dismissed.
+   *
    * @param recipientUserId The recipient user Id
-   * @return  A list of notifications for the given recipient user.
+   * @return The number of matching notifications
    */
-  List<NotificationPersistenceEntity> findByRecipientUserId(Long recipientUserId);
-
-  /**
-   *  Fetches all unread notifications for a given recipient user.
-   * @param recipientUserId The recipient user Id
-   * @return  A list of unread notifications for the given recipient user.
-   */
-  List<NotificationPersistenceEntity> findByRecipientUserIdAndIsReadFalse(Long recipientUserId);
+  long countByRecipientUserIdAndIsReadFalseAndDismissedAtIsNull(Long recipientUserId);
 }

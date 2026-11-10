@@ -38,7 +38,11 @@ public final class EquipmentPersistenceAssembler {
         new TemperatureThreshold(entity.getThresholdMinCelsius(), entity.getThresholdMaxCelsius()),
         entity.getReminderIntervalDays(),
         entity.getLastReadingAt(),
-        entity.getLastKnownTemperature());
+        entity.getLastKnownTemperature(),
+        entity.getConfigVersion(),
+        entity.getStatusBeforeMaintenance(),
+        entity.getLastReceivedAt(),
+        entity.isUnderMaintenance());
   }
 
   /**
@@ -64,6 +68,11 @@ public final class EquipmentPersistenceAssembler {
     entity.setThresholdMaxCelsius(equipment.getTemperatureThreshold().maxCelsius());
     entity.setLastReadingAt(equipment.getLastReadingAt());
     entity.setLastKnownTemperature(equipment.getLastKnownTemperature());
+    // Only used on insert: the column is not updatable, see EquipmentPersistenceEntity.
+    entity.setConfigVersion(equipment.getConfigVersion());
+    entity.setStatusBeforeMaintenance(equipment.getStatusBeforeMaintenance());
+    entity.setLastReceivedAt(equipment.getLastReceivedAt());
+    entity.setUnderMaintenance(equipment.isUnderMaintenance());
     return entity;
   }
 }

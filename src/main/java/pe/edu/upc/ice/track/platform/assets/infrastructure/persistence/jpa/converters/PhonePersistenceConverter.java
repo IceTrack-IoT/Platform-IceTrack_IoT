@@ -2,36 +2,36 @@ package pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.conv
 
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
-import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Phone;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.SiteContactPhone;
 
 /**
- * Converts a contact phone number between the domain model and the persisted column value.
+ * Converts a site contact phone number between the domain model and the persisted column value.
  *
  * <p>Stored as text so that an international prefix is preserved verbatim instead of being parsed
  * into a number and re-rendered in a locale-dependent form.</p>
  */
 @Converter(autoApply = false)
-public class PhonePersistenceConverter implements AttributeConverter<Phone, String> {
+public class PhonePersistenceConverter implements AttributeConverter<SiteContactPhone, String> {
 
   /**
    * Returns the raw phone number to store.
    *
-   * @param attribute the phone value object, may be {@code null}
+   * @param attribute the site contact phone value object, may be {@code null}
    * @return the persisted text
    */
   @Override
-  public String convertToDatabaseColumn(Phone attribute) {
+  public String convertToDatabaseColumn(SiteContactPhone attribute) {
     return attribute == null ? null : attribute.value();
   }
 
   /**
-   * Rebuilds the phone value object from the persisted text.
+   * Rebuilds the site contact phone value object from the persisted text.
    *
    * @param dbData the persisted text, may be {@code null}
-   * @return the phone value object
+   * @return the site contact phone value object
    */
   @Override
-  public Phone convertToEntityAttribute(String dbData) {
-    return dbData == null ? null : new Phone(dbData);
+  public SiteContactPhone convertToEntityAttribute(String dbData) {
+    return dbData == null ? null : new SiteContactPhone(dbData);
   }
 }

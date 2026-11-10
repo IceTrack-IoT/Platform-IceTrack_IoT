@@ -3,6 +3,8 @@ package pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.
 import org.springframework.data.jpa.repository.JpaRepository;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.entities.AlertPolicyPersistenceEntity;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /** Spring Data JPA repository operating on {@link AlertPolicyPersistenceEntity}. */
@@ -15,6 +17,13 @@ public interface AlertPolicyPersistenceRepository
    * @return  an {@link Optional} containing the alert policy if found, or empty if no policy is associated with the equipment
    */
   Optional<AlertPolicyPersistenceEntity> findByEquipmentId(Long equipmentId);
+
+  /**
+   *  Finds the alert policies bound to any of the given equipment units.
+   * @param equipmentIds identifiers of the equipment units
+   * @return  the policies of the units that have one of their own
+   */
+  List<AlertPolicyPersistenceEntity> findByEquipmentIdIn(Collection<Long> equipmentIds);
 
   /**
    *  Finds the default alert policy that is not associated with any specific equipment.

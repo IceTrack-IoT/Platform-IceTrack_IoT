@@ -12,4 +12,9 @@ services:
       - .env
     environment:
       - SPRING_PROFILES_ACTIVE=prod
+      # The prod profile defaults to local report storage and no-op pushes, so an instance with no
+      # Google credentials still starts. This stack mounts the service-account files, so it opts
+      # into the cloud adapters explicitly.
+      - REPORTING_STORAGE_PROVIDER=gcs
+      - PUSH_PROVIDER=fcm
     restart: unless-stopped

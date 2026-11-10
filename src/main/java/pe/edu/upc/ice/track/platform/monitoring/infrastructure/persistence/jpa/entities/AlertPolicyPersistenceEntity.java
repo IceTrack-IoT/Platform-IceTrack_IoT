@@ -7,6 +7,9 @@ import lombok.Setter;
 
 /**
  *  Persistence entity representing an alert policy in the database.
+ *
+ *  <p>Holds detection settings only. The temperature band a unit must stay within is owned by
+ *  Assets Management and is never stored here.</p>
  */
 @Entity
 @Table(name = "alert_policies")
@@ -26,7 +29,7 @@ public class AlertPolicyPersistenceEntity {
   private Long equipmentId;
 
   /**
-   *  Maximum allowed temperature in Celsius before an alert is triggered.
+   *  Minutes an out-of-range reading must persist before an alert opens.
    */
   @Column(nullable = false)
   private Integer sustainedExcursionMinutes;
@@ -38,7 +41,7 @@ public class AlertPolicyPersistenceEntity {
   private Double hysteresisMarginCelsius;
 
   /**
-   *  Number of missed synchronisation windows before a device is considered offline.
+   *  Number of missed synchronization windows before a device is considered offline.
    */
   @Column(nullable = false)
   private Integer missedSyncWindowsForOffline;

@@ -1,0 +1,44 @@
+# Build context of the multi-stage Dockerfile, which compiles the sources itself.
+# Everything listed here is never sent to the Docker daemon, so the context stays small and the
+# local secrets (service-account keys, .env) never leave the machine.
+
+# Version control and IDE metadata
+.git
+.gitignore
+.gitattributes
+.idea
+*.iws
+*.iml
+*.ipr
+.vscode
+
+# Local build output, superseded by the jar the image builds
+target/
+build/
+out/
+*.jar
+*.war
+
+# Local orchestration and build files the image does not use
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.dev.yml
+docker-compose.prod.yml
+
+# Documentation, not part of the runtime
+README.md
+HELP.md
+docs/
+
+# Secrets: never ship credentials into the build context
+.env
+.env.*
+*-sa.json
+icetrack-sa*.json
+icetrack-fcm-sa.json
+*.json.key
+
+# Logs and local databases
+*.log
+logs/

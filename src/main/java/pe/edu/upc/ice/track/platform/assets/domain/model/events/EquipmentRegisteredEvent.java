@@ -3,13 +3,12 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.events;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Domain event published when a new {@link Equipment} is successfully registered at a site.
  *
- * <p>Other bounded contexts must not subscribe to this event directly; it is translated into the
- * published language of the {@code assets} context by
+ * <p>Handled by
  * {@code assets.application.internal.eventhandlers.EquipmentRegisteredEventHandler}.</p>
  *
  * @param equipmentId    the identity assigned to the newly registered unit
@@ -29,7 +28,7 @@ public record EquipmentRegisteredEvent(
     EquipmentType equipmentType,
     Double minCelsius,
     Double maxCelsius,
-    LocalDateTime registeredAt) {
+    Instant registeredAt) {
 
   /**
    * Extracts the event fields from a saved {@link Equipment}.
@@ -46,6 +45,6 @@ public record EquipmentRegisteredEvent(
         equipment.getEquipmentType(),
         equipment.getTemperatureThreshold().minCelsius(),
         equipment.getTemperatureThreshold().maxCelsius(),
-        LocalDateTime.now());
+        Instant.now());
   }
 }

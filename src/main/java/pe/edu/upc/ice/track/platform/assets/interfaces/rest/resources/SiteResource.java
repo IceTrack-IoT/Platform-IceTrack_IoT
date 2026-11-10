@@ -1,17 +1,23 @@
 package pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Outbound REST resource representing a registered site.
  *
- * <p>Carries the owner identifier because an owner listing has to tell a caller which of the rows
- * is whose, but it is read-only here: it is never accepted as input.</p>
+ * <p>{@code location} and {@code navigation_url} are <em>omitted</em> from the JSON when the site has
+ * no coordinates; they are never sent as {@code null}. A client therefore never has to tell real
+ * coordinates from placeholders.</p>
  */
 @Schema(
     name = "SiteResponse",
     description = "Site information response",
-    example = "{\"id\": 1, \"owner_id\": 42, \"name\": \"Sede Central\", \"address\": \"Av. Primavera 123, Lima\", \"contact_name\": \"Maria Lopez\", \"phone\": \"+51 987654321\"}")
+    example = "{\"id\": 1, \"owner_id\": 42, \"name\": \"Sede Central\", \"address\": \"Av. Primavera 123, Lima\", "
+        + "\"contact_name\": \"Maria Lopez\", \"phone\": \"+51 987654321\", \"equipment_count\": 3, "
+        + "\"geocoding_status\": \"RESOLVED\", \"location\": {\"latitude\": -12.0931, \"longitude\": -77.0465, "
+        + "\"place_id\": \"ChIJ8e8c9yLIBZERt0P0wP0xV5A\"}, \"navigation_url\": "
+        + "\"https://www.google.com/maps/dir/?api=1&destination=-12.0931,-77.0465&destination_place_id=ChIJ8e8c9yLIBZERt0P0wP0xV5A\"}")
 public record SiteResource(
     @Schema(description = "Site unique identifier", example = "1")
     Long id,
@@ -29,6 +35,23 @@ public record SiteResource(
     String contactName,
 
     @Schema(description = "Contact phone number", example = "+51 987654321")
-    String phone
+    String phone,
+
+    @Schema(description = "Number of equipment units installed at the site", example = "3")
+    Integer equipmentCount,
+
+    @Schema(description = "Where the site stands in locating its address", example = "RESOLVED")
+    GeocodingStatusResource geocodingStatus,
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Resolved coordinates; omitted unless geocoding_status is RESOLVED",
+        requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+    GeoLocationResource location,
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Google Maps directions link; omitted unless the site is located",
+        example = "https://www.google.com/maps/dir/?api=1&destination=-12.0931,-77.0465",
+        requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+    String navigationUrl
 ) {
 }

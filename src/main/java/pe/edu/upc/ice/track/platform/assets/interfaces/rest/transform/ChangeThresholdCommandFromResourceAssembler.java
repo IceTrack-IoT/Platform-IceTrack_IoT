@@ -12,13 +12,13 @@ public class ChangeThresholdCommandFromResourceAssembler {
    * Converts the threshold change payload into its command representation.
    *
    * @param equipmentId identifier of the unit, taken from the request path
-   * @param ownerId identifier of the authenticated owner
+   * @param username username of the authenticated caller
    * @param resource the {@link ChangeThresholdResource} payload
    * @return the {@link ChangeThresholdCommand} command
    */
   public static ChangeThresholdCommand toCommandFromResource(
-      Long equipmentId, Long ownerId, ChangeThresholdResource resource) {
+      Long equipmentId, String username, ChangeThresholdResource resource) {
     return new ChangeThresholdCommand(
-        equipmentId, ownerId, resource.minCelsius(), resource.maxCelsius());
+        equipmentId, username, resource.minCelsius(), resource.maxCelsius());
   }
 }

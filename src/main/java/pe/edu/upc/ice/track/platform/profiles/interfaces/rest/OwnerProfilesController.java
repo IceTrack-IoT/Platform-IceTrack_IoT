@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -22,19 +23,23 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.OwnerCommandService;
 import pe.edu.upc.ice.track.platform.profiles.application.queryservices.OwnerQueryService;
-import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetAllOwnersQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetOwnerByIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetOwnerByUserIdQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.OwnerProfile;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.ProfileAccessEvaluator;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.ProfileView;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.OwnerProfileResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateOwnerResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.OwnerProfileResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.UpdateOwnerCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * REST controller that exposes the owner profiles.
@@ -54,22 +59,34 @@ public class OwnerProfilesController {
 
   private final OwnerQueryService ownerQueryService;
   private final OwnerCommandService ownerCommandService;
+  private final ProfileAccessEvaluator profileAccessEvaluator;
 
   /**
    * Constructor
-   * @param ownerQueryService   The {@link OwnerQueryService} instance
-   * @param ownerCommandService The {@link OwnerCommandService} instance
+   * @param ownerQueryService      The {@link OwnerQueryService} instance
+   * @param ownerCommandService    The {@link OwnerCommandService} instance
+   * @param profileAccessEvaluator The {@link ProfileAccessEvaluator} deciding what a caller may read
    */
-  public OwnerProfilesController(OwnerQueryService ownerQueryService, OwnerCommandService ownerCommandService) {
+  public OwnerProfilesController(
+      OwnerQueryService ownerQueryService,
+      OwnerCommandService ownerCommandService,
+      ProfileAccessEvaluator profileAccessEvaluator) {
     this.ownerQueryService = ownerQueryService;
     this.ownerCommandService = ownerCommandService;
+    this.profileAccessEvaluator = profileAccessEvaluator;
   }
 
   /**
-   * Get all owner profiles
-   * @return A list of {@link OwnerProfileResource} resources
+   * Get the caller's own owner profile, as a list
+   *
+   * <p>There is no tenant directory: the list holds at most the caller's own profile.
+   * The list shape is kept so existing clients keep working.</p>
+   *
+   * @param authentication The authenticated principal
+   * @return A list holding the caller's {@link OwnerProfileResource}, or empty
    */
   @GetMapping
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
   @Operation(
       summary = "Get all owners",
       description = "Retrieves every ice track owner profile.",
@@ -81,9 +98,8 @@ public class OwnerProfilesController {
           content = @Content(array = @ArraySchema(schema = @Schema(implementation = OwnerProfileResource.class)))
       )
   })
-  public ResponseEntity<List<OwnerProfileResource>> getAllOwners() {
-    var owners = ownerQueryService.handle(new GetAllOwnersQuery());
-    var ownerResources = owners.stream()
+  public ResponseEntity<List<OwnerProfileResource>> getAllOwners(Authentication authentication) {
+    var ownerResources = profileAccessEvaluator.resolveOwnerProfile(authentication).stream()
         .map(OwnerProfileResourceFromEntityAssembler::toResourceFromEntity)
         .toList();
     return ResponseEntity.ok(ownerResources);
@@ -92,7 +108,9 @@ public class OwnerProfilesController {
   /**
    * Get an owner profile by ID
    * @param ownerId The owner profile ID
-   * @return An {@link OwnerProfileResource} resource for the owner
+   * @param authentication The authenticated principal
+   * @return An {@link OwnerProfileResource} resource for the owner, trimmed to what the caller may
+   *         see, or 404 when the caller may not see it at all
    */
   @GetMapping("/{ownerId}")
   @Operation(
@@ -110,20 +128,21 @@ public class OwnerProfilesController {
   public ResponseEntity<?> getOwnerById(
       @PathVariable
       @Parameter(description = "Owner profile unique identifier", example = "1", required = true)
-      Long ownerId
+      Long ownerId,
+      Authentication authentication
   ) {
-    var owner = ownerQueryService.handle(new GetOwnerByIdQuery(ownerId));
-    if (owner.isEmpty()) {
-      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
-          ApplicationError.notFound(OWNER_RESOURCE, ownerId.toString()));
-    }
-    return ResponseEntity.ok(OwnerProfileResourceFromEntityAssembler.toResourceFromEntity(owner.get()));
+    return toVisibleResource(ownerQueryService.handle(new GetOwnerByIdQuery(ownerId)), authentication)
+        .<ResponseEntity<?>>map(ResponseEntity::ok)
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound(OWNER_RESOURCE, ownerId.toString())));
   }
 
   /**
    * Get the owner profile bound to a platform account
    * @param userId The platform account ID
-   * @return An {@link OwnerProfileResource} resource for the owner
+   * @param authentication The authenticated principal
+   * @return An {@link OwnerProfileResource} resource for the owner, trimmed to what the caller may
+   *         see, or 404 when the caller may not see it at all
    */
   @GetMapping("/user/{userId}")
   @Operation(
@@ -141,14 +160,28 @@ public class OwnerProfilesController {
   public ResponseEntity<?> getOwnerByUserId(
       @PathVariable
       @Parameter(description = "Platform account unique identifier", example = "42", required = true)
-      Long userId
+      Long userId,
+      Authentication authentication
   ) {
-    var owner = ownerQueryService.handle(new GetOwnerByUserIdQuery(new UserId(userId)));
-    if (owner.isEmpty()) {
-      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
-          ApplicationError.notFound(OWNER_RESOURCE, "user " + userId));
-    }
-    return ResponseEntity.ok(OwnerProfileResourceFromEntityAssembler.toResourceFromEntity(owner.get()));
+    return toVisibleResource(ownerQueryService.handle(new GetOwnerByUserIdQuery(new UserId(userId))), authentication)
+        .<ResponseEntity<?>>map(ResponseEntity::ok)
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound(OWNER_RESOURCE, "user " + userId)));
+  }
+
+  /**
+   * Trims an owner profile to what the caller may see: all of it for the owner
+   * itself, contact channels for a technician working on one of the owner's requests, nothing
+   * otherwise.
+   */
+  private Optional<OwnerProfileResource> toVisibleResource(
+      Optional<OwnerProfile> owner, Authentication authentication) {
+    return owner.flatMap(profile -> {
+      var view = profileAccessEvaluator.ownerProfileViewFor(profile, authentication);
+      return view == ProfileView.NONE
+          ? Optional.empty()
+          : Optional.of(OwnerProfileResourceFromEntityAssembler.toResourceFromEntity(profile, view));
+    });
   }
 
   /**
@@ -163,7 +196,7 @@ public class OwnerProfilesController {
    * @return An {@link OwnerProfileResource} resource for the updated owner
    */
   @PutMapping(value = "/{ownerId}", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAuthority('OWNER_ROLE') and @profileAccessEvaluator.isOwnerSelf(#ownerId, authentication)")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "') and @profileAccessEvaluator.isOwnerSelf(#ownerId, authentication)")
   @Operation(
       summary = "Update an owner",
       description = "Replaces the name, contact details and RUC of the caller's own owner profile. "

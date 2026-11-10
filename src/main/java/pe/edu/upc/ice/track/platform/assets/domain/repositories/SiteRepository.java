@@ -9,7 +9,7 @@ import java.util.Optional;
  * Site repository port.
  *
  * <p>Implemented by {@code SiteRepositoryImpl} in the infrastructure layer, which is also the
- * place where the {@code SiteCreatedEvent} of a brand new site is published.</p>
+ * place where the domain events of a site - its {@code SiteCreatedEvent} - are published.</p>
  */
 public interface SiteRepository {
 
@@ -43,9 +43,12 @@ public interface SiteRepository {
   /**
    * Persist a site, inserting it when it is new and updating it otherwise.
    *
+   * <p>An update is rejected with an
+   * {@link org.springframework.dao.OptimisticLockingFailureException} when the site was modified
+   * by somebody else since it was loaded.</p>
+   *
    * @param site the site to persist
-   * @return the persisted site, carrying its identity and having published its creation event
-   *         when it was new
+   * @return the persisted site, carrying its identity and having published its domain events
    */
   Site save(Site site);
 }

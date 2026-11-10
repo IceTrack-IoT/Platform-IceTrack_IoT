@@ -4,8 +4,9 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -48,17 +49,42 @@ public class SensorReadingPersistenceEntity {
   private Long deviceId;
 
   /**
-   * Minimum temperature observed in the reading window, in Celsius.
+   * Calibrated minimum temperature observed in the reading window, in Celsius.
    */
   private Double minTemperature;
   /**
-   * Maximum temperature observed in the reading window, in Celsius.
+   * Calibrated maximum temperature observed in the reading window, in Celsius.
    */
   private Double maxTemperature;
   /**
-   * Average temperature observed in the reading window, in Celsius.
+   * Calibrated average temperature observed in the reading window, in Celsius.
    */
   private Double avgTemperature;
+  /**
+   * Minimum temperature measured by the probe before calibration, in Celsius.
+   */
+  private Double rawMinTemperature;
+  /**
+   * Maximum temperature measured by the probe before calibration, in Celsius.
+   */
+  private Double rawMaxTemperature;
+  /**
+   * Average temperature measured by the probe before calibration, in Celsius.
+   */
+  private Double rawAvgTemperature;
+  /**
+   * Highest light level inside the unit during the window, 0 to 100 %; null when not reported.
+   */
+  private Double lightLevelMax;
+  /**
+   * Seconds the door was detected open during the window; null when not reported.
+   */
+  private Integer doorOpenSeconds;
+  /**
+   * Whether presence was detected near the unit; null when presence is unavailable, which is
+   * never the same as "no presence".
+   */
+  private Boolean presenceDetected;
   /**
    * Average relative humidity observed in the reading window, as a percentage.
    */
@@ -72,11 +98,26 @@ public class SensorReadingPersistenceEntity {
    * Timestamp assigned by the device clock when the reading was recorded, used to track when the data was collected.
    */
   @Column(nullable = false)
-  private LocalDateTime recordedAt;
+  private Instant recordedAt;
 
   /**
    *  Timestamp when the reading was received by the platform, used to track when the data was ingested.
    */
   @Column(nullable = false)
-  private LocalDateTime receivedAt;
+  private Instant receivedAt;
+
+  /**
+   * Edge configuration version the gateway was running when it built the batch. Nullable only
+   * because readings stored before the version was tracked have none; every new reading has one.
+   */
+  @Column(name = "applied_config_version")
+  private Long appliedConfigVersion;
+
+  /**
+   * Whether a maintenance window covered {@code recordedAt}. The column default lets the schema
+   * update add it to a table that already holds rows, which were all taken outside any window.
+   */
+  @ColumnDefault("false")
+  @Column(name = "under_maintenance", nullable = false)
+  private boolean underMaintenance;
 }

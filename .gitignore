@@ -1,5 +1,6 @@
 HELP.md
 target/
+docs/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
@@ -35,3 +36,9 @@ build/
 
 ### Environment ###
 .env
+*-sa.json
+
+### GCS###
+*.json.key
+icetrack-sa*.json
+icetrack-fcm-sa.json

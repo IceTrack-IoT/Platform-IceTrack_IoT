@@ -2,24 +2,44 @@ package pe.edu.upc.ice.track.platform.assets.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalMonitoringService;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalOwnerService;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalServiceRequestService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentConnectivityQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentDirectoryQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentConnectivity;
+import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
+import pe.edu.upc.ice.track.platform.shared.application.result.Result;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentPage;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Application service that resolves equipment read queries.
  *
- * <p>Two owner rules live here. A query that names an owner only ever sees that owner's units, and
- * a query that names none deliberately sees any unit, which is the shape the ACL facade uses to
- * answer the other bounded contexts.</p>
+ * <p>Every query names its caller by username, which is resolved to an owner through the
+ * {@link AssetsExternalOwnerService} ACL before anything is read, so a query only ever sees that owner's
+ * units. A caller that holds no owner profile sees no unit at all.</p>
+ *
+ * <p>Fetching a single unit and listing the units of a site are also open to a technician, scoped
+ * by its work rather than by ownership: a technician only sees the units it holds an active
+ * assignment on, checked through the {@link AssetsExternalServiceRequestService} ACL. Any other unit
+ * is answered as absent, exactly as a foreign unit is for an owner. The owner's listing is never
+ * opened to a technician.</p>
  */
 @Service
 public class EquipmentQueryServiceImpl implements EquipmentQueryService {
@@ -33,33 +53,98 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
    */
   private static final int MAX_UNPAGED_ROWS = 500;
 
+  private static final String SITE_RESOURCE = "Site";
+
+  /** Offline window used when no policy answered for a unit: three one-minute synchronization windows. */
+  private static final Duration DEFAULT_OFFLINE_SILENCE = Duration.ofMinutes(3);
+
   private final EquipmentRepository equipmentRepository;
   private final SiteRepository siteRepository;
+  private final AssetsExternalOwnerService assetsExternalOwnerService;
+  private final AssetsExternalServiceRequestService assetsExternalServiceRequestService;
+  private final AssetsExternalMonitoringService assetsExternalMonitoringService;
 
   /**
-   * Creates the query service with its repository dependencies.
+   * Creates the query service with its dependencies.
    *
-   * @param equipmentRepository equipment repository port
-   * @param siteRepository     site repository port, used to resolve the owner of a unit's site
+   * @param equipmentRepository  equipment repository port
+   * @param siteRepository       site repository port, used to resolve the owner of a unit's site
+   * @param assetsExternalOwnerService outbound ACL service, used to resolve the caller to its owner
+   * @param assetsExternalServiceRequestService outbound ACL service, used to check a technician's
+   *                                            active assignments
+   * @param assetsExternalMonitoringService outbound ACL service, used to read the offline window of
+   *                                        the units whose connectivity is evaluated
    */
-  public EquipmentQueryServiceImpl(EquipmentRepository equipmentRepository, SiteRepository siteRepository) {
+  public EquipmentQueryServiceImpl(
+      EquipmentRepository equipmentRepository,
+      SiteRepository siteRepository,
+      AssetsExternalOwnerService assetsExternalOwnerService,
+      AssetsExternalServiceRequestService assetsExternalServiceRequestService,
+      AssetsExternalMonitoringService assetsExternalMonitoringService) {
     this.equipmentRepository = equipmentRepository;
     this.siteRepository = siteRepository;
+    this.assetsExternalOwnerService = assetsExternalOwnerService;
+    this.assetsExternalServiceRequestService = assetsExternalServiceRequestService;
+    this.assetsExternalMonitoringService = assetsExternalMonitoringService;
+  }
+
+  /**
+   * Evaluates the connectivity of the given units at one server instant.
+   *
+   * <p>The offline windows of every unit are read in one call; a unit the policy lookup somehow
+   * missed is judged with the built-in default of three one-minute synchronization windows.</p>
+   *
+   * @param query the units, already scoped to the caller
+   * @return the connectivity of each unit, by unit identifier
+   */
+  @Override
+  public Map<Long, EquipmentConnectivity> handle(GetEquipmentConnectivityQuery query) {
+    var units = query.equipment().stream().filter(unit -> unit.getEquipmentId() != null).toList();
+    if (units.isEmpty()) {
+      return Map.of();
+    }
+    var windows = assetsExternalMonitoringService.fetchOfflineSilence(
+        units.stream().map(Equipment::getEquipmentId).collect(Collectors.toSet()));
+    var now = Instant.now();
+    var connectivity = new HashMap<Long, EquipmentConnectivity>();
+    for (var unit : units) {
+      var window = windows.getOrDefault(unit.getEquipmentId(), DEFAULT_OFFLINE_SILENCE);
+      connectivity.put(unit.getEquipmentId(), EquipmentConnectivity.evaluate(unit, window, now));
+    }
+    return Map.copyOf(connectivity);
   }
 
   // inherited javadoc
   @Override
   @Transactional(readOnly = true)
   public Optional<Equipment> handle(GetEquipmentByIdQuery query) {
-    return equipmentRepository.findById(query.equipmentId())
-        .filter(equipment -> query.ownerId() == null || isOwnedBy(equipment, query.ownerId()));
+    if (query.callerRole() == CallerRole.TECHNICIAN) {
+      if (!assetsExternalServiceRequestService.isTechnicianAssignedToEquipment(query.username(), query.equipmentId())) {
+        return Optional.empty();
+      }
+      return equipmentRepository.findById(query.equipmentId());
+    }
+    return assetsExternalOwnerService.fetchOwnerIdByUsername(query.username())
+        .flatMap(ownerId -> equipmentRepository.findById(query.equipmentId())
+            .filter(equipment -> isOwnedBy(equipment, ownerId)));
   }
 
   // inherited javadoc
   @Override
   @Transactional(readOnly = true)
   public List<Equipment> handle(GetEquipmentBySiteQuery query) {
-    if (!isSiteOwnedBy(query.siteId(), query.ownerId())) {
+    if (query.callerRole() == CallerRole.TECHNICIAN) {
+      // Only the units of the site the technician is actively working on, never the whole site.
+      if (!assetsExternalServiceRequestService.isTechnicianAssignedToSite(query.username(), query.siteId())) {
+        return List.of();
+      }
+      return equipmentRepository.findBySiteId(query.siteId()).stream()
+          .filter(equipment -> assetsExternalServiceRequestService
+              .isTechnicianAssignedToEquipment(query.username(), equipment.getEquipmentId()))
+          .toList();
+    }
+    var ownerId = assetsExternalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
+    if (ownerId == null || !isSiteOwnedBy(query.siteId(), ownerId)) {
       return List.of();
     }
     return equipmentRepository.findBySiteId(query.siteId());
@@ -68,31 +153,57 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
   /**
    * Lists the caller's units, applying the optional filters and the optional paging of the query.
    *
-   * <p>Paging is delegated to the repository as an offset and a limit, so a dashboard listing
-   * never materialises the whole collection to slice it in memory. A query without {@code page} or
+   * <p>Paging is delegated to the repository as a page index and a size, so a dashboard listing
+   * never materializes the whole collection to slice it in memory. A query without {@code page} or
    * without {@code size} is answered as a single page holding everything, which keeps the
    * response shape of the basic listing identical for clients that do not paginate.</p>
    *
-   * @param query the query naming the owner, the filters and the requested slice
-   * @return the requested page of matching units
+   * <p>The owner is resolved from the caller before any filter is looked at, and is handed to the
+   * repository as a mandatory restriction; the filters of the query can only narrow it.</p>
+   *
+   * @param query the query naming the caller, the filters and the requested slice
+   * @return the requested page of matching units, empty when the caller holds no owner profile
    */
   @Override
   @Transactional(readOnly = true)
   public EquipmentPage handle(GetEquipmentByOwnerQuery query) {
-    var ownerId = query.ownerId();
-    var siteId = query.siteId();
-    var status = query.status();
-    var equipmentType = query.equipmentType();
-    if (!query.isPaged()) {
-      var all = equipmentRepository.findByOwnerId(ownerId, siteId, status, equipmentType, 0, MAX_UNPAGED_ROWS);
-      var total = equipmentRepository.countByOwnerId(ownerId, siteId, status, equipmentType);
-      return EquipmentPage.unpaged(all, total);
+    var ownerId = assetsExternalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
+    if (ownerId == null) {
+      return query.isPaged()
+          ? new EquipmentPage(List.of(), query.page(), query.size(), 0)
+          : EquipmentPage.unpaged(List.of());
     }
-    var page = query.page();
-    var size = query.size();
-    var content = equipmentRepository.findByOwnerId(ownerId, siteId, status, equipmentType, page * size, size);
-    var total = equipmentRepository.countByOwnerId(ownerId, siteId, status, equipmentType);
-    return new EquipmentPage(content, page, size, total);
+    if (!query.isPaged()) {
+      var firstRows = equipmentRepository.findPageByOwnerId(
+          ownerId, query.siteId(), query.status(), query.equipmentType(), query.search(), 0, MAX_UNPAGED_ROWS);
+      return EquipmentPage.unpaged(firstRows.content(), firstRows.totalElements());
+    }
+    return equipmentRepository.findPageByOwnerId(
+        ownerId, query.siteId(), query.status(), query.equipmentType(), query.search(),
+        query.page(), query.size());
+  }
+
+  /**
+   * Lists the caller's whole equipment directory.
+   *
+   * <p>A site filter is checked against the caller before anything is listed: a site that does not
+   * exist and a site of another owner both answer the same failure, so the filter cannot be used to
+   * probe for sites. A caller that holds no owner profile owns no unit, hence an empty directory.</p>
+   *
+   * @param query the query naming the caller and the filters
+   * @return the matching units by name, or a {@code SITE_NOT_FOUND} failure for an unreachable site
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public Result<List<Equipment>, ApplicationError> handle(GetEquipmentDirectoryQuery query) {
+    var ownerId = assetsExternalOwnerService.fetchOwnerIdByUsername(query.username()).orElse(null);
+    if (query.siteId() != null && (ownerId == null || !isSiteOwnedBy(query.siteId(), ownerId))) {
+      return Result.failure(ApplicationError.notFound(SITE_RESOURCE, String.valueOf(query.siteId())));
+    }
+    if (ownerId == null) {
+      return Result.success(List.of());
+    }
+    return Result.success(equipmentRepository.findAllByOwnerId(ownerId, query.siteId(), query.statuses()));
   }
 
   /**

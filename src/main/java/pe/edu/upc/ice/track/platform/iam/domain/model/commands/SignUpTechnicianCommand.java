@@ -2,6 +2,8 @@ package pe.edu.upc.ice.track.platform.iam.domain.model.commands;
 
 import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetails;
 
+import java.util.Locale;
+
 /**
  * Sign up command registering an ice track maintenance technician with local credentials.
  *
@@ -11,7 +13,8 @@ import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ContactDetail
  *
  * @param username            the username of the account; required
  * @param password            the raw password of the account; required
- * @param email               the email of the account holder; required
+ * @param email               the email of the account holder; required. Trimmed and lowercased,
+ *                            so addresses differing only in case cannot register two accounts
  * @param fullName            the display name of the account holder; required
  * @param contactDetails      the phone number and address captured by the onboarding form; required
  * @param speciality          the technician's speciality; required
@@ -33,6 +36,7 @@ public record SignUpTechnicianCommand(
     requireText(username, "username");
     requireText(password, "password");
     requireText(email, "email");
+    email = email.trim().toLowerCase(Locale.ROOT);
     requireText(fullName, "fullName");
     if (contactDetails == null) {
       throw new IllegalArgumentException("contactDetails must not be null");

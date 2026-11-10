@@ -3,6 +3,8 @@ package pe.edu.upc.ice.track.platform.iam.interfaces.rest.resources;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotNull;
 
 /**
@@ -21,7 +23,11 @@ public record SignUpOwnerResource(
     String username,
 
     @NotBlank(message = "{validation.not-blank}")
-    @Schema(description = "User password (minimum 8 characters)", example = "SecurePass123!", minLength = 8, maxLength = 255)
+    @Size(min = 8, max = 64, message = "{validation.password.policy}")
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).*$", message = "{validation.password.policy}")
+    @Schema(description = "User password: 8 to 64 characters with at least one uppercase letter, one lowercase "
+        + "letter and one digit", example = "SecurePass123!", minLength = 8, maxLength = 64,
+        pattern = "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).*$")
     String password,
 
     @NotBlank(message = "{validation.not-blank}")

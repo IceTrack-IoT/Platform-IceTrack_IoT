@@ -1,14 +1,16 @@
 package pe.edu.upc.ice.track.platform.assets.domain.model.aggregates;
 
 import lombok.Getter;
+import pe.edu.upc.ice.track.platform.assets.domain.model.events.EquipmentConnectivityChangedEvent;
 import pe.edu.upc.ice.track.platform.assets.domain.model.events.EquipmentRegisteredEvent;
 import pe.edu.upc.ice.track.platform.assets.domain.model.events.TemperatureThresholdUpdatedEvent;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.ConnectivityState;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.TemperatureThreshold;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -25,14 +27,36 @@ import java.util.Objects;
  *
  * <p>{@code online}, {@code lastReadingAt} and {@code lastKnownTemperature} are the equipment's
  * view of the telemetry it produces. They are persisted and exposed here, but this context does
- * not ingest readings: the Monitoring and Alerting context writes them when it evaluates a
- * reading, which is why they are only reachable through {@link #recordReading}.</p>
+ * not ingest readings: the Monitoring and Alerting context writes them when it stores a reading and
+ * when it detects that the unit stopped reporting, which is why they are only reachable through
+ * {@link #recordReading} and {@link #markOffline}.</p>
+ *
+ * <p>{@code configVersion} numbers the configuration the unit's edge gateway must enforce:
+ * thresholds, alert policy and technician grants. It starts at {@value #INITIAL_CONFIG_VERSION}
+ * and only ever grows, one step per change of any of those inputs. The gateway uses it as the ETag
+ * of its configuration poll. The aggregate only reads it: every increment is a single atomic
+ * statement issued by the repository, so concurrent changes coming from different contexts can
+ * never collapse into one version.</p>
+ *
+ * <p>{@code MAINTENANCE} is driven by the maintenance windows Monitoring and Alerting reports:
+ * {@link #enterMaintenance} remembers the status the unit held in {@code statusBeforeMaintenance} and
+ * {@link #leaveMaintenance} restores it when the window closes.</p>
+ *
+ * <p>{@code siteName} is a read-only companion of {@code siteId}: the name the site carried when the
+ * unit was loaded. It belongs to the {@link Site} aggregate, which stays the only place it can be
+ * changed; the repository attaches it through {@link #attachSiteName} so a unit can be shown with
+ * its site without a second read. It takes part in no rule and is never written back.</p>
  *
  * <p>No JPA or persistence annotation is present here - the mapping lives exclusively in
  * {@code EquipmentPersistenceEntity}.</p>
  */
 @Getter
 public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
+
+  /**
+   * Configuration version of a unit that was just registered.
+   */
+  public static final int INITIAL_CONFIG_VERSION = 1;
 
   /**
    * Maximum number of characters the unit's own identifier may hold.
@@ -59,15 +83,40 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   private boolean online;
   private TemperatureThreshold temperatureThreshold;
   private Integer reminderIntervalDays;
-  private LocalDateTime lastReadingAt;
+  private Instant lastReadingAt;
   private Double lastKnownTemperature;
+  private final Integer configVersion;
+
+  /**
+   * When the platform received the unit's latest reading batch, by the server clock; {@code null}
+   * while the unit never reported, or reported only before this value was recorded.
+   */
+  private Instant lastReceivedAt;
+
+  /**
+   * Whether a maintenance window currently covers the unit, whatever status it holds: a unit under
+   * repair keeps its status while a window is open, but is still being worked on.
+   */
+  private boolean underMaintenance;
+
+  /**
+   * The status the unit held when a maintenance window moved it to {@code MAINTENANCE}, restored when
+   * the window closes; {@code null} while no window holds the unit in maintenance.
+   */
+  private StatusEquipment statusBeforeMaintenance;
+
+  /**
+   * Name of the site the unit is installed at, as it read when the unit was loaded; {@code null}
+   * for a unit that was not read back from persistence yet, or whose site no longer exists.
+   */
+  private String siteName;
 
   /**
    * Registers a new equipment unit at a site.
    *
-   * <p>The unit starts {@link StatusEquipment#AVAILABLE} and disconnected: a unit is catalogued
-   * before a device is ever paired with it, so claiming it is already running or already online
-   * would be a lie the dashboard would then report against.</p>
+   * <p>The unit starts {@link StatusEquipment#ACTIVE} and disconnected: registering a unit puts it
+   * in service at its site, but it is catalogued before a device is ever paired with it, so
+   * claiming it is already online would be a lie the dashboard would then report against.</p>
    *
    * @param equipmentId         the persistence identity, or {@code null} when not yet persisted
    * @param siteId              identifier of the site the unit is installed at; required
@@ -89,8 +138,9 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     this.temperatureThreshold = Objects.requireNonNull(
         temperatureThreshold, "temperatureThreshold must not be null");
     this.reminderIntervalDays = validatedReminderIntervalDays(reminderIntervalDays);
-    this.status = StatusEquipment.AVAILABLE;
+    this.status = StatusEquipment.ACTIVE;
     this.online = false;
+    this.configVersion = INITIAL_CONFIG_VERSION;
   }
 
   /**
@@ -106,12 +156,21 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * @param online                whether the unit is connected
    * @param temperatureThreshold  the acceptable temperature band
    * @param reminderIntervalDays  the preventive maintenance interval in days
-   * @param lastReadingAt         when the last reading was received, may be {@code null}
+   * @param lastReadingAt         when the latest reading was taken, may be {@code null}
    * @param lastKnownTemperature  the last temperature known, may be {@code null}
+   * @param configVersion         the version of the edge configuration; {@code null} is read as
+   *                              {@value #INITIAL_CONFIG_VERSION}
+   * @param statusBeforeMaintenance the status to restore when the current maintenance window closes,
+   *                              or {@code null} when no window holds the unit in maintenance
+   * @param lastReceivedAt        when the platform received the latest reading batch, may be
+   *                              {@code null}
+   * @param underMaintenance      whether a maintenance window currently covers the unit
    */
   public Equipment(Long equipmentId, Long siteId, String uid, String name, EquipmentType equipmentType,
                    StatusEquipment status, boolean online, TemperatureThreshold temperatureThreshold,
-                   Integer reminderIntervalDays, LocalDateTime lastReadingAt, Double lastKnownTemperature) {
+                   Integer reminderIntervalDays, Instant lastReadingAt, Double lastKnownTemperature,
+                   Integer configVersion, StatusEquipment statusBeforeMaintenance, Instant lastReceivedAt,
+                   boolean underMaintenance) {
     this.equipmentId = equipmentId;
     this.siteId = Objects.requireNonNull(siteId, "siteId must not be null");
     this.uid = validatedUid(uid);
@@ -124,6 +183,10 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     this.online = online;
     this.lastReadingAt = lastReadingAt;
     this.lastKnownTemperature = lastKnownTemperature;
+    this.configVersion = configVersion == null ? INITIAL_CONFIG_VERSION : configVersion;
+    this.statusBeforeMaintenance = statusBeforeMaintenance;
+    this.lastReceivedAt = lastReceivedAt;
+    this.underMaintenance = underMaintenance;
   }
 
   /**
@@ -148,15 +211,15 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   /**
    * Replaces the acceptable temperature band of this unit.
    *
-   * <p>Constructing the {@link TemperatureThreshold} is what enforces {@code minCelsius <
-   * maxCelsius}, so an invalid band never reaches the aggregate and no event is registered.</p>
+   * <p>Constructing the {@link TemperatureThreshold} is what enforces the 0 to 30 °C bounds and
+   * {@code minCelsius < maxCelsius}, so an invalid band never reaches the aggregate and no event is
+   * registered. The application layer increments {@code configVersion} once the new band is
+   * persisted.</p>
    *
    * @param temperatureThreshold the new acceptable temperature band; required
-   * @throws IllegalArgumentException when {@code minCelsius} is not strictly below {@code maxCelsius}
    */
   public void changeThreshold(TemperatureThreshold temperatureThreshold) {
-    var validated = Objects.requireNonNull(temperatureThreshold, "temperatureThreshold must not be null");
-    this.temperatureThreshold = validated;
+    this.temperatureThreshold = Objects.requireNonNull(temperatureThreshold, "temperatureThreshold must not be null");
     registerDomainEvent(TemperatureThresholdUpdatedEvent.from(this));
   }
 
@@ -166,39 +229,215 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * <p>The transition is checked against the matrix carried by {@link StatusEquipment}. A
    * forbidden move leaves the unit untouched and is reported as a conflict, because it means the
    * caller asked for something the domain does not allow rather than something that happens to
-   * fail.</p>
+   * fail. Re-sending the status the unit already holds changes nothing.</p>
    *
    * @param targetStatus the status to move to; required
-   * @throws IllegalArgumentException when the target status is missing
-   * @throws IllegalStateException    when the transition is not part of the matrix
+   * @throws NullPointerException  when the target status is missing
+   * @throws IllegalStateException when the transition is not part of the matrix
    */
   public void changeStatus(StatusEquipment targetStatus) {
     var target = Objects.requireNonNull(targetStatus, "targetStatus must not be null");
+    if (target == this.status) {
+      return;
+    }
     if (!this.status.canTransitionTo(target)) {
       throw new IllegalStateException(
           "Illegal equipment status transition from %s to %s; allowed targets are %s"
               .formatted(this.status, target, this.status.allowedTransitions()));
     }
+    var before = storedConnectivityState();
+    var maintenanceBefore = isCoveredByMaintenanceWindow();
     this.status = target;
-    // A unit that is not powered cannot be connected; keeping the two consistent stops the
-    // dashboard from showing an OFF unit as still reporting.
-    if (target == StatusEquipment.OFF || target == StatusEquipment.AVAILABLE) {
+    // The owner moved the unit on purpose: the window that put it in maintenance no longer decides
+    // which status it returns to.
+    this.statusBeforeMaintenance = null;
+    // A unit taken out of service is powered down and cannot be connected; keeping the two
+    // consistent stops the dashboard from showing a deactivated unit as still reporting.
+    if (target == StatusEquipment.DEACTIVATED) {
       this.online = false;
     }
+    registerConnectivityChangeSince(before, maintenanceBefore);
+  }
+
+  /**
+   * Moves the unit to {@link StatusEquipment#MAINTENANCE} because a maintenance window opened on it,
+   * remembering the status to return to.
+   *
+   * <p>Only a status the matrix lets move to {@code MAINTENANCE} is left - {@code ACTIVE} - so a unit
+   * under repair or deactivated keeps its status while a technician works on it. A unit already in
+   * {@code MAINTENANCE} is left untouched, so a status an owner set by hand is not taken over by the
+   * window.</p>
+   *
+   * <p>Whatever its status, the unit is flagged as covered by a maintenance window, so its silence is
+   * not mistaken for a fault while a technician works on it.</p>
+   *
+   * @return {@code true} when the unit entered maintenance
+   */
+  public boolean enterMaintenance() {
+    var stateBefore = storedConnectivityState();
+    var maintenanceBefore = isCoveredByMaintenanceWindow();
+    this.underMaintenance = true;
+    var entered = false;
+    if (status != StatusEquipment.MAINTENANCE && status.canTransitionTo(StatusEquipment.MAINTENANCE)) {
+      this.statusBeforeMaintenance = status;
+      this.status = StatusEquipment.MAINTENANCE;
+      entered = true;
+    }
+    registerConnectivityChangeSince(stateBefore, maintenanceBefore);
+    return entered;
+  }
+
+  /**
+   * Returns the unit to the status it held before a maintenance window moved it to
+   * {@code MAINTENANCE}, and forgets that status.
+   *
+   * <p>Nothing changes when no window holds the unit in maintenance: the unit never entered it through
+   * a window, or the owner has changed its status since.</p>
+   *
+   * <p>The maintenance window flag is cleared in every case.</p>
+   *
+   * @return {@code true} when the unit left maintenance
+   */
+  public boolean leaveMaintenance() {
+    var stateBefore = storedConnectivityState();
+    var maintenanceBefore = isCoveredByMaintenanceWindow();
+    this.underMaintenance = false;
+    var left = false;
+    if (status == StatusEquipment.MAINTENANCE && statusBeforeMaintenance != null) {
+      this.status = statusBeforeMaintenance;
+      this.statusBeforeMaintenance = null;
+      left = true;
+    }
+    registerConnectivityChangeSince(stateBefore, maintenanceBefore);
+    return left;
+  }
+
+  /**
+   * Tells whether a connectivity change is waiting to be saved and published, which is how the
+   * caller knows that opening or closing a maintenance window has something to write even when the
+   * status did not move.
+   *
+   * @return {@code true} when the unit registered a connectivity event not yet published
+   */
+  public boolean hasPendingConnectivityChange() {
+    return domainEvents().stream().anyMatch(EquipmentConnectivityChangedEvent.class::isInstance);
   }
 
   /**
    * Records that a reading was received from this unit.
    *
-   * <p>Invoked by the Monitoring and Alerting context, which is the only writer of these fields.
-   * This context stores and exposes them; it does not evaluate them.</p>
+   * <p>Invoked through the Monitoring and Alerting context, which is the only writer of these fields,
+   * every time it stores a new reading batch. This context stores and exposes them; it does not
+   * evaluate them.</p>
    *
-   * @param temperature the temperature that was read
+   * <p>A received reading proves the unit is connected, so it goes {@code online} - unless it is
+   * {@link StatusEquipment#DEACTIVATED}, which is never shown as connected. {@code lastReadingAt} and
+   * {@code lastKnownTemperature} only move forward: a batch taken before the one already recorded,
+   * such as one the gateway delivers late from its offline buffer, keeps the newer values in place.</p>
+   *
+   * <p>{@code lastReceivedAt}, the server arrival time silence is measured from, only moves forward
+   * too, whatever the batch's own timestamp: a late batch still proves the unit is reporting now.</p>
+   *
+   * @param temperature the temperature that was read, in Celsius
    * @param readAt      when the reading was taken; required
+   * @param receivedAt  when the platform received the batch, by the server clock; {@code null} is read
+   *                    as now
+   * @return {@code true} when the reading became the unit's latest one
    */
-  public void recordReading(Double temperature, LocalDateTime readAt) {
+  public boolean recordReading(Double temperature, Instant readAt, Instant receivedAt) {
+    Objects.requireNonNull(readAt, "readAt must not be null");
+    var stateBefore = storedConnectivityState();
+    var arrival = receivedAt == null ? Instant.now() : receivedAt;
+    if (lastReceivedAt == null || arrival.isAfter(lastReceivedAt)) {
+      this.lastReceivedAt = arrival;
+    }
+    if (status != StatusEquipment.DEACTIVATED) {
+      this.online = true;
+    }
+    registerConnectivityChangeSince(stateBefore, isCoveredByMaintenanceWindow());
+    if (lastReadingAt != null && readAt.isBefore(lastReadingAt)) {
+      return false;
+    }
     this.lastKnownTemperature = temperature;
-    this.lastReadingAt = Objects.requireNonNull(readAt, "readAt must not be null");
+    this.lastReadingAt = readAt;
+    return true;
+  }
+
+  /**
+   * Records that the unit stopped reporting: Monitoring and Alerting detected that no reading arrived
+   * within the offline window of its alert policy.
+   *
+   * <p>The last reading and temperature are kept, so the dashboard can still tell when the unit was
+   * last heard from.</p>
+   *
+   * @return {@code true} when the unit was online and is now offline
+   */
+  public boolean markOffline() {
+    if (!online) {
+      return false;
+    }
+    var stateBefore = storedConnectivityState();
+    this.online = false;
+    registerConnectivityChangeSince(stateBefore, isCoveredByMaintenanceWindow());
+    return true;
+  }
+
+  /**
+   * The server arrival time silence is measured from: {@code lastReceivedAt}, or, for a unit that
+   * last reported before arrival times were recorded, the time its latest batch was taken.
+   *
+   * @return the instant, or {@code null} when the unit never reported
+   */
+  public Instant lastArrivalAt() {
+    return lastReceivedAt != null ? lastReceivedAt : lastReadingAt;
+  }
+
+  /**
+   * Tells whether a maintenance window covers the unit. A unit a window moved to {@code MAINTENANCE}
+   * before the flag existed is recognized by the status it remembers to return to.
+   *
+   * @return {@code true} while a maintenance window is open on the unit
+   */
+  public boolean isCoveredByMaintenanceWindow() {
+    return underMaintenance || statusBeforeMaintenance != null;
+  }
+
+  /**
+   * The connectivity state the stored flags describe, without applying the offline window: the
+   * state offline detection and reading arrivals move the unit between. A connectivity read applies
+   * the window at read time instead, see {@code EquipmentConnectivity}.
+   *
+   * @return the stored state
+   */
+  public ConnectivityState storedConnectivityState() {
+    if (status == StatusEquipment.DEACTIVATED) {
+      return ConnectivityState.NOT_MONITORED;
+    }
+    if (lastArrivalAt() == null) {
+      return ConnectivityState.NEVER_REPORTED;
+    }
+    return online ? ConnectivityState.REPORTING : ConnectivityState.SILENT;
+  }
+
+  /**
+   * Registers an {@link EquipmentConnectivityChangedEvent} when the stored state or the maintenance
+   * coverage differs from what it was before the change being applied. A unit not persisted yet raises
+   * nothing.
+   *
+   * @param stateBefore       {@link #storedConnectivityState()} read before the change
+   * @param maintenanceBefore {@link #isCoveredByMaintenanceWindow()} read before the change
+   */
+  private void registerConnectivityChangeSince(ConnectivityState stateBefore, boolean maintenanceBefore) {
+    if (equipmentId == null) {
+      return;
+    }
+    var stateAfter = storedConnectivityState();
+    var maintenanceAfter = isCoveredByMaintenanceWindow();
+    if (stateAfter == stateBefore && maintenanceAfter == maintenanceBefore) {
+      return;
+    }
+    registerDomainEvent(new EquipmentConnectivityChangedEvent(
+        equipmentId, siteId, stateBefore, stateAfter, lastArrivalAt(), maintenanceAfter, Instant.now()));
   }
 
   /**
@@ -209,6 +448,18 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    */
   public boolean isInstalledAt(Long candidateSiteId) {
     return siteId.equals(candidateSiteId);
+  }
+
+  /**
+   * Attaches the name of the site this unit is installed at, as read together with the unit.
+   *
+   * <p>Called by the repository adapter when it loads or saves a unit. The name is display data
+   * owned by the {@link Site} aggregate: attaching it changes nothing that is persisted.</p>
+   *
+   * @param siteName the current name of the site, or {@code null} when it could not be resolved
+   */
+  public void attachSiteName(String siteName) {
+    this.siteName = siteName;
   }
 
   /**

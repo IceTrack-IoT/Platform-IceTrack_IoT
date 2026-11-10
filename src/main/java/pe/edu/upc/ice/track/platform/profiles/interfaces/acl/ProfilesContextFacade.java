@@ -8,6 +8,7 @@ import pe.edu.upc.ice.track.platform.profiles.application.commandservices.OwnerC
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.TechnicianCommandService;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.OwnerProfile;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.Profile;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.TechnicianProfile;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateOwnerCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CreateTechnicianCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.factories.ProfileCreationData;
@@ -18,16 +19,23 @@ import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Ruc;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.Speciality;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.StreetAddress;
 import pe.edu.upc.ice.track.platform.profiles.domain.repositories.ProfileRepository;
+import pe.edu.upc.ice.track.platform.profiles.domain.repositories.TechnicianProfileRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
+
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * ACL facade that exposes Profiles bounded context capabilities to other contexts.
  *
  * <p>This class <em>is</em> the published contract of the Anti-Corruption Layer of the
  * {@code profiles} context. Every parameter its public methods accept and every value they return
- * is a primitive, a boxed primitive or a {@link String}: no {@code Profile} aggregate, value object,
+ * is a primitive, a boxed primitive, a {@link String} or a collection or map of those: no
+ * {@code Profile} aggregate, value object,
  * factory, command, repository or JPA entity appears in its public signature. Callers depend on
  * this class alone and must never reach into {@code profiles.domain.*},
  * {@code profiles.application.*} or {@code profiles.infrastructure.*}.</p>
@@ -65,14 +73,17 @@ public class ProfilesContextFacade {
   private final OwnerCommandService ownerCommandService;
   private final TechnicianCommandService technicianCommandService;
   private final ProfileRepository profileRepository;
+  private final TechnicianProfileRepository technicianProfileRepository;
 
   public ProfilesContextFacade(
       OwnerCommandService ownerCommandService,
       TechnicianCommandService technicianCommandService,
-      ProfileRepository profileRepository) {
+      ProfileRepository profileRepository,
+      TechnicianProfileRepository technicianProfileRepository) {
     this.ownerCommandService = ownerCommandService;
     this.technicianCommandService = technicianCommandService;
     this.profileRepository = profileRepository;
+    this.technicianProfileRepository = technicianProfileRepository;
   }
 
   /**
@@ -195,6 +206,62 @@ public class ProfilesContextFacade {
         .filter(profile -> profile instanceof OwnerProfile)
         .map(Profile::getUserProfileId)
         .orElse(0L);
+  }
+
+  /**
+   * Fetches the technician profile bound to a platform account.
+   *
+   * @param userId identifier of the account
+   * @return the technician profile identifier, or {@code 0L} when the account holds no technician
+   *         profile
+   */
+  @Transactional(readOnly = true)
+  public Long fetchTechnicianIdByUserId(Long userId) {
+    if (userId == null) return 0L;
+    return profileRepository.findByUserId(new UserId(userId))
+        .filter(profile -> profile instanceof TechnicianProfile)
+        .map(Profile::getUserProfileId)
+        .orElse(0L);
+  }
+
+  /**
+   * Checks whether a technician profile is ready to be assigned maintenance work.
+   *
+   * <p>A technician profile cannot exist without a speciality and a certification number - both
+   * are invariants of {@code TechnicianProfile} - so a profile that exists and belongs to a
+   * technician is ready. A profile of another role, or an unknown identifier, is not.</p>
+   *
+   * @param technicianProfileId identifier of the technician profile
+   * @return {@code true} when the identifier names a technician profile
+   */
+  @Transactional(readOnly = true)
+  public boolean isTechnicianEligibleForAssignment(Long technicianProfileId) {
+    if (technicianProfileId == null) return false;
+    return technicianProfileRepository.findById(technicianProfileId).isPresent();
+  }
+
+  /**
+   * Fetches the full names of technician profiles, by profile identifier.
+   *
+   * <p>Service Requests calls this to name the technician of each request in a listing in one
+   * call. An identifier that names no technician profile is left out of the answer.</p>
+   *
+   * @param technicianProfileIds identifiers of the technician profiles; {@code null} entries are
+   *                             ignored
+   * @return the full names of the technicians found, empty when none is
+   */
+  @Transactional(readOnly = true)
+  public Map<Long, String> fetchTechnicianFullNames(Collection<Long> technicianProfileIds) {
+    if (technicianProfileIds == null || technicianProfileIds.isEmpty()) {
+      return Map.of();
+    }
+    var names = new HashMap<Long, String>();
+    technicianProfileIds.stream()
+        .filter(Objects::nonNull)
+        .distinct()
+        .forEach(technicianProfileId -> technicianProfileRepository.findById(technicianProfileId)
+            .ifPresent(technician -> names.put(technicianProfileId, technician.getFullName().getFullName())));
+    return Map.copyOf(names);
   }
 
   /**

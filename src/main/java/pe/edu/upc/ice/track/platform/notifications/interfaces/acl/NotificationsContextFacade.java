@@ -1,16 +1,35 @@
 package pe.edu.upc.ice.track.platform.notifications.interfaces.acl;
 
+import org.springframework.stereotype.Service;
+import pe.edu.upc.ice.track.platform.notifications.application.queryservices.NotificationQueryService;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationCountQuery;
+
 /**
  * ACL facade that exposes Notifications capabilities to other bounded contexts.
  *
  * <p>Every parameter and return type is a primitive -- no {@code Notification} aggregate or
- * repository is reachable from here. Deliberately minimal: today nothing in the platform calls
- * into Notifications synchronously, but the contract is defined up front so that a future
- * consumer -- most likely a Profiles and Preferences Management dashboard widget showing an
- * unread count -- does not force a breaking change to this interface.</p>
+ * repository is reachable from here. The primitives-only signature is translated into a call
+ * against the notifications application layer, and the result back into a primitive before
+ * returning. Deliberately minimal: today nothing in the platform calls into Notifications
+ * synchronously, but the contract is defined up front so that a future consumer -- most likely a
+ * Profiles and Preferences Management dashboard widget showing an unread count -- does not force
+ * a breaking change to this facade.</p>
  */
-public interface NotificationsContextFacade {
+@Service
+public class NotificationsContextFacade {
 
-  /** @return the number of unread notifications currently addressed to the recipient. */
-  int countUnreadNotificationsByRecipient(Long recipientUserId);
+  private final NotificationQueryService notificationQueryService;
+
+  public NotificationsContextFacade(NotificationQueryService notificationQueryService) {
+    this.notificationQueryService = notificationQueryService;
+  }
+
+  /** @return the number of notifications addressed to the recipient that are neither read nor dismissed. */
+  public int countUnreadNotificationsByRecipient(Long recipientUserId) {
+    if (recipientUserId == null) {
+      return 0;
+    }
+    var count = notificationQueryService.handle(new GetUnreadNotificationCountQuery(recipientUserId));
+    return (int) Math.min(count, Integer.MAX_VALUE);
+  }
 }

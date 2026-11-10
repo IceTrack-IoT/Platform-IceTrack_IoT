@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.assemblers;
 
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeoLocation;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.entities.SitePersistenceEntity;
 
 /**
@@ -27,10 +28,14 @@ public final class SitePersistenceAssembler {
     return new Site(
         entity.getId(),
         entity.getOwnerProfilesId(),
+        entity.getVersion(),
         entity.getName(),
         entity.getAddress(),
         entity.getContactName(),
-        entity.getPhone());
+        entity.getPhone(),
+        entity.getEquipmentCount(),
+        entity.getGeocodingStatus(),
+        toLocation(entity));
   }
 
   /**
@@ -45,11 +50,31 @@ public final class SitePersistenceAssembler {
     }
     var entity = new SitePersistenceEntity();
     entity.setId(site.getSiteId());
+    entity.setVersion(site.getVersion());
     entity.setOwnerProfilesId(site.getOwnerId());
     entity.setName(site.getName());
     entity.setAddress(site.getAddress());
     entity.setContactName(site.getContactName());
     entity.setPhone(site.getPhone());
+    entity.setEquipmentCount(site.getEquipmentCount());
+    entity.setGeocodingStatus(site.getGeocodingStatus());
+    var location = site.isLocated() ? site.getLocation() : null;
+    entity.setLatitude(location == null ? null : location.latitude());
+    entity.setLongitude(location == null ? null : location.longitude());
+    entity.setPlaceId(location == null ? null : location.placeId());
     return entity;
+  }
+
+  /**
+   * Rebuilds the location from its flattened columns.
+   *
+   * @param entity the persisted row
+   * @return the location, or {@code null} when the row holds no coordinates
+   */
+  private static GeoLocation toLocation(SitePersistenceEntity entity) {
+    if (entity.getLatitude() == null || entity.getLongitude() == null) {
+      return null;
+    }
+    return new GeoLocation(entity.getLatitude(), entity.getLongitude(), entity.getPlaceId());
   }
 }

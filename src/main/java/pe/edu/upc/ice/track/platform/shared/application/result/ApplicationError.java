@@ -64,6 +64,31 @@ public record ApplicationError(
   }
 
   /**
+   * Concurrent modification error: the resource changed after the caller read it, so the write
+   * was rejected rather than allowed to overwrite the other change. Ends in {@code _CONFLICT}, so
+   * it is answered with 409 like any other conflict.
+   */
+  public static ApplicationError concurrentModification(String reason) {
+    return new ApplicationError(
+        "CONCURRENT_MODIFICATION_CONFLICT",
+        "Concurrent modification conflict",
+        reason);
+  }
+
+  /**
+   * Duplicate resource error: a uniqueness rule rejected the write because another resource
+   * already uses the same identifier, typically one created by a concurrent request that passed the
+   * same existence check. Ends in {@code _CONFLICT}, so it is answered with 409 like any other
+   * conflict.
+   */
+  public static ApplicationError duplicateResource(String reason) {
+    return new ApplicationError(
+        "DUPLICATE_RESOURCE_CONFLICT",
+        "Duplicate resource conflict",
+        reason);
+  }
+
+  /**
    * Unauthorized error: the caller's credentials are missing, invalid, expired or revoked
    */
   public static ApplicationError unauthorized(String reason) {
@@ -80,6 +105,16 @@ public record ApplicationError(
     return new ApplicationError(
         "ACCESS_DENIED",
         "Access denied",
+        reason);
+  }
+
+  /**
+   * Too many requests error: the caller exceeded a rate limit and must wait before retrying
+   */
+  public static ApplicationError tooManyRequests(String reason) {
+    return new ApplicationError(
+        "TOO_MANY_REQUESTS",
+        "Too many requests",
         reason);
   }
 

@@ -4,23 +4,33 @@ import lombok.Getter;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.CreateNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.*;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
+import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
  * Notification aggregate root of the {@code notifications} bounded context.
  *
  * <p>Deliberately simple: this context is a sink, not a source. A {@code Notification} is
- * always created as a translation of a fact that already happened somewhere else (an
- * {@code AlertRaisedIntegrationEvent} from Monitoring and Alerting Management today; a service
- * request update or a maintenance reminder in the future), never from a user-issued REST
+ * always created as a translation of a fact that already happened somewhere else (an alert or a
+ * maintenance window from Monitoring and Alerting Management, a service request assignment,
+ * rejection or cancellation from Service Request Management), never from a user-issued REST
  * request directly, and it never registers a domain event of its own because nothing downstream
  * needs to react to a notification being created, read or dismissed.</p>
  *
+ * <p>{@code recipientUserId} holds the identifier of the owner or technician profile the
+ * notification is addressed to; both kinds of profile share one identifier sequence, so the two
+ * never collide.</p>
+ *
  * <p>{@code sourceAlertId} is kept as a bare identifier, never as a reference to Monitoring's
  * {@code Alert} aggregate -- this context only ever imports primitives across the boundary,
- * the same discipline every other ACL in this platform follows.</p>
+ * the same discipline every other ACL in this platform follows. {@code serviceRequestId} follows
+ * the same rule towards Service Request Management: it names the request a notification is about,
+ * so a client can open that very request, and stays {@code null} for a notification about none.</p>
+ *
+ * <p>{@code createdAt} is when the notification was raised. It is set once, when the notification
+ * is created, and is what tells a recipient how recent a notification is.</p>
  */
 @Getter
 public class Notification extends AbstractDomainAggregateRoot<Notification> {
@@ -30,12 +40,14 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
   private EquipmentId equipmentId;
   private DeviceId deviceId;
   private AlertId sourceAlertId;
+  private final Long serviceRequestId;
   private final String message;
   private final NotificationType type;
   private final NotificationSeverity severity;
   private boolean isRead;
-  private LocalDateTime readAt;
-  private LocalDateTime dismissedAt;
+  private Instant createdAt;
+  private Instant readAt;
+  private Instant dismissedAt;
 
   /**
    *  Creates a new {@code Notification} from a command. The command is validated for nulls, but
@@ -46,27 +58,30 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
     this.message = Objects.requireNonNull(command.message(), "message must not be null");
     this.type = Objects.requireNonNull(command.type(), "type must not be null");
     this.severity = Objects.requireNonNull(command.severity(), "severity must not be null");
-    this.equipmentId = new EquipmentId(command.equipmentId().equipmentId());
-    this.deviceId = new DeviceId(command.deviceId().deviceId());
-    this.sourceAlertId = new AlertId(command.sourceAlertId().alertId());
+    this.equipmentId =command.equipmentId();
+    this.deviceId = command.deviceId();
+    this.sourceAlertId = command.sourceAlertId();
+    this.serviceRequestId = command.serviceRequestId();
     this.isRead = false;
+    this.createdAt = Instant.now();
   }
 
   /**
    * Rehydrates a {@code Notification} from persisted state, restoring every field exactly as
-   * stored -- including {@code isRead}, {@code readAt} and {@code dismissedAt}, which the
-   * creation constructor above cannot set. Used exclusively by
+   * stored -- including {@code createdAt}, {@code isRead}, {@code readAt} and {@code dismissedAt},
+   * which the creation constructor above cannot set. Used exclusively by
    * {@code NotificationPersistenceAssembler}; application and interface code must never call
    * this directly.
    */
   public static Notification rehydrate(
       Long id, Long recipientUserId, EquipmentId equipmentId, DeviceId deviceId, AlertId sourceAlertId,
-      String message, NotificationType type, NotificationSeverity severity,
-      boolean isRead, LocalDateTime readAt, LocalDateTime dismissedAt) {
-    var notification = new Notification(
-        new CreateNotificationCommand(recipientUserId, equipmentId, deviceId, sourceAlertId, message, type, severity));
+      Long serviceRequestId, String message, NotificationType type, NotificationSeverity severity,
+      boolean isRead, Instant createdAt, Instant readAt, Instant dismissedAt) {
+    var notification = new Notification(new CreateNotificationCommand(
+        recipientUserId, equipmentId, deviceId, sourceAlertId, message, type, severity, serviceRequestId));
     notification.id = id;
     notification.isRead = isRead;
+    notification.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
     notification.readAt = readAt;
     notification.dismissedAt = dismissedAt;
     return notification;
@@ -82,7 +97,17 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
       return;
     }
     this.isRead = true;
-    this.readAt = LocalDateTime.now();
+    this.readAt = Instant.now();
+  }
+
+  /**
+   * Tells whether the notification is addressed to a recipient.
+   *
+   * @param recipientUserId the candidate recipient
+   * @return {@code true} only when it is this notification's recipient
+   */
+  public boolean isAddressedTo(Long recipientUserId) {
+    return recipientUserId != null && recipientUserId.equals(this.recipientUserId);
   }
 
   /** Dismisses the notification from the recipient's active inbox. Idempotent. */
@@ -90,6 +115,6 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
     if (dismissedAt != null) {
       return;
     }
-    this.dismissedAt = LocalDateTime.now();
+    this.dismissedAt = Instant.now();
   }
 }

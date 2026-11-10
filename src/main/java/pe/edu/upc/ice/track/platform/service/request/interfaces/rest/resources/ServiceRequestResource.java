@@ -1,0 +1,103 @@
+package pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
+
+import java.util.List;
+
+/**
+ * Outbound REST resource representing a service request, with its status history, the maintenance
+ * windows of its work and, once completed, its intervention.
+ *
+ * <p>{@code equipment_name}, {@code site_name} and {@code technician_name} are read-only display
+ * values resolved from the other contexts when the resource is built, so a client needs no second
+ * read to show them.</p>
+ */
+@Schema(
+    name = "ServiceRequestResponse",
+    description = "Service request with its status history",
+    example = "{\"id\": 42, \"owner_id\": 3, \"equipment_id\": 10, \"site_id\": 1, \"technician_id\": 7, "
+        + "\"equipment_name\": \"Cold Room #01\", \"site_name\": \"Central Warehouse\", \"technician_name\": \"Ana Torres\", "
+        + "\"type\": \"REPAIR\", \"priority\": \"HIGH\", \"description\": \"The display case does not hold 2 to 8 °C\", "
+        + "\"source_alert_id\": 301, "
+        + "\"status\": \"ACCEPTED\", \"created_at\": \"2026-10-23T13:00:00Z\", \"assigned_at\": \"2026-10-23T13:10:00Z\", "
+        + "\"started_at\": null, \"completed_at\": null, \"canceled_at\": null, \"cancel_reason\": null, "
+        + "\"history\": [], \"intervention\": null, \"maintenance_windows\": []}")
+public record ServiceRequestResource(
+    @Schema(description = "Service request unique identifier", example = "42")
+    Long id,
+
+    @Schema(description = "Owner who created the request", example = "3")
+    Long ownerId,
+
+    @Schema(description = "Unit to service", example = "10")
+    Long equipmentId,
+
+    @Schema(description = "Site the unit is installed at", example = "1")
+    Long siteId,
+
+    @Schema(description = "Assigned technician; null while none is assigned", example = "7", nullable = true)
+    Long technicianId,
+
+    @Schema(description = "Name of the unit, read-only; null when the unit is no longer known",
+        example = "Cold Room #01", nullable = true, accessMode = Schema.AccessMode.READ_ONLY)
+    String equipmentName,
+
+    @Schema(description = "Name of the site, read-only; null when the site is no longer known",
+        example = "Central Warehouse", nullable = true, accessMode = Schema.AccessMode.READ_ONLY)
+    String siteName,
+
+    @Schema(description = "Full name of the assigned technician, read-only; null while none is assigned",
+        example = "Ana Torres", nullable = true, accessMode = Schema.AccessMode.READ_ONLY)
+    String technicianName,
+
+    @Schema(description = "Kind of work", example = "REPAIR")
+    ServiceTypeResource type,
+
+    @Schema(description = "Urgency", example = "HIGH")
+    ServicePriorityResource priority,
+
+    @Schema(description = "What the owner needs", example = "The display case does not hold 2 to 8 °C")
+    String description,
+
+    @Schema(description = "The alert this corrective request was opened for; null when none", example = "301",
+        nullable = true)
+    Long sourceAlertId,
+
+    @Schema(description = "Current lifecycle status", example = "ACCEPTED")
+    ServiceStatusResource status,
+
+    @Schema(description = "When the request was created, ISO-8601 UTC", example = "2026-10-23T13:00:00Z")
+    String createdAt,
+
+    @Schema(description = "When the current technician was assigned", example = "2026-10-23T13:10:00Z", nullable = true)
+    String assignedAt,
+
+    @Schema(description = "When the work started", example = "2026-10-23T14:05:00Z", nullable = true)
+    String startedAt,
+
+    @Schema(description = "When the work finished", example = "2026-10-23T16:30:00Z", nullable = true)
+    String completedAt,
+
+    @Schema(description = "When the owner canceled", example = "2026-10-23T17:00:00Z", nullable = true)
+    String canceledAt,
+
+    @Schema(description = "Why the owner canceled", example = "The unit was replaced", nullable = true)
+    String cancelReason,
+
+    @Schema(description = "Status history, oldest first; the first entry is the creation")
+    List<StatusTransitionResource> history,
+
+    @Schema(description = "The intervention that completed the request; null until completed", nullable = true)
+    InterventionResource intervention,
+
+    @Schema(description = "Maintenance windows opened on the unit while the work was in progress, oldest first; "
+        + "empty when there were none")
+    List<MaintenanceWindowLinkResource> maintenanceWindows,
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "The edge grant issued when the request was accepted, token included. Present only "
+        + "in the response of PUT /accept; omitted everywhere else", nullable = true)
+    IssuedEdgeGrantResource edgeGrant
+) {
+}
