@@ -8,9 +8,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Creates the Google Cloud Storage client used by {@link GcsReportFileStorage}.
@@ -20,6 +22,8 @@ import java.io.UncheckedIOException;
  *
  * <p>Credentials are resolved in this order:</p>
  * <ol>
+ *   <li>{@code reporting.storage.gcs.credentials-json}, when set: the content of a
+ *       service-account JSON key, for platforms that cannot mount files (Railway, for example).</li>
  *   <li>{@code reporting.storage.gcs.credentials-path}, when set: a service-account JSON key
  *       file. Meant for development against a real bucket; avoid it in production.</li>
  *   <li>Application Default Credentials otherwise: on Google Cloud (Cloud Run, GKE, Compute
@@ -35,12 +39,19 @@ public class GcsStorageConfiguration {
   @Bean
   public Storage reportingStorage(
       @Value("${reporting.storage.gcs.project-id:}") String projectId,
-      @Value("${reporting.storage.gcs.credentials-path:}") String credentialsPath) {
+      @Value("${reporting.storage.gcs.credentials-path:}") String credentialsPath,
+      @Value("${reporting.storage.gcs.credentials-json:}") String credentialsJson) {
     var builder = StorageOptions.newBuilder();
     if (!projectId.isBlank()) {
       builder.setProjectId(projectId);
     }
-    if (!credentialsPath.isBlank()) {
+    if (!credentialsJson.isBlank()) {
+      try (var stream = new ByteArrayInputStream(credentialsJson.getBytes(StandardCharsets.UTF_8))) {
+        builder.setCredentials(GoogleCredentials.fromStream(stream));
+      } catch (IOException ex) {
+        throw new UncheckedIOException("Could not parse GCS credentials JSON", ex);
+      }
+    } else if (!credentialsPath.isBlank()) {
       try (var stream = new FileInputStream(credentialsPath)) {
         builder.setCredentials(GoogleCredentials.fromStream(stream));
       } catch (IOException ex) {

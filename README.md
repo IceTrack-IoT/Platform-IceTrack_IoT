@@ -93,6 +93,8 @@ Defaults come from `src/main/resources/application.properties`:
 | `SPRING_DATASOURCE_USERNAME` | `postgres` | DB user |
 | `SPRING_DATASOURCE_PASSWORD` | none (required) | DB password; startup fails without it |
 | `SPRING_PROFILES_ACTIVE` | `dev` | Set to `dev` by `docker-compose.dev.yml` |
+| `JAVA_OPTS` | serial GC, heap capped at 60% of container memory, metaspace and stack limits | JVM flags of the Docker image (see `Dockerfile`); override to resize the heap for a larger instance |
+| `GCS_CREDENTIALS_JSON` / `FCM_CREDENTIALS_JSON` | empty | Content of the Google service-account keys, for platforms that cannot mount files (Railway). Takes precedence over `GCS_CREDENTIALS_PATH` / `FCM_CREDENTIALS_PATH`; used when `REPORTING_STORAGE_PROVIDER=gcs` / `PUSH_PROVIDER=fcm` |
 | `JWT_SECRET` | none (required) | Base64-encoded HS512 signing key of at least 64 decoded bytes, e.g. `openssl rand -base64 64 \| tr -d '\n'` (the command wraps its output, so without stripping the line break only the first line reaches `.env` and the key is too short); startup fails when it is missing, blank, not Base64 or too short |
 | `JWT_EXPIRATION_MINUTES` | `30` | Access token TTL |
 | `REFRESH_TOKEN_EXPIRATION_DAYS` | `7` | Refresh token TTL (each refresh rotates the token) |
@@ -107,7 +109,7 @@ Defaults come from `src/main/resources/application.properties`:
 | `OFFLINE_DETECTION_ENABLED` | `true` | Runs the offline detection, which marks silent units offline and raises `DEVICE_OFFLINE` alerts |
 | `OFFLINE_DETECTION_DELAY_MS` / `OFFLINE_DETECTION_INITIAL_DELAY_MS` | `60000` / `60000` | Interval between two detection rounds (one synchronization window), and delay before the first |
 | `OFFLINE_DETECTION_LOCK_LEASE_MS` | `50000` | Lease a round takes in `scheduled_task_locks`, so only one instance runs it; keep it shorter than the interval |
-| `OUTBOX_DISPATCH_DELAY_MS` | `2000` | Interval at which the transactional outbox delivers pending integration events |
+| `OUTBOX_DISPATCH_DELAY_MS` | `2000` (`5000` in the `prod` profile) | Interval at which the transactional outbox delivers pending integration events |
 | `ADDRESS_VALIDATION_SECRET` | none (required) | Base64-encoded key, at least 32 decoded bytes, that signs address validation tokens (`openssl rand -base64 32`); startup fails when it is missing, not Base64 or too short. It is separate from `JWT_SECRET` |
 | `GOOGLE_MAPS_API_KEY` | `YOUR_MAPS_DEMO_KEY` | Google Maps Geocoding key; with the placeholder every address validation answers `503` |
 | `OUTBOX_MAX_ATTEMPTS` | `10` | Failed deliveries after which an outbox event is no longer tried (it stays in `outbox_events`, unpublished) |
@@ -117,7 +119,7 @@ Defaults come from `src/main/resources/application.properties`:
 | `TELEMETRY_STREAM_HEARTBEAT_MS` | `25000` | Interval of the heartbeat comment written to every open stream |
 | `APP_TASK_POOL_CORE_SIZE` / `APP_TASK_POOL_MAX_SIZE` / `APP_TASK_POOL_QUEUE_CAPACITY` | `8` / `16` / `5000` | Default `@Async` pool (push notifications, maintenance window notices) |
 | `TOMCAT_MAX_THREADS` / `TOMCAT_MAX_CONNECTIONS` | `200` / `8192` | Request threads and open connections; an open telemetry stream holds a connection, not a thread |
-| `DB_POOL_MAX_SIZE` / `DB_CONNECTION_TIMEOUT_MS` | `10` / `5000` | Database connection pool size, and how long a request waits for a free connection before failing |
+| `DB_POOL_MAX_SIZE` / `DB_CONNECTION_TIMEOUT_MS` | `10` / `5000` (`5` pool size in the `prod` profile, with `DB_POOL_MIN_IDLE=1`) | Database connection pool size, and how long a request waits for a free connection before failing |
 
 `server.port` is `8080`. Hibernate `ddl-auto` is `update`.
 

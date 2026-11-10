@@ -9,9 +9,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Creates the Firebase Admin client used by {@link FcmPushGateway}.
@@ -19,8 +21,9 @@ import java.io.UncheckedIOException;
  * <p>Only active when {@code notifications.push.provider=fcm}, so a machine without Firebase
  * credentials starts normally with the no-op gateway.</p>
  *
- * <p>Credentials: {@code notifications.push.fcm.credentials-path} (a service-account JSON key)
- * when set; otherwise Application Default Credentials, which on Google Cloud is the attached
+ * <p>Credentials: {@code notifications.push.fcm.credentials-json} (the content of a
+ * service-account JSON key, for platforms that cannot mount files) when set, else
+ * {@code notifications.push.fcm.credentials-path} (a key file) when set; otherwise Application Default Credentials, which on Google Cloud is the attached
  * service account and needs no key file.</p>
  */
 @Configuration
@@ -32,18 +35,23 @@ public class FcmConfiguration {
   @Bean
   public FirebaseMessaging firebaseMessaging(
       @Value("${notifications.push.fcm.project-id:}") String projectId,
-      @Value("${notifications.push.fcm.credentials-path:}") String credentialsPath) {
+      @Value("${notifications.push.fcm.credentials-path:}") String credentialsPath,
+      @Value("${notifications.push.fcm.credentials-json:}") String credentialsJson) {
     var app = FirebaseApp.getApps().stream()
         .filter(existing -> APP_NAME.equals(existing.getName()))
         .findFirst()
-        .orElseGet(() -> FirebaseApp.initializeApp(buildOptions(projectId, credentialsPath), APP_NAME));
+        .orElseGet(() -> FirebaseApp.initializeApp(buildOptions(projectId, credentialsPath, credentialsJson), APP_NAME));
     return FirebaseMessaging.getInstance(app);
   }
 
-  private FirebaseOptions buildOptions(String projectId, String credentialsPath) {
+  private FirebaseOptions buildOptions(String projectId, String credentialsPath, String credentialsJson) {
     try {
       GoogleCredentials credentials;
-      if (credentialsPath.isBlank()) {
+      if (!credentialsJson.isBlank()) {
+        try (var stream = new ByteArrayInputStream(credentialsJson.getBytes(StandardCharsets.UTF_8))) {
+          credentials = GoogleCredentials.fromStream(stream);
+        }
+      } else if (credentialsPath.isBlank()) {
         credentials = GoogleCredentials.getApplicationDefault();
       } else {
         try (var stream = new FileInputStream(credentialsPath)) {
