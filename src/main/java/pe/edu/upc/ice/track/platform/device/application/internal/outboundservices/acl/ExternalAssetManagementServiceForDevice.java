@@ -36,6 +36,15 @@ public class ExternalAssetManagementServiceForDevice {
 
   /**
    * @param equipmentId identifier of the equipment
+   * @return the owner of the unit, resolved through its site, or empty when the unit or its site
+   *         does not exist
+   */
+  public Optional<Long> fetchOwnerId(Long equipmentId) {
+    return equipmentId == null ? Optional.empty() : assetContextFacade.getEquipmentOwnerId(equipmentId);
+  }
+
+  /**
+   * @param equipmentId identifier of the equipment
    * @return the version of the configuration its edge gateway must enforce, or empty when the unit
    *         does not exist
    */

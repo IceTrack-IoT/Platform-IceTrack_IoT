@@ -5,6 +5,7 @@ import pe.edu.upc.ice.track.platform.device.interfaces.acl.DeviceContextFacade;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Optional;
 
 /**
  * Outbound service (the outbound half of the Anti-Corruption Layer between {@code monitoring} and
@@ -22,6 +23,20 @@ public class ExternalDeviceServiceForMonitoring {
 
   public ExternalDeviceServiceForMonitoring(DeviceContextFacade deviceContextFacade) {
     this.deviceContextFacade = deviceContextFacade;
+  }
+
+  /**
+   * Resolves the board linked to a unit, paired or revoked, to name it in a connectivity change.
+   *
+   * @param equipmentId identifier of the unit
+   * @return the board's identifier, or empty when no board is linked to the unit
+   */
+  public Optional<Long> fetchLinkedDeviceId(Long equipmentId) {
+    if (equipmentId == null) {
+      return Optional.empty();
+    }
+    var deviceId = deviceContextFacade.fetchLinkedDeviceId(equipmentId);
+    return deviceId == null || deviceId == 0L ? Optional.empty() : Optional.of(deviceId);
   }
 
   /**

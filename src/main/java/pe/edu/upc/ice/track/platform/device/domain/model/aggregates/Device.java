@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.device.domain.model.aggregates;
 import lombok.Getter;
 import pe.edu.upc.ice.track.platform.device.domain.model.events.DevicePairedEvent;
 import pe.edu.upc.ice.track.platform.device.domain.model.events.DeviceRegisteredEvent;
+import pe.edu.upc.ice.track.platform.device.domain.model.events.DeviceStatusChangedEvent;
 import pe.edu.upc.ice.track.platform.device.domain.model.events.DeviceUnpairedEvent;
 import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DeviceStatus;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
@@ -105,6 +106,7 @@ public class Device extends AbstractDomainAggregateRoot<Device> {
     this.status = DeviceStatus.PAIRED;
     this.lastSeenAt = null;
     registerDomainEvent(DevicePairedEvent.from(this));
+    registerStatusChange(DeviceStatus.UNPAIRED, equipmentId);
   }
 
   /**
@@ -118,8 +120,10 @@ public class Device extends AbstractDomainAggregateRoot<Device> {
     if (status == DeviceStatus.UNPAIRED) {
       throw new IllegalStateException("An unpaired device has no credential to rotate");
     }
+    var previousStatus = status;
     this.apiKeyDigest = validatedDigest(newApiKeyDigest);
     this.status = DeviceStatus.PAIRED;
+    registerStatusChange(previousStatus, pairedEquipmentId);
   }
 
   /**
@@ -132,8 +136,12 @@ public class Device extends AbstractDomainAggregateRoot<Device> {
     if (status == DeviceStatus.UNPAIRED) {
       throw new IllegalStateException("An unpaired device has no credential to revoke");
     }
+    var previousStatus = status;
     this.apiKeyDigest = null;
     this.status = DeviceStatus.REVOKED;
+    if (previousStatus != DeviceStatus.REVOKED) {
+      registerStatusChange(previousStatus, pairedEquipmentId);
+    }
   }
 
   /**
@@ -147,10 +155,27 @@ public class Device extends AbstractDomainAggregateRoot<Device> {
       throw new IllegalStateException("Device is not paired with an equipment");
     }
     var previousEquipmentId = pairedEquipmentId;
+    var previousStatus = status;
     this.pairedEquipmentId = null;
     this.apiKeyDigest = null;
     this.status = DeviceStatus.UNPAIRED;
     registerDomainEvent(DeviceUnpairedEvent.from(this, previousEquipmentId));
+    registerStatusChange(previousStatus, previousEquipmentId);
+  }
+
+  /**
+   * Registers a {@link DeviceStatusChangedEvent} for the change just applied. A board not persisted
+   * yet raises nothing: nobody can be watching it.
+   *
+   * @param previousStatus the status before the change
+   * @param equipmentId    the unit the board is, or was until this change, linked to
+   */
+  private void registerStatusChange(DeviceStatus previousStatus, Long equipmentId) {
+    if (deviceId == null) {
+      return;
+    }
+    registerDomainEvent(new DeviceStatusChangedEvent(
+        deviceId, equipmentId, pairedEquipmentId, previousStatus, status, Instant.now()));
   }
 
   /**

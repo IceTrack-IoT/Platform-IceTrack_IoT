@@ -54,6 +54,32 @@ public class DeviceContextFacade {
    */
   @Transactional(readOnly = true)
   public LinkedDeviceCounts countLinkedDevices(Collection<Long> equipmentIds) {
+    return countLinked(equipmentIds);
+  }
+
+  /**
+   * Returns the board linked to a unit, paired or revoked.
+   *
+   * <p>Monitoring and Alerting calls this to name the board in a connectivity change it pushes to
+   * the owner's stream.</p>
+   *
+   * @param equipmentId identifier of the unit
+   * @return the board's identifier, or {@code 0L} when the identifier is {@code null} or no board is
+   *         linked to the unit
+   */
+  @Transactional(readOnly = true)
+  public Long fetchLinkedDeviceId(Long equipmentId) {
+    if (equipmentId == null) {
+      return 0L;
+    }
+    return deviceRepository.findByEquipmentId(equipmentId).stream()
+        .filter(device -> device.isLinkedToEquipment() && device.getDeviceId() != null)
+        .map(device -> device.getDeviceId())
+        .findFirst()
+        .orElse(0L);
+  }
+
+  private LinkedDeviceCounts countLinked(Collection<Long> equipmentIds) {
     if (equipmentIds == null || equipmentIds.isEmpty()) {
       return new LinkedDeviceCounts(0L, 0L);
     }

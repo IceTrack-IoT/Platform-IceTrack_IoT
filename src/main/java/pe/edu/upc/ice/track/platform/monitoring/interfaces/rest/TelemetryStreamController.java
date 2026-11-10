@@ -30,7 +30,12 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.IssueStrea
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.commands.RedeemStreamTicketCommand;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.streaming.sse.TelemetryStreamRegistry;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.AlertStatusChangedStreamResource;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.ConnectivityChangedStreamResource;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.DeviceStatusChangedStreamResource;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.NotificationCreatedStreamResource;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.ReadingRecordedStreamResource;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.ReportStatusChangedStreamResource;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.UnreadCountChangedStreamResource;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.StreamTicketResource;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.transform.StreamTicketResourceFromResultAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
@@ -121,33 +126,47 @@ public class TelemetryStreamController {
   }
 
   /**
-   * Opens the telemetry stream of the owner a ticket was issued for.
+   * Opens the event stream of the owner a ticket was issued for.
    *
    * <p>Every reading recorded and every alert raised or moved on one of the owner's units arrives as
    * a {@code telemetry-update} event, whose data carries {@code type} {@code READING_RECORDED} or
-   * {@code ALERT_STATUS_CHANGED}. A {@code stream-opened} event comes first, and a heartbeat comment
-   * every 25 seconds. The stream closes after 30 minutes; the browser then needs a new ticket.</p>
+   * {@code ALERT_STATUS_CHANGED}. Notifications, report status changes, device lifecycle changes and
+   * connectivity changes arrive under their own event names. A {@code stream-opened} event comes first,
+   * then the events replayed after {@code last_event_id}, and a heartbeat comment every 25 seconds. The
+   * stream closes after 30 minutes; the browser then needs a new ticket.</p>
    *
-   * @param ticket The stream ticket issued by {@code POST /stream-ticket}
+   * @param ticket      The stream ticket issued by {@code POST /stream-ticket}
+   * @param lastEventId The id of the last event the client received, to replay what it missed; optional
    * @return The event stream, or 401 when the ticket is missing, unknown, used or expired
    */
   @GetMapping("/stream")
   @Operation(
-      summary = "Open the telemetry stream",
-      description = "Server-Sent Events stream of the readings and alert status changes of the ticket owner's "
-          + "units, and of no other owner's. Authenticated by the ticket query parameter only; no JWT is "
-          + "accepted here. The ticket is consumed by this request whatever its outcome. Events: stream-opened "
-          + "first (with the reconnection delay), then telemetry-update, whose JSON data is a "
-          + "TelemetryReadingUpdate (type READING_RECORDED) or a TelemetryAlertUpdate (type "
-          + "ALERT_STATUS_CHANGED); a heartbeat comment every 25 seconds. The stream closes after 30 minutes. "
-          + "An EventSource does not retry a 401: request a new ticket and reconnect.")
+      summary = "Open the owner event stream",
+      description = "Server-Sent Events stream of the events of the ticket owner, and of no other owner. "
+          + "Authenticated by the ticket query parameter only; no JWT is accepted here. The ticket is consumed by "
+          + "this request whatever its outcome. Events: stream-opened first (reconnection delay, replayed and "
+          + "replay_complete), then telemetry-update (a TelemetryReadingUpdate of type READING_RECORDED or a "
+          + "TelemetryAlertUpdate of type ALERT_STATUS_CHANGED), notification-created, unread-count-changed, "
+          + "report-status-changed, device-status-changed and connectivity-changed; a heartbeat comment every 25 "
+          + "seconds. Every event but stream-opened carries an id. Pass the id of the last event received as "
+          + "last_event_id when reconnecting: the events after it, kept for 5 minutes and up to 1000, are replayed "
+          + "before the live ones; replay_complete false means some were lost and the client must reload over "
+          + "REST. The stream closes after 30 minutes. An EventSource does not retry a 401: request a new ticket "
+          + "and reconnect.")
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
           description = "Stream opened",
           content = @Content(
               mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
-              schema = @Schema(oneOf = {ReadingRecordedStreamResource.class, AlertStatusChangedStreamResource.class}))),
+              schema = @Schema(oneOf = {
+                  ReadingRecordedStreamResource.class,
+                  AlertStatusChangedStreamResource.class,
+                  NotificationCreatedStreamResource.class,
+                  UnreadCountChangedStreamResource.class,
+                  ReportStatusChangedStreamResource.class,
+                  DeviceStatusChangedStreamResource.class,
+                  ConnectivityChangedStreamResource.class}))),
       @ApiResponse(responseCode = "401", description = "UNAUTHORIZED - the ticket is missing, malformed, unknown, "
           + "already used or expired",
           content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -158,10 +177,15 @@ public class TelemetryStreamController {
       @Parameter(description = "Stream ticket issued by POST /api/v1/telemetry/stream-ticket. Declared optional so "
           + "that a missing ticket is answered like any refused one: 401 UNAUTHORIZED, not 400",
           example = "st_9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
-      String ticket) {
+      String ticket,
+      @RequestParam(name = "last_event_id", required = false)
+      @Parameter(description = "Id of the last event received on the previous stream, to replay what was missed. "
+          + "A query parameter, because each reconnection builds a new EventSource with a new ticket and the "
+          + "browser's Last-Event-ID header is never sent", example = "1731164560123-17")
+      String lastEventId) {
     var ownerProfileId = telemetryStreamCommandService.handle(new RedeemStreamTicketCommand(ticket))
         .orElseThrow(InvalidStreamTicketException::new);
-    var emitter = telemetryStreamRegistry.subscribe(ownerProfileId);
+    var emitter = telemetryStreamRegistry.subscribe(ownerProfileId, lastEventId);
     log.info("Owner {} opened a telemetry stream", ownerProfileId);
     return ResponseEntity.ok()
         .contentType(MediaType.TEXT_EVENT_STREAM)
