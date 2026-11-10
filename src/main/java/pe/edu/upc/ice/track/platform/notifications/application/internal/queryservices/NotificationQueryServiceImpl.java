@@ -44,7 +44,7 @@ public class NotificationQueryServiceImpl implements NotificationQueryService {
   @Transactional(readOnly = true)
   public NotificationPage handle(GetNotificationsByRecipientQuery query) {
     return notificationRepository.findActivePageByRecipientUserId(
-        query.recipientUserId(), query.unreadOnly(), query.page(), query.size());
+        query.recipientUserId(), query.unreadOnly(), query.filter(), query.page(), query.size());
   }
 
   // inherited javadoc

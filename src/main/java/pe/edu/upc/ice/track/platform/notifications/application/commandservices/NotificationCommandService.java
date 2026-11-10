@@ -3,13 +3,16 @@ package pe.edu.upc.ice.track.platform.notifications.application.commandservices;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.CreateNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.DismissNotificationCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkAllNotificationsAsReadCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationAsReadCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationsAsReadCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyAlertRaisedCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyMaintenanceWindowClosedCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyMaintenanceWindowOpenedCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyServiceRequestCanceledCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyServiceRequestRejectedCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyTechnicianAssignedCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.BulkReadResult;
 
 import java.util.List;
 import java.util.Optional;
@@ -80,4 +83,19 @@ public interface NotificationCommandService {
    * @return  An {@code Optional} containing the dismissed notification if found, or empty if not found.
    */
   Optional<Notification> handle(DismissNotificationCommand command);
+
+  /**
+   *  Marks every active, unread notification of the recipient that matches the filter as read.
+   * @param command The command naming the recipient and the filter
+   * @return how many notifications changed, and the recipient's unread count afterward
+   */
+  BulkReadResult handle(MarkAllNotificationsAsReadCommand command);
+
+  /**
+   *  Marks the listed notifications of the recipient as read, skipping any identifier that is not
+   *  addressed to it or names a notification already read or dismissed.
+   * @param command The command naming the recipient and the notifications
+   * @return how many notifications changed, and the recipient's unread count afterward
+   */
+  BulkReadResult handle(MarkNotificationsAsReadCommand command);
 }

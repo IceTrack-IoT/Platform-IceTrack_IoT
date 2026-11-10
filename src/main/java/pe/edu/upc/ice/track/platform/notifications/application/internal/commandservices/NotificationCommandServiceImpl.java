@@ -10,7 +10,9 @@ import pe.edu.upc.ice.track.platform.notifications.application.internal.outbound
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.CreateNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.DismissNotificationCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkAllNotificationsAsReadCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationAsReadCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationsAsReadCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyAlertRaisedCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyMaintenanceWindowClosedCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyMaintenanceWindowOpenedCommand;
@@ -18,11 +20,15 @@ import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyS
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyServiceRequestRejectedCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyTechnicianAssignedCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.events.NotificationCreatedEvent;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.BulkReadResult;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationSeverity;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationType;
 import pe.edu.upc.ice.track.platform.notifications.domain.repositories.NotificationRepository;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.events.NotificationCreatedIntegrationEvent;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.events.UnreadNotificationCountChangedIntegrationEvent;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -58,7 +64,42 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
         saved.getSeverity(),
         saved.getEquipmentId() == null ? null : saved.getEquipmentId().equipmentId(),
         saved.getSourceAlertId() == null ? null : saved.getSourceAlertId().alertId()));
+    var unreadCount = notificationRepository.countActiveUnreadByRecipientUserId(saved.getRecipientUserId());
+    eventPublisher.publishEvent(new NotificationCreatedIntegrationEvent(
+        saved.getId(),
+        saved.getRecipientUserId(),
+        saved.getType().name(),
+        saved.getSeverity().name(),
+        saved.getEquipmentId() == null ? null : saved.getEquipmentId().equipmentId(),
+        saved.getSourceAlertId() == null ? null : saved.getSourceAlertId().alertId(),
+        saved.getCreatedAt(),
+        unreadCount));
+    announceUnreadCount(saved.getRecipientUserId(), unreadCount);
     return saved;
+  }
+
+  /**
+   * Announces a recipient's new unread count to the other bounded contexts, so open screens update
+   * their badge without asking for it.
+   *
+   * @param recipientUserId the recipient whose count changed
+   * @param unreadCount     the count after the change
+   */
+  private void announceUnreadCount(Long recipientUserId, long unreadCount) {
+    eventPublisher.publishEvent(new UnreadNotificationCountChangedIntegrationEvent(
+        recipientUserId, unreadCount, Instant.now()));
+  }
+
+  /**
+   * Announces the recipient's unread count when an operation changed it.
+   *
+   * @param recipientUserId the recipient
+   * @param changed         whether the operation changed any notification from unread
+   */
+  private void announceUnreadCountIfChanged(Long recipientUserId, boolean changed) {
+    if (changed) {
+      announceUnreadCount(recipientUserId, notificationRepository.countActiveUnreadByRecipientUserId(recipientUserId));
+    }
   }
 
   /**
@@ -183,8 +224,11 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
   @Transactional
   public Optional<Notification> handle(MarkNotificationAsReadCommand command) {
     return findAddressedTo(command.notificationId(), command.recipientUserId()).map(notification -> {
+      var wasUnread = isActiveAndUnread(notification);
       notification.markAsRead();
-      return notificationRepository.save(notification);
+      var saved = notificationRepository.save(notification);
+      announceUnreadCountIfChanged(command.recipientUserId(), wasUnread);
+      return saved;
     });
   }
 
@@ -196,9 +240,49 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
   @Transactional
   public Optional<Notification> handle(DismissNotificationCommand command) {
     return findAddressedTo(command.notificationId(), command.recipientUserId()).map(notification -> {
+      var wasUnread = isActiveAndUnread(notification);
       notification.dismiss();
-      return notificationRepository.save(notification);
+      var saved = notificationRepository.save(notification);
+      announceUnreadCountIfChanged(command.recipientUserId(), wasUnread);
+      return saved;
     });
+  }
+
+  private static boolean isActiveAndUnread(Notification notification) {
+    return !notification.isRead() && notification.getDismissedAt() == null;
+  }
+
+  /**
+   * Marks every active, unread notification of the caller that matches the filter as read, in one
+   * statement. Running it again updates nothing.
+   */
+  @Override
+  @Transactional
+  public BulkReadResult handle(MarkAllNotificationsAsReadCommand command) {
+    var updated = notificationRepository.markActiveUnreadAsRead(
+        command.recipientUserId(), command.filter(), Instant.now());
+    var unread = notificationRepository.countActiveUnreadByRecipientUserId(command.recipientUserId());
+    if (updated > 0) {
+      announceUnreadCount(command.recipientUserId(), unread);
+    }
+    return new BulkReadResult(updated, unread);
+  }
+
+  /**
+   * Marks the listed notifications of the caller as read, in one statement. An identifier addressed
+   * to anybody else is skipped exactly like one already read, so the outcome reveals nothing about
+   * other inboxes.
+   */
+  @Override
+  @Transactional
+  public BulkReadResult handle(MarkNotificationsAsReadCommand command) {
+    var updated = notificationRepository.markActiveUnreadAsReadByIds(
+        command.recipientUserId(), command.notificationIds(), Instant.now());
+    var unread = notificationRepository.countActiveUnreadByRecipientUserId(command.recipientUserId());
+    if (updated > 0) {
+      announceUnreadCount(command.recipientUserId(), unread);
+    }
+    return new BulkReadResult(updated, unread);
   }
 
   private Optional<Notification> findAddressedTo(Long notificationId, Long recipientUserId) {

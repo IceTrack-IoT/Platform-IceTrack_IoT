@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -18,20 +19,34 @@ import pe.edu.upc.ice.track.platform.notifications.application.commandservices.N
 import pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.acl.ExternalProfilesServiceForNotifications;
 import pe.edu.upc.ice.track.platform.notifications.application.queryservices.NotificationQueryService;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.DismissNotificationCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkAllNotificationsAsReadCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationAsReadCommand;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.MarkNotificationsAsReadCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationByIdQuery;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetNotificationsByRecipientQuery;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.queries.GetUnreadNotificationCountQuery;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.BulkReadResult;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationFilter;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationPage;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.BulkNotificationReadRequest;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.BulkReadResultResource;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.NotificationResource;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.NotificationSeverityResource;
+import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.NotificationTypeResource;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.PagedNotificationResource;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.resources.UnreadNotificationCountResource;
 import pe.edu.upc.ice.track.platform.notifications.interfaces.rest.transform.NotificationResourceFromEntityAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResource;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 /**
  * REST controller for the authenticated caller's notification inbox: listing, detail and
- * read/dismiss transitions.
+ * read/dismiss transitions, one at a time or in bulk.
  *
  * <p>There is no creation endpoint: a notification is never created from a direct HTTP
  * request, only by an inbound listener reacting to an integration event from another bounded
@@ -40,10 +55,13 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResou
  *
  * <p>The recipient is always derived from the authenticated principal, never taken from the
  * request, the same way {@code DeviceTokensController} does. A notification addressed
- * to anybody else answers 404, exactly like a missing one, so identifiers cannot be harvested.</p>
+ * to anybody else answers 404, exactly like a missing one, so identifiers cannot be harvested; the
+ * bulk reads skip such identifiers silently for the same reason.</p>
  *
  * <p>The inbox is paginated and only lists active notifications: a dismissed notification is
- * hidden, but kept. {@code /unread-count} feeds the unread badge.</p>
+ * hidden, but kept. It can be narrowed by severity, type and unit; those filters only ever narrow
+ * the caller's own notifications. {@code /unread-count} feeds the unread badge, and both bulk reads
+ * answer the new unread count so the badge needs no second request.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/notifications", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -70,8 +88,10 @@ public class NotificationsController {
   @Operation(
       summary = "List my notifications",
       description = "Returns one page of the authenticated caller's active (not dismissed) notifications, most "
-          + "recent first, optionally only the unread ones. The recipient is derived from the access token. "
-          + "size defaults to 20 and is capped at 100.",
+          + "recent first, optionally only the unread ones, and optionally narrowed by severity, type and unit. "
+          + "The filters combine with each other and only narrow the caller's own notifications, so a unit of "
+          + "another owner yields an empty page. The recipient is derived from the access token. size defaults "
+          + "to 20 and is capped at 100.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
@@ -82,7 +102,7 @@ public class NotificationsController {
       ),
       @ApiResponse(
           responseCode = "400",
-          description = "VALIDATION_ERROR - a negative page or a size below 1",
+          description = "VALIDATION_ERROR - a negative page, a size below 1, or an unknown severity or type",
           content = @Content(schema = @Schema(implementation = ErrorResource.class))
       ),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
@@ -94,16 +114,23 @@ public class NotificationsController {
       @RequestParam(defaultValue = "" + GetNotificationsByRecipientQuery.DEFAULT_PAGE_SIZE) int size,
       @Parameter(description = "Return only notifications not yet read", example = "false")
       @RequestParam(name = "unread_only", defaultValue = "false") boolean unreadOnly,
+      @Parameter(description = "Restrict to these severities, comma-separated", example = "WARNING,CRITICAL")
+      @RequestParam(required = false) List<NotificationSeverityResource> severity,
+      @Parameter(description = "Restrict to these kinds of notification, comma-separated", example = "TEMPERATURE_EXCURSION")
+      @RequestParam(required = false) List<NotificationTypeResource> type,
+      @Parameter(description = "Restrict to the notifications about one unit", example = "10")
+      @RequestParam(name = "equipment_id", required = false) Long equipmentId,
       Authentication authentication) {
+    var filter = toFilter(severity, type, equipmentId);
     var recipient = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName());
     if (recipient.isEmpty()) {
       // An account without an owner or technician profile has no inbox. The paging values are still
       // validated, so the answer does not depend on whether the caller has one.
-      var emptyQuery = new GetNotificationsByRecipientQuery(NO_RECIPIENT, unreadOnly, page, size);
+      var emptyQuery = new GetNotificationsByRecipientQuery(NO_RECIPIENT, unreadOnly, filter, page, size);
       return ResponseEntity.ok(NotificationResourceFromEntityAssembler.toPagedResourceFromPage(
           NotificationPage.empty(emptyQuery.page(), emptyQuery.size())));
     }
-    var query = new GetNotificationsByRecipientQuery(recipient.get(), unreadOnly, page, size);
+    var query = new GetNotificationsByRecipientQuery(recipient.get(), unreadOnly, filter, page, size);
     var notifications = notificationQueryService.handle(query);
     return ResponseEntity.ok(NotificationResourceFromEntityAssembler.toPagedResourceFromPage(notifications));
   }
@@ -128,6 +155,73 @@ public class NotificationsController {
         .map(recipient -> notificationQueryService.handle(new GetUnreadNotificationCountQuery(recipient)))
         .orElse(0L);
     return ResponseEntity.ok(new UnreadNotificationCountResource(unreadCount));
+  }
+
+  @PutMapping("/read-all")
+  @Operation(
+      summary = "Mark all my notifications as read",
+      description = "Marks every active, unread notification of the authenticated caller as read, or only those "
+          + "matching the optional severity, type and unit filters, which work as on the listing. Idempotent: a "
+          + "second call updates 0. Answers how many changed and the unread count afterward. No request body.",
+      security = @SecurityRequirement(name = "bearerAuth")
+  )
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Matching notifications marked as read",
+          content = @Content(schema = @Schema(implementation = BulkReadResultResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - an unknown severity or type",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
+  })
+  public ResponseEntity<BulkReadResultResource> markAllMyNotificationsAsRead(
+      @Parameter(description = "Restrict to these severities, comma-separated", example = "INFO")
+      @RequestParam(required = false) List<NotificationSeverityResource> severity,
+      @Parameter(description = "Restrict to these kinds of notification, comma-separated", example = "SERVICE_REQUEST_UPDATE")
+      @RequestParam(required = false) List<NotificationTypeResource> type,
+      @Parameter(description = "Restrict to the notifications about one unit", example = "10")
+      @RequestParam(name = "equipment_id", required = false) Long equipmentId,
+      Authentication authentication) {
+    var filter = toFilter(severity, type, equipmentId);
+    var result = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
+        .map(recipient -> notificationCommandService.handle(new MarkAllNotificationsAsReadCommand(recipient, filter)))
+        .orElseGet(BulkReadResult::nothing);
+    return ResponseEntity.ok(toBulkReadResultResource(result));
+  }
+
+  @PutMapping(value = "/read", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @Operation(
+      summary = "Mark several of my notifications as read",
+      description = "Marks the listed notifications of the authenticated caller as read, from 1 to 100 identifiers. "
+          + "Identifiers not addressed to the caller, already read or dismissed are skipped silently. Answers how "
+          + "many changed and the unread count afterward.",
+      security = @SecurityRequirement(name = "bearerAuth")
+  )
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Listed notifications marked as read",
+          content = @Content(schema = @Schema(implementation = BulkReadResultResource.class))
+      ),
+      @ApiResponse(
+          responseCode = "400",
+          description = "VALIDATION_ERROR - notification_ids missing, empty, or holding more than 100 identifiers",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid")
+  })
+  public ResponseEntity<BulkReadResultResource> markSeveralOfMyNotificationsAsRead(
+      @Valid @RequestBody BulkNotificationReadRequest resource,
+      Authentication authentication) {
+    var result = externalProfilesService.fetchRecipientUserIdByUsername(authentication.getName())
+        .map(recipient -> notificationCommandService.handle(
+            MarkNotificationsAsReadCommand.of(recipient, resource.notificationIds())))
+        .orElseGet(BulkReadResult::nothing);
+    return ResponseEntity.ok(toBulkReadResultResource(result));
   }
 
   @GetMapping("/{notificationId}")
@@ -212,5 +306,28 @@ public class NotificationsController {
   private static ResponseEntity<ErrorResource> notificationNotFound(Long notificationId) {
     return ErrorResponseAssembler.toErrorResponseFromApplicationError(
         ApplicationError.notFound("Notification", String.valueOf(notificationId)));
+  }
+
+  /**
+   * Translates the severity, type and unit query parameters into a domain filter. An empty entry,
+   * as left by a trailing comma, is ignored rather than failing the whole request.
+   */
+  private static NotificationFilter toFilter(
+      List<NotificationSeverityResource> severities, List<NotificationTypeResource> types, Long equipmentId) {
+    return new NotificationFilter(
+        toDomainSet(severities, NotificationSeverityResource::toDomain),
+        toDomainSet(types, NotificationTypeResource::toDomain),
+        equipmentId);
+  }
+
+  private static <R, D> Set<D> toDomainSet(List<R> values, Function<R, D> toDomain) {
+    if (values == null) {
+      return Set.of();
+    }
+    return values.stream().filter(Objects::nonNull).map(toDomain).collect(Collectors.toUnmodifiableSet());
+  }
+
+  private static BulkReadResultResource toBulkReadResultResource(BulkReadResult result) {
+    return new BulkReadResultResource(result.updatedCount(), result.unreadCount());
   }
 }
