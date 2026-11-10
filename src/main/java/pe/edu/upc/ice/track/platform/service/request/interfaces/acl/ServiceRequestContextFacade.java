@@ -12,6 +12,7 @@ import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ReviewR
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ServiceRequestRepository;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
@@ -219,6 +220,28 @@ public class ServiceRequestContextFacade {
         .filter(request -> request.getTechnicianId() != null)
         .map(request -> new InProgressServiceRequest(
             request.getId().serviceRequestId(), request.getTechnicianId().technicianProfileId()));
+  }
+
+  /**
+   * Counts the requests an owner created, per status.
+   *
+   * <p>Monitoring and Alerting uses it for the owner dashboard. Every status is answered, in
+   * lifecycle order, with a count of zero when no request holds it, so the caller reports the same
+   * statuses whatever the owner has.</p>
+   *
+   * @param ownerProfileId identifier of the owner profile
+   * @param siteId         restrict to the requests raised for a single site, may be {@code null}
+   * @return one count per status; every count is zero for a missing or non-positive owner identifier
+   */
+  @Transactional(readOnly = true)
+  public List<ServiceRequestStatusCount> countServiceRequestsByStatus(Long ownerProfileId, Long siteId) {
+    var ownerId = isValidIdentifier(ownerProfileId) ? new OwnerId(ownerProfileId) : null;
+    return Arrays.stream(ServiceStatus.values())
+        .map(status -> new ServiceRequestStatusCount(
+            status.name(),
+            status.isActive(),
+            ownerId == null ? 0L : serviceRequestRepository.countByOwnerIdAndStatus(ownerId, siteId, status)))
+        .toList();
   }
 
   private static boolean isValidIdentifier(Long identifier) {

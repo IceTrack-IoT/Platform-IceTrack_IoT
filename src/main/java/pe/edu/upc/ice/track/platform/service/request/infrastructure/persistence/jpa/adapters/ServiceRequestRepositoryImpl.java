@@ -151,6 +151,17 @@ public class ServiceRequestRepositoryImpl implements ServiceRequestRepository {
 
   // inherited javadoc
   @Override
+  public long countByOwnerIdAndStatus(OwnerId ownerId, Long siteId, ServiceStatus status) {
+    if (ownerId == null || status == null) {
+      return 0L;
+    }
+    return siteId == null
+        ? serviceRequestPersistenceRepository.countByOwnerIdAndStatus(ownerId.ownerId(), status)
+        : serviceRequestPersistenceRepository.countByOwnerIdAndSiteIdAndStatus(ownerId.ownerId(), siteId, status);
+  }
+
+  // inherited javadoc
+  @Override
   public boolean existsByEquipmentIdAndTechnicianIdAndStatusIn(
       EquipmentId equipmentId, TechnicianProfileId technicianId, Set<ServiceStatus> statuses) {
     if (equipmentId == null || technicianId == null || statuses == null || statuses.isEmpty()) {

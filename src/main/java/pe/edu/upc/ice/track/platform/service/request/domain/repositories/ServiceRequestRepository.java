@@ -96,6 +96,17 @@ public interface ServiceRequestRepository {
   long countCompletedByTechnicianIdInRange(TechnicianProfileId technicianId, Instant from, Instant to);
 
   /**
+   * Count the requests an owner created that currently hold a status, optionally only those raised
+   * for one site.
+   *
+   * @param ownerId the owner; required
+   * @param siteId  restrict to the requests raised for a single site, may be {@code null}
+   * @param status  the status to count; required
+   * @return the number of matching requests, {@code 0} when there are none
+   */
+  long countByOwnerIdAndStatus(OwnerId ownerId, Long siteId, ServiceStatus status);
+
+  /**
    * Check whether a technician is assigned to some request on a unit in one of the given statuses.
    *
    * @param equipmentId  the unit

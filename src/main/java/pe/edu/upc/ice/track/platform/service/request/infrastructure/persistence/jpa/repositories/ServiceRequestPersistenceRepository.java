@@ -115,6 +115,25 @@ public interface ServiceRequestPersistenceRepository
       Long technicianId, ServiceStatus status, Instant from, Instant to);
 
   /**
+   * Counts the requests an owner created that hold a status.
+   *
+   * @param ownerId the owner
+   * @param status  the status to match
+   * @return the number of matching rows
+   */
+  long countByOwnerIdAndStatus(Long ownerId, ServiceStatus status);
+
+  /**
+   * Counts the requests an owner created for a site that hold a status.
+   *
+   * @param ownerId the owner
+   * @param siteId  the site the requests were raised for
+   * @param status  the status to match
+   * @return the number of matching rows
+   */
+  long countByOwnerIdAndSiteIdAndStatus(Long ownerId, Long siteId, ServiceStatus status);
+
+  /**
    * Tells whether an intervention already carries a client identifier.
    *
    * @param clientGeneratedId the identifier
