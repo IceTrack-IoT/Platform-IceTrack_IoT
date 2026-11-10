@@ -5,7 +5,10 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.monitoring.application.internal.accesspolicies.EquipmentAccessPolicy;
 import pe.edu.upc.ice.track.platform.monitoring.application.queryservices.SensorReadingQueryService;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.SensorReading;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.queries.GetReadingBucketsByEquipmentQuery;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.queries.GetReadingsByEquipmentQuery;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.TelemetryBucket;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.TelemetryBucketSeries;
 import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadingRepository;
 
 import java.util.List;
@@ -34,5 +37,21 @@ public class SensorReadingQueryServiceImpl implements SensorReadingQueryService 
     }
     return Optional.of(sensorReadingRepository.findByEquipmentIdAndRecordedAtBetween(
         query.equipmentId(), query.from(), query.to()));
+  }
+
+  /**
+   * Reads the batches of the range and aggregates them into buckets, so the client receives a few
+   * hundred points instead of every batch.
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<TelemetryBucketSeries> handle(GetReadingBucketsByEquipmentQuery query) {
+    if (!equipmentAccessPolicy.canRead(query.equipmentId(), query.username(), query.callerRole())) {
+      return Optional.empty();
+    }
+    var size = query.effectiveBucketSize();
+    var readings = sensorReadingRepository.findByEquipmentIdAndRecordedAtBetween(
+        query.equipmentId(), query.from(), query.to());
+    return Optional.of(new TelemetryBucketSeries(size, TelemetryBucket.aggregate(readings, size)));
   }
 }

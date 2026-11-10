@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.monitoring.interfaces.rest;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -22,11 +23,15 @@ import org.springframework.web.bind.annotation.*;
 import pe.edu.upc.ice.track.platform.monitoring.application.commandservices.SensorReadingCommandService;
 import pe.edu.upc.ice.track.platform.monitoring.application.queryservices.SensorReadingQueryService;
 import pe.edu.upc.ice.track.platform.monitoring.application.results.ReadingIngestionOutcome;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.queries.GetReadingBucketsByEquipmentQuery;
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.queries.GetReadingsByEquipmentQuery;
+import pe.edu.upc.ice.track.platform.monitoring.domain.model.valueobjects.TelemetryBucketSize;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.RecordReadingBatchResource;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.SensorReadingResource;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.resources.TelemetryBucketResource;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.transform.RecordReadingBatchCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.transform.SensorReadingResourceFromEntityAssembler;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.rest.transform.TelemetryBucketResourceFromValueAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.AuthenticatedDevice;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
@@ -57,6 +62,12 @@ public class TelemetryController {
 
   /** Message the edge contract specifies for every rejected reading batch. */
   static final String INVALID_READING_PAYLOAD = "Invalid reading payload";
+
+  /** Response header stating the bucket width an aggregated history was built with. */
+  public static final String TELEMETRY_BUCKET_HEADER = "X-Telemetry-Bucket";
+
+  /** Value of the {@code bucket} parameter that lets the server pick the width. */
+  private static final String AUTO_BUCKET = "auto";
 
   private final SensorReadingCommandService sensorReadingCommandService;
   private final SensorReadingQueryService sensorReadingQueryService;
@@ -192,15 +203,25 @@ public class TelemetryController {
       summary = "Get reading history by equipment",
       description = "Retrieves the sensor readings recorded for an equipment within the given "
           + "date range. Owners read their own units; technicians read units they hold an "
-          + "active service request on. Any other unit answers 404.",
+          + "active service request on. Any other unit answers 404. Without bucket, every stored batch is "
+          + "returned as a SensorReadingResource. With bucket (1m, 5m, 15m, 1h, 6h or auto), the batches are "
+          + "aggregated into epoch-aligned buckets and returned as TelemetryBucketResponse items, oldest first; "
+          + "empty buckets are omitted, so a gap is a real gap in reporting. auto picks the smallest bucket that "
+          + "keeps the answer at or below max_points. The X-Telemetry-Bucket header states the bucket used.",
       security = @SecurityRequirement(name = "bearerAuth")
   )
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
-          description = "Readings found",
-          content = @Content(schema = @Schema(implementation = SensorReadingResource.class))
+          description = "Readings found: an array of SensorReadingResource, or of TelemetryBucketResponse when bucket "
+              + "is sent",
+          headers = @Header(name = TELEMETRY_BUCKET_HEADER, description = "The bucket used; sent only with bucket",
+              schema = @Schema(type = "string", example = "1h")),
+          content = @Content(schema = @Schema(oneOf = {SensorReadingResource[].class, TelemetryBucketResource[].class}))
       ),
+      @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR - unknown bucket, max_points outside 10 to "
+          + "2000, from after to, or a fixed bucket that would exceed 2000 points",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "404", description = "EQUIPMENT_NOT_FOUND - no such equipment is reachable by the caller",
           content = @Content(schema = @Schema(implementation = ErrorResource.class)))
@@ -215,14 +236,50 @@ public class TelemetryController {
       @RequestParam
       @Parameter(description = "Inclusive end of the range; ISO 8601 with Z or an explicit offset; a value without offset is rejected", example = "2026-11-09T05:00:00Z", required = true)
       Instant to,
+      @RequestParam(required = false)
+      @Parameter(description = "Aggregate into buckets of this width: 1m, 5m, 15m, 1h, 6h or auto; omitted, every batch "
+          + "is returned", example = "auto")
+      String bucket,
+      @RequestParam(name = "max_points", required = false)
+      @Parameter(description = "Most buckets auto may answer, 10 to 2000; default 500; used by auto only", example = "500")
+      Integer maxPoints,
       Authentication authentication) {
-    var query = new GetReadingsByEquipmentQuery(equipmentId, from, to, authentication.getName(),
-        CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication));
+    var callerRole = CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication);
+    if (bucket != null) {
+      var bucketQuery = new GetReadingBucketsByEquipmentQuery(
+          equipmentId, from, to, toBucketSize(bucket), maxPoints, authentication.getName(), callerRole);
+      return sensorReadingQueryService.handle(bucketQuery)
+          .<ResponseEntity<?>>map(series -> ResponseEntity.ok()
+              .header(TELEMETRY_BUCKET_HEADER, series.bucketSize().label())
+              .body(series.buckets().stream()
+                  .map(TelemetryBucketResourceFromValueAssembler::toResourceFromValue)
+                  .toList()))
+          .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+              ApplicationError.notFound("Equipment", String.valueOf(equipmentId))));
+    }
+    var query = new GetReadingsByEquipmentQuery(equipmentId, from, to, authentication.getName(), callerRole);
     return sensorReadingQueryService.handle(query)
         .<ResponseEntity<?>>map(readings -> ResponseEntity.ok(readings.stream()
             .map(SensorReadingResourceFromEntityAssembler::toResourceFromEntity)
             .toList()))
         .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
             ApplicationError.notFound("Equipment", String.valueOf(equipmentId))));
+  }
+
+  /**
+   * Reads the {@code bucket} parameter.
+   *
+   * @param bucket the parameter as sent
+   * @return the width, or {@code null} for {@code auto}
+   * @throws IllegalArgumentException for an unknown value, answered with 400 by
+   *                                  {@code GlobalExceptionHandler}
+   */
+  private static TelemetryBucketSize toBucketSize(String bucket) {
+    var value = bucket.strip();
+    if (AUTO_BUCKET.equalsIgnoreCase(value)) {
+      return null;
+    }
+    return TelemetryBucketSize.fromLabel(value).orElseThrow(() -> new IllegalArgumentException(
+        "Parameter 'bucket' must be one of [1m, 5m, 15m, 1h, 6h, auto]"));
   }
 }
