@@ -132,6 +132,10 @@ Defaults come from `src/main/resources/application.properties`:
 
 Path variables keep their names (`{equipmentId}`, `{siteId}`, ...): they only appear in the documentation, never on the wire.
 
+**Equipment directory and site names.** `GET /api/v1/assets/equipments/directory` (owner JWT) returns the identity of every unit of the caller, sorted by name and unpaged: `id`, `uid`, `name`, `equipment_type`, `status`, `site_id` and `site_name`. Optional `site_id` and `status` (comma-separated). It carries no telemetry, so it only changes when a unit or a site is created, renamed or changes status. Every `EquipmentResource` also carries the read-only `site_name`.
+
+**Conditional reads.** The equipment directory and `GET /api/v1/alert-policies` return an `ETag`, a digest of the answer. Sending it back in `If-None-Match` answers `304` with an empty body while the answer is unchanged. CORS exposes `ETag` and `Retry-After`, so a browser application can read both.
+
 **Errors.** Error answers carry the standard body `{"code": "...", "message": "...", "details": "..."}` (`ErrorResponse` in the OpenAPI document). The `401` of the edge routes is empty, and an endpoint documents its own body where it differs, such as the candidates of `422 ADDRESS_NOT_VERIFIED`. `message` is always present (a code without a message of its own falls back to a generic text), and validation `details` name the snake_case request properties (`Field min_celsius: ...`), sorted and without repetitions. The OpenAPI document declares the standard body for these codes on every operation, without per-method repetition:
 
 | Code | Documented on |
@@ -181,11 +185,20 @@ All endpoints live under `/api/v1/authentication`. Errors use the standard `{cod
 
 The actor is always the authenticated caller (IAM user id). `reason` is mandatory, at most 500 characters; `evidence` is optional, at most 1000. A missing or blank reason answers `400 VALIDATION_ERROR`. A transition the status forbids answers `409 INVALID_STATUS_TRANSITION`; an alert the caller does not own answers `404 ALERT_NOT_FOUND`. An alert resolved automatically, because readings returned within range, has `resolved_by: null`. Dismissed alerts are excluded from the thermal excursion report figures.
 
+**Owner-wide reads** (owner JWT). They answer for every unit of the caller at once, so a client never asks unit by unit; a `site_id` or `equipment_id` filter that is not the caller's answers `404`:
+
+| Endpoint | Answers |
+|---|---|
+| `GET /api/v1/alerts` | The alerts of every unit, active or closed, paged (`{content, page, size, total_elements, total_pages}`), newest first. Filters: `status`, `equipment_id`, `site_id`, `type`, `severity` (comma-separated where plural), `opened_from`, `opened_to`. `page` defaults to `0`, `size` to `20`, capped at `100` |
+| `GET /api/v1/alert-policies` | The policy applicable to each unit: `{equipment_id, source, policy}`, `source` being `EQUIPMENT` or `DEFAULT`. Optional `equipment_id` list of at most 100; units of another owner are left out, not refused. Conditional (`ETag` / `304`) |
+| `GET /api/v1/dashboard/summary` | The dashboard totals: sites, units per status, units `reporting` / `silent` / `never_reported` (judged by the server clock against each unit's offline window), active alerts per status and severity, service requests per status and linked devices. Optional `site_id` |
+
 Thermal excursion alerts are opened only by the edge gateway's `THERMAL_EXCURSION_DETECTED` event (see [Edge configuration, events and grants](#edge-configuration-events-and-grants)), with severity `CRITICAL`, never by a single reading batch. Every alert response also carries the triggering reading (`triggering_reading_id`, `triggering_temperature`, `triggering_recorded_at`) and `total_duration_seconds` once closed.
 
 **Notifications** (`/api/v1/notifications`, the recipient is always the authenticated caller, owner or technician):
 
 - `GET /api/v1/notifications?page=0&size=20&unread_only=false` returns `{items, page, size, total_elements, total_pages}`, most recent first. Dismissed notifications are never listed. `size` defaults to `20` and is capped at `100`; a negative `page` or a `size` below `1` answers `400`.
+- Every notification carries `created_at`, when it was raised, and `service_request_id` when it is about a service request (assignment, rejection, cancellation, or a maintenance window linked to a request), `null` otherwise. Notifications stored before `created_at` existed carry the moment the column was added.
 - `GET /api/v1/notifications/unread-count` returns `{"unread_count": 7}`: notifications neither read nor dismissed.
 - `PUT`/`DELETE /api/v1/notifications/device-tokens` register or remove the caller's FCM token; `403` only for an account with neither an owner nor a technician profile.
 
@@ -221,6 +234,9 @@ The edge endpoints are `POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`
 | Rotate key | `POST /{deviceId}/rotate-api-key` | `200` with a new key; the old one stops working. Also how a `REVOKED` device resumes |
 | Revoke | `PUT /{deviceId}/status` `{"new_status": "REVOKED"}` | Key invalidated immediately; device stays linked to its equipment |
 | Unpair | `POST /{deviceId}/unpair` | Equipment link and key cleared; both the board and the equipment can be paired again |
+| List | `GET /api/v1/devices` | Every device linked (paired or revoked) to the caller's units, ordered by `device_uid`. Optional `equipment_id`, `site_id`, `status` (comma-separated) and `search` (uid or board model); `page` and `size` together return `{content, page, size, total_elements, total_pages}`. A site or unit that is not the caller's answers `404` |
+
+Every device response carries `paired_equipment_name` and `paired_site_id`, both `null` when unpaired.
 
 Statuses are `UNPAIRED`, `PAIRED` and `REVOKED`. Keys are stored only as SHA-256 digests (unique index on `devices.api_key_digest`).
 
@@ -382,6 +398,8 @@ An alert update is sent when an alert opens and on every later transition, manua
 The projection only covers events stored from this version on; completions and reviews recorded before it are not back-filled.
 
 **Public technician profile** (`GET /api/v1/profiles/technicians/{technicianId}/public`, owner JWT): `id`, `full_name`, `speciality`, `certification_number`, `completed_services`, `average_rating` and `rating_available` (`false` while `average_rating` is `null`). Email, phone and address are never included. Unknown technician: `404`.
+
+**Public technician directory** (`GET /api/v1/profiles/technicians/public`, owner JWT): the same public profile for every technician, one page at a time (`{content, page, size, total_elements, total_pages}`). Optional `search` (name or speciality), `speciality` (exact), `min_rating` (0 to 5; leaves out technicians not rated yet) and `sort` (`name`, `rating` or `completed_services`; default `name`). `page` defaults to `0`, `size` to `20` and is capped at `100`.
 
 ## Run locally with Docker
 
