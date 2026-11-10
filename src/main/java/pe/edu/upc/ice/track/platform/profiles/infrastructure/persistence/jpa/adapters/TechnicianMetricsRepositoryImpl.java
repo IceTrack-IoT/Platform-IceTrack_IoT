@@ -12,6 +12,8 @@ import pe.edu.upc.ice.track.platform.profiles.infrastructure.persistence.jpa.rep
 import pe.edu.upc.ice.track.platform.profiles.infrastructure.persistence.jpa.repositories.TechnicianMetricsProjectionPersistenceRepository;
 import pe.edu.upc.ice.track.platform.profiles.infrastructure.persistence.jpa.repositories.TechnicianMetricsReviewScorePersistenceRepository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -44,6 +46,16 @@ public class TechnicianMetricsRepositoryImpl implements TechnicianMetricsReposit
       return Optional.empty();
     }
     return metricsRepository.findById(technicianProfileId).map(TechnicianMetricsRepositoryImpl::toDomain);
+  }
+
+  @Override
+  public List<TechnicianMetrics> findByTechnicianProfileIds(Collection<Long> technicianProfileIds) {
+    if (technicianProfileIds == null || technicianProfileIds.isEmpty()) {
+      return List.of();
+    }
+    return metricsRepository.findAllById(technicianProfileIds).stream()
+        .map(TechnicianMetricsRepositoryImpl::toDomain)
+        .toList();
   }
 
   @Override

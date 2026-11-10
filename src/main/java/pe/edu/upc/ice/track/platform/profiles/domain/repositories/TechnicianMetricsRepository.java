@@ -3,6 +3,8 @@ package pe.edu.upc.ice.track.platform.profiles.domain.repositories;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.readmodels.ProjectedReviewScore;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.readmodels.TechnicianMetrics;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -16,6 +18,15 @@ public interface TechnicianMetricsRepository {
    * @return the technician's metrics, or empty when nothing was projected for it yet
    */
   Optional<TechnicianMetrics> findByTechnicianProfileId(Long technicianProfileId);
+
+  /**
+   * Reads the metrics of several technicians at once.
+   *
+   * @param technicianProfileIds the technicians; empty matches nothing
+   * @return the metrics projected so far for those technicians; a technician nothing was projected
+   *         for yet contributes none
+   */
+  List<TechnicianMetrics> findByTechnicianProfileIds(Collection<Long> technicianProfileIds);
 
   /**
    * Persists a technician's metrics, version-checked.

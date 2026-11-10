@@ -1,7 +1,9 @@
 package pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform;
 
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.TechnicianProfile;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.readmodels.TechnicianDirectoryPage;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.readmodels.TechnicianMetrics;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.PagedTechnicianPublicProfileResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.TechnicianPublicProfileResource;
 
 import java.util.Optional;
@@ -34,5 +36,22 @@ public final class TechnicianPublicProfileResourceFromEntityAssembler {
         metrics.map(TechnicianMetrics::getCompletedServicesCount).orElse(0),
         averageRating,
         averageRating != null);
+  }
+
+  /**
+   * Converts a {@link TechnicianDirectoryPage} into its outbound paged resource.
+   *
+   * @param page the page to convert
+   * @return the {@link PagedTechnicianPublicProfileResource} resource
+   */
+  public static PagedTechnicianPublicProfileResource toPagedResourceFromPage(TechnicianDirectoryPage page) {
+    return new PagedTechnicianPublicProfileResource(
+        page.content().stream()
+            .map(entry -> toResourceFromEntity(entry.profile(), entry.findMetrics()))
+            .toList(),
+        page.page(),
+        page.size(),
+        page.totalElements(),
+        page.totalPages());
   }
 }

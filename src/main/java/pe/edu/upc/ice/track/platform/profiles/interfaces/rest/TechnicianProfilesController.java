@@ -20,16 +20,20 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.TechnicianCommandService;
 import pe.edu.upc.ice.track.platform.profiles.application.queryservices.TechnicianQueryService;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetAllTechniciansQuery;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetPublicTechnicianDirectoryQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianByUserIdQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetTechnicianMetricsQuery;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.TechnicianProfile;
+import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.TechnicianDirectorySort;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.ProfileAccessEvaluator;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.ProfileView;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.PagedTechnicianPublicProfileResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.TechnicianProfileResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.TechnicianPublicProfileResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateTechnicianResource;
@@ -43,6 +47,7 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorRespo
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -110,6 +115,67 @@ public class TechnicianProfilesController {
         .flatMap(Optional::stream)
         .toList();
     return ResponseEntity.ok(technicianResources);
+  }
+
+  /**
+   * Get one page of the public technician directory
+   *
+   * <p>The public profile of every technician, with its statistics, in one paged read, so an owner
+   * choosing whom to assign work to does not ask technician by technician. Personal data - email,
+   * phone, home address - is never part of it.</p>
+   *
+   * @param search Case-insensitive text matched against the full name or the speciality; optional
+   * @param speciality Restrict to technicians of exactly this speciality; optional
+   * @param minRating Restrict to technicians rated at least this much, sent as {@code min_rating}; optional
+   * @param sort {@code name}, {@code rating} or {@code completed_services}; defaults to {@code name}
+   * @param page Zero-based page index; defaults to 0
+   * @param size Page size, capped at 100; defaults to 20
+   * @return A {@link PagedTechnicianPublicProfileResource}
+   */
+  @GetMapping("/public")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(
+      summary = "Get the public technician directory",
+      description = "Lists the public profile of the technicians - name, speciality, certification number, "
+          + "completed_services and average_rating - one page at a time. Optionally searched by name or "
+          + "speciality, filtered by an exact speciality and by a minimum rating, which leaves out technicians "
+          + "not rated yet, and ordered by name, by rating (best first, unrated last) or by completed services "
+          + "(most first). Email, phone and address are never included. A size above 100 is capped to 100.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Technicians found",
+          content = @Content(schema = @Schema(implementation = PagedTechnicianPublicProfileResource.class))
+      ),
+      @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR - unknown sort, min_rating outside 0 to 5, "
+          + "negative page or size below 1"),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not an owner")
+  })
+  public ResponseEntity<PagedTechnicianPublicProfileResource> getPublicTechnicianDirectory(
+      @RequestParam(required = false)
+      @Parameter(description = "Case-insensitive search matching the full name or the speciality", example = "jane")
+      String search,
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to technicians of exactly this speciality", example = "Refrigeration")
+      String speciality,
+      @RequestParam(name = "min_rating", required = false)
+      @Parameter(description = "Restrict to technicians rated at least this much, from 0 to 5", example = "4")
+      Double minRating,
+      @RequestParam(required = false)
+      @Parameter(description = "Order of the directory: name, rating or completed_services", example = "rating")
+      String sort,
+      @RequestParam(defaultValue = "0")
+      @Parameter(description = "Zero-based page index", example = "0")
+      Integer page,
+      @RequestParam(defaultValue = "20")
+      @Parameter(description = "Page size, capped at 100", example = "20")
+      Integer size
+  ) {
+    var query = new GetPublicTechnicianDirectoryQuery(search, speciality, minRating, toDirectorySort(sort), page, size);
+    return ResponseEntity.ok(
+        TechnicianPublicProfileResourceFromEntityAssembler.toPagedResourceFromPage(technicianQueryService.handle(query)));
   }
 
   /**
@@ -217,6 +283,26 @@ public class TechnicianProfilesController {
         .<ResponseEntity<?>>map(ResponseEntity::ok)
         .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
             ApplicationError.notFound(TECHNICIAN_RESOURCE, "user " + userId)));
+  }
+
+  /**
+   * Reads the {@code sort} parameter of the public directory.
+   *
+   * @throws IllegalArgumentException for a value other than {@code name}, {@code rating} or
+   *                                  {@code completed_services}, answered with 400 by
+   *                                  {@code GlobalExceptionHandler}
+   */
+  private static TechnicianDirectorySort toDirectorySort(String sort) {
+    if (sort == null || sort.isBlank()) {
+      return TechnicianDirectorySort.NAME;
+    }
+    return switch (sort.strip().toLowerCase(Locale.ROOT)) {
+      case "name" -> TechnicianDirectorySort.NAME;
+      case "rating" -> TechnicianDirectorySort.RATING;
+      case "completed_services" -> TechnicianDirectorySort.COMPLETED_SERVICES;
+      default -> throw new IllegalArgumentException(
+          "Parameter 'sort' must be one of [name, rating, completed_services]");
+    };
   }
 
   /**
