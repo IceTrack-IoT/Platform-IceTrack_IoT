@@ -2,7 +2,9 @@ package pe.edu.upc.ice.track.platform.shared.interfaces.rest;
 
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.core.ResolvableType;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -21,6 +23,7 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorRespo
 import java.sql.SQLException;
 import java.text.MessageFormat;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
 
@@ -77,7 +80,8 @@ public class GlobalExceptionHandler {
    * <p>Without this handler the conversion failure would fall into the generic
    * {@link RuntimeException} handler and be rendered as a 500, although the request is what is
    * wrong. For an enum parameter the accepted constants are listed, so a client can correct the
-   * value without reading the API documentation.</p>
+   * value without reading the API documentation. That holds for a multi-value parameter too, such
+   * as {@code ?status=OPEN,ON}, whose declared type is a collection of the enum.</p>
    *
    * @param ex the type mismatch raised while binding the parameter
    * @return error response with BAD_REQUEST status
@@ -85,10 +89,10 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(MethodArgumentTypeMismatchException.class)
   public ResponseEntity<?> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException ex) {
     var parameterName = ex.getName();
-    var requiredType = ex.getRequiredType();
+    var enumType = acceptedEnumType(ex);
     String reason;
-    if (requiredType != null && requiredType.isEnum()) {
-      var acceptedValues = Arrays.toString(requiredType.getEnumConstants());
+    if (enumType != null) {
+      var acceptedValues = Arrays.toString(enumType.getEnumConstants());
       reason = resolveMessageOrDefault(
           "validation.request.parameter.enum",
           "Parameter '%s' must be one of %s".formatted(parameterName, acceptedValues),
@@ -273,6 +277,28 @@ public class GlobalExceptionHandler {
     return ex instanceof DuplicateKeyException
         || (ex.getMostSpecificCause() instanceof SQLException sqlException
             && UNIQUE_VIOLATION_SQL_STATE.equals(sqlException.getSQLState()));
+  }
+
+  /**
+   * Finds the enum a mismatched parameter accepts: its declared type, or the element type of the
+   * collection it is declared as.
+   *
+   * @param ex the type mismatch raised while binding the parameter
+   * @return the enum type, or {@code null} when the parameter is not an enum nor a collection of one
+   */
+  private static @Nullable Class<?> acceptedEnumType(MethodArgumentTypeMismatchException ex) {
+    var requiredType = ex.getRequiredType();
+    if (requiredType == null) {
+      return null;
+    }
+    if (requiredType.isEnum()) {
+      return requiredType;
+    }
+    if (Collection.class.isAssignableFrom(requiredType)) {
+      var elementType = ResolvableType.forMethodParameter(ex.getParameter()).asCollection().resolveGeneric(0);
+      return elementType != null && elementType.isEnum() ? elementType : null;
+    }
+    return null;
   }
 
   private String resolveMessageOrDefault(String key, String defaultValue, Object... args) {

@@ -154,6 +154,10 @@ public class WebSecurityConfiguration {
       cors.setAllowedOrigins(List.of("*"));
       cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE"));
       cors.setAllowedHeaders(List.of("*"));
+      // Without this a browser hides both headers from the web application: ETag is what a
+      // conditional read sends back in If-None-Match, Retry-After is how long to wait after a 429
+      // or a 503.
+      cors.setExposedHeaders(List.of("ETag", "Retry-After"));
       return cors;
     }));
     http.csrf(AbstractHttpConfigurer::disable)
