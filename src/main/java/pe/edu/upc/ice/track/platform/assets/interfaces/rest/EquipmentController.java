@@ -27,8 +27,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.EquipmentCommandService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
+import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentConnectivityQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentDirectoryQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ChangeStatusResource;
@@ -137,7 +139,7 @@ public class EquipmentController {
     var command = RegisterEquipmentCommandFromResourceAssembler.toCommandFromResource(authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
-        EquipmentResourceFromEntityAssembler::toResourceFromEntity,
+        this::toResource,
         HttpStatus.CREATED);
   }
 
@@ -202,11 +204,13 @@ public class EquipmentController {
         page,
         size);
     var result = equipmentQueryService.handle(query);
+    var connectivity = equipmentQueryService.handle(new GetEquipmentConnectivityQuery(result.content()));
     if (query.isPaged()) {
-      return ResponseEntity.ok(EquipmentResourceFromEntityAssembler.toPagedResourceFromPage(result));
+      return ResponseEntity.ok(EquipmentResourceFromEntityAssembler.toPagedResourceFromPage(result, connectivity));
     }
     return ResponseEntity.ok(result.content().stream()
-        .map(EquipmentResourceFromEntityAssembler::toResourceFromEntity)
+        .map(unit -> EquipmentResourceFromEntityAssembler.toResourceFromEntity(
+            unit, connectivity.get(unit.getEquipmentId())))
         .toList());
   }
 
@@ -297,7 +301,7 @@ public class EquipmentController {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.notFound(EQUIPMENT_RESOURCE, String.valueOf(equipmentId)));
     }
-    return ResponseEntity.ok(EquipmentResourceFromEntityAssembler.toResourceFromEntity(equipment.get()));
+    return ResponseEntity.ok(toResource(equipment.get()));
   }
 
   /**
@@ -336,7 +340,7 @@ public class EquipmentController {
         equipmentId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
-        EquipmentResourceFromEntityAssembler::toResourceFromEntity,
+        this::toResource,
         HttpStatus.OK);
   }
 
@@ -378,7 +382,7 @@ public class EquipmentController {
         equipmentId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
-        EquipmentResourceFromEntityAssembler::toResourceFromEntity,
+        this::toResource,
         HttpStatus.OK);
   }
 
@@ -423,8 +427,20 @@ public class EquipmentController {
         equipmentId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
-        EquipmentResourceFromEntityAssembler::toResourceFromEntity,
+        this::toResource,
         HttpStatus.OK);
+  }
+
+  /**
+   * Converts one unit into its resource, with its connectivity evaluated now.
+   *
+   * @param equipment the unit, already scoped to the caller
+   * @return the resource
+   */
+  private EquipmentResource toResource(Equipment equipment) {
+    var connectivity = equipmentQueryService.handle(new GetEquipmentConnectivityQuery(List.of(equipment)));
+    return EquipmentResourceFromEntityAssembler.toResourceFromEntity(
+        equipment, connectivity.get(equipment.getEquipmentId()));
   }
 
   /**

@@ -186,9 +186,14 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
       return false;
     }
     var unit = equipment.get();
-    if (!unit.enterMaintenance()) {
+    var entered = unit.enterMaintenance();
+    if (!entered) {
       log.info("Equipment {} stays {} while maintenance window {} is open",
           command.equipmentId(), unit.getStatus(), command.maintenanceWindowId());
+      // The status stays, but the unit is now covered by the window, which has to be stored.
+      if (unit.hasPendingConnectivityChange()) {
+        equipmentRepository.save(unit);
+      }
       return false;
     }
     equipmentRepository.save(unit);
@@ -211,6 +216,10 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
     if (!unit.leaveMaintenance()) {
       log.info("Equipment {} keeps status {} after maintenance window {} closed",
           command.equipmentId(), unit.getStatus(), command.maintenanceWindowId());
+      // The status stays, but the window no longer covers the unit, which has to be stored.
+      if (unit.hasPendingConnectivityChange()) {
+        equipmentRepository.save(unit);
+      }
       return false;
     }
     equipmentRepository.save(unit);
@@ -230,7 +239,7 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
       return false;
     }
     var unit = equipment.get();
-    if (!unit.recordReading(command.temperatureCelsius(), command.recordedAt())) {
+    if (!unit.recordReading(command.temperatureCelsius(), command.recordedAt(), command.receivedAt())) {
       log.debug("Reading of equipment {} taken at {} is older than its latest one, taken at {}",
           command.equipmentId(), command.recordedAt(), unit.getLastReadingAt());
     }

@@ -139,7 +139,7 @@ public class SensorReadingCommandServiceImpl implements SensorReadingCommandServ
   private void refreshConnectivity(SensorReading reading) {
     var equipmentId = reading.getEquipmentId().equipmentId();
     externalAssetManagementService.recordEquipmentReading(
-        equipmentId, reading.getAvgTemperature().celsius(), reading.getRecordedAt());
+        equipmentId, reading.getAvgTemperature().celsius(), reading.getRecordedAt(), reading.getReceivedAt());
     externalDeviceService.recordDeviceActivity(reading.getDeviceId(), reading.getReceivedAt());
     alertRepository.findOpenAlertByEquipmentIdAndType(equipmentId, AlertType.DEVICE_OFFLINE)
         .ifPresent(offlineAlert -> {

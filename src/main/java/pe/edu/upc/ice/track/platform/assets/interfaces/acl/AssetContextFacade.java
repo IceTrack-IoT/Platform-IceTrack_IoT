@@ -14,7 +14,9 @@ import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -239,6 +241,29 @@ public class AssetContextFacade {
   }
 
   /**
+   * Returns the name of every site of an owner, by site identifier.
+   *
+   * <p>Service Requests calls this to name the site of each request in a listing with one read per
+   * owner rather than one per request.</p>
+   *
+   * @param ownerId identifier of the owner
+   * @return the site names, empty when the owner is {@code null} or has no site
+   */
+  @Transactional(readOnly = true)
+  public Map<Long, String> fetchSiteNamesByOwner(Long ownerId) {
+    if (ownerId == null) {
+      return Map.of();
+    }
+    var names = new HashMap<Long, String>();
+    for (var site : siteRepository.findByOwnerId(ownerId)) {
+      if (site.getSiteId() != null && site.getName() != null) {
+        names.put(site.getSiteId(), site.getName());
+      }
+    }
+    return Map.copyOf(names);
+  }
+
+  /**
    * Counts the sites of an owner.
    *
    * @param ownerId identifier of the owner
@@ -288,15 +313,18 @@ public class AssetContextFacade {
    * @param equipmentId        identifier of the equipment
    * @param temperatureCelsius the temperature the batch reports, may be {@code null}
    * @param recordedAt         when the batch was taken
+   * @param receivedAt         when the platform received the batch, by the server clock; silence is
+   *                           measured from it
    * @return {@code true} when the unit exists and was updated; {@code false} when an identifier or
    *         the instant is {@code null}, or the unit does not exist
    */
-  public boolean recordEquipmentReading(Long equipmentId, Double temperatureCelsius, Instant recordedAt) {
+  public boolean recordEquipmentReading(
+      Long equipmentId, Double temperatureCelsius, Instant recordedAt, Instant receivedAt) {
     if (equipmentId == null || recordedAt == null) {
       return false;
     }
     return equipmentCommandService.handle(
-        new RecordEquipmentReadingCommand(equipmentId, temperatureCelsius, recordedAt));
+        new RecordEquipmentReadingCommand(equipmentId, temperatureCelsius, recordedAt, receivedAt));
   }
 
   /**

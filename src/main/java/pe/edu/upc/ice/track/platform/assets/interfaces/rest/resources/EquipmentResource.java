@@ -15,6 +15,9 @@ import java.time.Instant;
  * <p>{@code site_name} is read-only too: it is the name of the site at the time of the read, there
  * so a client can show where a unit is installed without also listing the sites. A site is renamed
  * through the site endpoints.</p>
+ *
+ * <p>{@code connectivity} is evaluated by the server on every read, from the server arrival time of
+ * the unit's latest batch. It supersedes {@code online}, which is kept for compatibility.</p>
  */
 @Schema(
     name = "EquipmentResponse",
@@ -45,7 +48,9 @@ public record EquipmentResource(
     @Schema(description = "Current lifecycle status", example = "ACTIVE")
     StatusEquipmentResource status,
 
-    @Schema(description = "Whether the unit is reporting: true once a reading batch is stored; false before the first one, after offline detection and while DEACTIVATED", example = "true")
+    @Schema(description = "Deprecated in favor of connectivity.state. Whether the unit is reporting: true once a "
+        + "reading batch is stored; false before the first one, after offline detection and while DEACTIVATED",
+        example = "true", deprecated = true)
     boolean online,
 
     @Schema(description = "Lowest acceptable temperature in Celsius", example = "2.0")
@@ -73,6 +78,10 @@ public record EquipmentResource(
         description = "Version of the configuration the unit's edge gateway enforces; incremented whenever "
             + "the threshold, the alert policy or the technician grants of the unit change",
         example = "3")
-    Integer configVersion
+    Integer configVersion,
+
+    @Schema(description = "Connectivity evaluated by the server at read time; read-only",
+        accessMode = Schema.AccessMode.READ_ONLY)
+    EquipmentConnectivityResource connectivity
 ) {
 }

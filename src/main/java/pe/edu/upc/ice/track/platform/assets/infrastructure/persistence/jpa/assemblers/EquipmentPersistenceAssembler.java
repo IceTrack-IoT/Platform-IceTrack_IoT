@@ -40,7 +40,9 @@ public final class EquipmentPersistenceAssembler {
         entity.getLastReadingAt(),
         entity.getLastKnownTemperature(),
         entity.getConfigVersion(),
-        entity.getStatusBeforeMaintenance());
+        entity.getStatusBeforeMaintenance(),
+        entity.getLastReceivedAt(),
+        entity.isUnderMaintenance());
   }
 
   /**
@@ -69,6 +71,8 @@ public final class EquipmentPersistenceAssembler {
     // Only used on insert: the column is not updatable, see EquipmentPersistenceEntity.
     entity.setConfigVersion(equipment.getConfigVersion());
     entity.setStatusBeforeMaintenance(equipment.getStatusBeforeMaintenance());
+    entity.setLastReceivedAt(equipment.getLastReceivedAt());
+    entity.setUnderMaintenance(equipment.isUnderMaintenance());
     return entity;
   }
 }

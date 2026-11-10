@@ -28,6 +28,7 @@ import pe.edu.upc.ice.track.platform.assets.application.commandservices.SiteComm
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.SiteQueryService;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentConnectivityQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSiteByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSitesByOwnerQuery;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.AddressNotVerifiedResource;
@@ -318,8 +319,10 @@ public class SiteController {
           ApplicationError.notFound(SITE_RESOURCE, String.valueOf(siteId)));
     }
     var equipment = equipmentQueryService.handle(new GetEquipmentBySiteQuery(siteId, username, callerRole));
+    var connectivity = equipmentQueryService.handle(new GetEquipmentConnectivityQuery(equipment));
     return ResponseEntity.ok(equipment.stream()
-        .map(EquipmentResourceFromEntityAssembler::toResourceFromEntity)
+        .map(unit -> EquipmentResourceFromEntityAssembler.toResourceFromEntity(
+            unit, connectivity.get(unit.getEquipmentId())))
         .toList());
   }
 

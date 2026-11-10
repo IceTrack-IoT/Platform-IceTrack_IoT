@@ -135,6 +135,22 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
   @Column(name = "status_before_maintenance", length = 50)
   private StatusEquipment statusBeforeMaintenance;
 
+  /**
+   * When the platform received the unit's latest reading batch, by the server clock. Written by the
+   * Monitoring and Alerting context; nullable because a unit may not have reported yet, or reported
+   * only before this column existed.
+   */
+  @Column(name = "last_received_at")
+  private Instant lastReceivedAt;
+
+  /**
+   * Whether a maintenance window currently covers the unit. The column default lets the schema update
+   * add it to a table that already holds rows.
+   */
+  @ColumnDefault("false")
+  @Column(name = "under_maintenance", nullable = false)
+  private boolean underMaintenance;
+
   public EquipmentPersistenceEntity() {
   }
 }

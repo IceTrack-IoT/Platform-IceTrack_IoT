@@ -4,12 +4,15 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentConnectivityQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentDirectoryQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentConnectivity;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentPage;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -58,4 +61,13 @@ public interface EquipmentQueryService {
    *         the caller's
    */
   Result<List<Equipment>, ApplicationError> handle(GetEquipmentDirectoryQuery query);
+
+  /**
+   * Evaluate the connectivity of units the caller already reached, at one server instant, reading the
+   * offline window of all of them in one call.
+   *
+   * @param query The {@link GetEquipmentConnectivityQuery} Query
+   * @return the connectivity of each unit, by unit identifier
+   */
+  Map<Long, EquipmentConnectivity> handle(GetEquipmentConnectivityQuery query);
 }

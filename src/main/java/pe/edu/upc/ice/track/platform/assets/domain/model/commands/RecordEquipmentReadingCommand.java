@@ -11,8 +11,11 @@ import java.time.Instant;
  * @param equipmentId        the unit; required
  * @param temperatureCelsius the temperature the batch reports, or {@code null} when unknown
  * @param recordedAt         when the batch was taken; required
+ * @param receivedAt         when the platform received the batch, by the server clock; {@code null}
+ *                           is read as now
  */
-public record RecordEquipmentReadingCommand(Long equipmentId, Double temperatureCelsius, Instant recordedAt) {
+public record RecordEquipmentReadingCommand(
+    Long equipmentId, Double temperatureCelsius, Instant recordedAt, Instant receivedAt) {
 
   /**
    * Validates the command.

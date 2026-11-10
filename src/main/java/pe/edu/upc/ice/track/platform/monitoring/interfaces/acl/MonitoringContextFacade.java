@@ -14,14 +14,20 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.SensorReadin
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * ACL facade that exposes Monitoring and Alerting capabilities to other bounded contexts.
  *
- * <p>Every parameter and return type is a primitive, a boxed primitive, a {@link String} or an array
- * of those; no monitoring aggregate, value object or repository is reachable from here.</p>
+ * <p>Every parameter and return type is a primitive, a boxed primitive, a {@link String}, or an
+ * array, collection or map of those; no monitoring aggregate, value object or repository is
+ * reachable from here.</p>
  *
  * <p>The range queries used by Reporting exclude what is not part of the unit's operating time:
  * alerts judged false alarms ({@code DISMISSED}) are ignored, and so is every interval a maintenance
@@ -77,6 +83,57 @@ public class MonitoringContextFacade {
         policy.getSustainedExcursionMinutes(),
         policy.getHysteresisMargin().celsius(),
         policy.getMissedSyncWindowsForOffline());
+  }
+
+  /**
+   * Returns how long each unit may stay silent before it counts as offline, the window the scheduled
+   * offline detection applies: one minute times the {@code missed_sync_windows_for_offline} of the
+   * policy applicable to the unit (its own, the stored default, or the built-in default).
+   *
+   * <p>Assets Management calls this to evaluate the connectivity of a whole page of units at once:
+   * the units' own policies are read in one statement, and the default once.</p>
+   *
+   * @param equipmentIds identifiers of the units; {@code null} entries are ignored
+   * @return the window in seconds, for every unit asked about
+   */
+  @Transactional(readOnly = true)
+  public Map<Long, Long> fetchOfflineSilenceSeconds(Collection<Long> equipmentIds) {
+    if (equipmentIds == null || equipmentIds.isEmpty()) {
+      return Map.of();
+    }
+    var ids = equipmentIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+    var ownPolicies = alertPolicyRepository.findByEquipmentIdIn(ids).stream()
+        .filter(policy -> policy.getEquipmentId() != null)
+        .collect(Collectors.toMap(policy -> policy.getEquipmentId().equipmentId(), policy -> policy, (first, second) -> first));
+    var fallback = ownPolicies.size() == ids.size()
+        ? null
+        : alertPolicyRepository.findDefaultPolicy().orElseGet(AlertPolicy::platformDefault);
+    var windows = new HashMap<Long, Long>();
+    for (var equipmentId : ids) {
+      var policy = ownPolicies.getOrDefault(equipmentId, fallback);
+      windows.put(equipmentId, policy.offlineSilence().toSeconds());
+    }
+    return Map.copyOf(windows);
+  }
+
+  /**
+   * Returns the unit an alert was raised on, whatever its status and owner.
+   *
+   * <p>Service Requests calls this to link a corrective request to the alert that prompted it; it
+   * checks itself that the unit belongs to the caller.</p>
+   *
+   * @param alertId identifier of the alert
+   * @return the unit identifier, or {@code 0L} when the identifier is {@code null} or no alert carries it
+   */
+  @Transactional(readOnly = true)
+  public Long fetchAlertEquipmentId(Long alertId) {
+    if (alertId == null) {
+      return NO_ALERT;
+    }
+    return alertRepository.findById(alertId).map(alert -> alert.getEquipmentId()).orElse(NO_ALERT);
   }
 
   /** @return the number of OPEN or ACKNOWLEDGED alerts currently active for the equipment. */

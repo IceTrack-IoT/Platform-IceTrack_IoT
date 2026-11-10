@@ -1,8 +1,10 @@
 package pe.edu.upc.ice.track.platform.assets.domain.model.aggregates;
 
 import lombok.Getter;
+import pe.edu.upc.ice.track.platform.assets.domain.model.events.EquipmentConnectivityChangedEvent;
 import pe.edu.upc.ice.track.platform.assets.domain.model.events.EquipmentRegisteredEvent;
 import pe.edu.upc.ice.track.platform.assets.domain.model.events.TemperatureThresholdUpdatedEvent;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.ConnectivityState;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.TemperatureThreshold;
@@ -86,6 +88,18 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   private final Integer configVersion;
 
   /**
+   * When the platform received the unit's latest reading batch, by the server clock; {@code null}
+   * while the unit never reported, or reported only before this value was recorded.
+   */
+  private Instant lastReceivedAt;
+
+  /**
+   * Whether a maintenance window currently covers the unit, whatever status it holds: a unit under
+   * repair keeps its status while a window is open, but is still being worked on.
+   */
+  private boolean underMaintenance;
+
+  /**
    * The status the unit held when a maintenance window moved it to {@code MAINTENANCE}, restored when
    * the window closes; {@code null} while no window holds the unit in maintenance.
    */
@@ -148,11 +162,15 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    *                              {@value #INITIAL_CONFIG_VERSION}
    * @param statusBeforeMaintenance the status to restore when the current maintenance window closes,
    *                              or {@code null} when no window holds the unit in maintenance
+   * @param lastReceivedAt        when the platform received the latest reading batch, may be
+   *                              {@code null}
+   * @param underMaintenance      whether a maintenance window currently covers the unit
    */
   public Equipment(Long equipmentId, Long siteId, String uid, String name, EquipmentType equipmentType,
                    StatusEquipment status, boolean online, TemperatureThreshold temperatureThreshold,
                    Integer reminderIntervalDays, Instant lastReadingAt, Double lastKnownTemperature,
-                   Integer configVersion, StatusEquipment statusBeforeMaintenance) {
+                   Integer configVersion, StatusEquipment statusBeforeMaintenance, Instant lastReceivedAt,
+                   boolean underMaintenance) {
     this.equipmentId = equipmentId;
     this.siteId = Objects.requireNonNull(siteId, "siteId must not be null");
     this.uid = validatedUid(uid);
@@ -167,6 +185,8 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     this.lastKnownTemperature = lastKnownTemperature;
     this.configVersion = configVersion == null ? INITIAL_CONFIG_VERSION : configVersion;
     this.statusBeforeMaintenance = statusBeforeMaintenance;
+    this.lastReceivedAt = lastReceivedAt;
+    this.underMaintenance = underMaintenance;
   }
 
   /**
@@ -225,6 +245,8 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
           "Illegal equipment status transition from %s to %s; allowed targets are %s"
               .formatted(this.status, target, this.status.allowedTransitions()));
     }
+    var before = storedConnectivityState();
+    var maintenanceBefore = isCoveredByMaintenanceWindow();
     this.status = target;
     // The owner moved the unit on purpose: the window that put it in maintenance no longer decides
     // which status it returns to.
@@ -234,6 +256,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     if (target == StatusEquipment.DEACTIVATED) {
       this.online = false;
     }
+    registerConnectivityChangeSince(before, maintenanceBefore);
   }
 
   /**
@@ -245,15 +268,23 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * {@code MAINTENANCE} is left untouched, so a status an owner set by hand is not taken over by the
    * window.</p>
    *
+   * <p>Whatever its status, the unit is flagged as covered by a maintenance window, so its silence is
+   * not mistaken for a fault while a technician works on it.</p>
+   *
    * @return {@code true} when the unit entered maintenance
    */
   public boolean enterMaintenance() {
-    if (status == StatusEquipment.MAINTENANCE || !status.canTransitionTo(StatusEquipment.MAINTENANCE)) {
-      return false;
+    var stateBefore = storedConnectivityState();
+    var maintenanceBefore = isCoveredByMaintenanceWindow();
+    this.underMaintenance = true;
+    var entered = false;
+    if (status != StatusEquipment.MAINTENANCE && status.canTransitionTo(StatusEquipment.MAINTENANCE)) {
+      this.statusBeforeMaintenance = status;
+      this.status = StatusEquipment.MAINTENANCE;
+      entered = true;
     }
-    this.statusBeforeMaintenance = status;
-    this.status = StatusEquipment.MAINTENANCE;
-    return true;
+    registerConnectivityChangeSince(stateBefore, maintenanceBefore);
+    return entered;
   }
 
   /**
@@ -263,15 +294,33 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * <p>Nothing changes when no window holds the unit in maintenance: the unit never entered it through
    * a window, or the owner has changed its status since.</p>
    *
+   * <p>The maintenance window flag is cleared in every case.</p>
+   *
    * @return {@code true} when the unit left maintenance
    */
   public boolean leaveMaintenance() {
-    if (status != StatusEquipment.MAINTENANCE || statusBeforeMaintenance == null) {
-      return false;
+    var stateBefore = storedConnectivityState();
+    var maintenanceBefore = isCoveredByMaintenanceWindow();
+    this.underMaintenance = false;
+    var left = false;
+    if (status == StatusEquipment.MAINTENANCE && statusBeforeMaintenance != null) {
+      this.status = statusBeforeMaintenance;
+      this.statusBeforeMaintenance = null;
+      left = true;
     }
-    this.status = statusBeforeMaintenance;
-    this.statusBeforeMaintenance = null;
-    return true;
+    registerConnectivityChangeSince(stateBefore, maintenanceBefore);
+    return left;
+  }
+
+  /**
+   * Tells whether a connectivity change is waiting to be saved and published, which is how the
+   * caller knows that opening or closing a maintenance window has something to write even when the
+   * status did not move.
+   *
+   * @return {@code true} when the unit registered a connectivity event not yet published
+   */
+  public boolean hasPendingConnectivityChange() {
+    return domainEvents().stream().anyMatch(EquipmentConnectivityChangedEvent.class::isInstance);
   }
 
   /**
@@ -286,15 +335,26 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * {@code lastKnownTemperature} only move forward: a batch taken before the one already recorded,
    * such as one the gateway delivers late from its offline buffer, keeps the newer values in place.</p>
    *
+   * <p>{@code lastReceivedAt}, the server arrival time silence is measured from, only moves forward
+   * too, whatever the batch's own timestamp: a late batch still proves the unit is reporting now.</p>
+   *
    * @param temperature the temperature that was read, in Celsius
    * @param readAt      when the reading was taken; required
+   * @param receivedAt  when the platform received the batch, by the server clock; {@code null} is read
+   *                    as now
    * @return {@code true} when the reading became the unit's latest one
    */
-  public boolean recordReading(Double temperature, Instant readAt) {
+  public boolean recordReading(Double temperature, Instant readAt, Instant receivedAt) {
     Objects.requireNonNull(readAt, "readAt must not be null");
+    var stateBefore = storedConnectivityState();
+    var arrival = receivedAt == null ? Instant.now() : receivedAt;
+    if (lastReceivedAt == null || arrival.isAfter(lastReceivedAt)) {
+      this.lastReceivedAt = arrival;
+    }
     if (status != StatusEquipment.DEACTIVATED) {
       this.online = true;
     }
+    registerConnectivityChangeSince(stateBefore, isCoveredByMaintenanceWindow());
     if (lastReadingAt != null && readAt.isBefore(lastReadingAt)) {
       return false;
     }
@@ -316,8 +376,68 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     if (!online) {
       return false;
     }
+    var stateBefore = storedConnectivityState();
     this.online = false;
+    registerConnectivityChangeSince(stateBefore, isCoveredByMaintenanceWindow());
     return true;
+  }
+
+  /**
+   * The server arrival time silence is measured from: {@code lastReceivedAt}, or, for a unit that
+   * last reported before arrival times were recorded, the time its latest batch was taken.
+   *
+   * @return the instant, or {@code null} when the unit never reported
+   */
+  public Instant lastArrivalAt() {
+    return lastReceivedAt != null ? lastReceivedAt : lastReadingAt;
+  }
+
+  /**
+   * Tells whether a maintenance window covers the unit. A unit a window moved to {@code MAINTENANCE}
+   * before the flag existed is recognized by the status it remembers to return to.
+   *
+   * @return {@code true} while a maintenance window is open on the unit
+   */
+  public boolean isCoveredByMaintenanceWindow() {
+    return underMaintenance || statusBeforeMaintenance != null;
+  }
+
+  /**
+   * The connectivity state the stored flags describe, without applying the offline window: the
+   * state offline detection and reading arrivals move the unit between. A connectivity read applies
+   * the window at read time instead, see {@code EquipmentConnectivity}.
+   *
+   * @return the stored state
+   */
+  public ConnectivityState storedConnectivityState() {
+    if (status == StatusEquipment.DEACTIVATED) {
+      return ConnectivityState.NOT_MONITORED;
+    }
+    if (lastArrivalAt() == null) {
+      return ConnectivityState.NEVER_REPORTED;
+    }
+    return online ? ConnectivityState.REPORTING : ConnectivityState.SILENT;
+  }
+
+  /**
+   * Registers an {@link EquipmentConnectivityChangedEvent} when the stored state or the maintenance
+   * coverage differs from what it was before the change being applied. A unit not persisted yet raises
+   * nothing.
+   *
+   * @param stateBefore       {@link #storedConnectivityState()} read before the change
+   * @param maintenanceBefore {@link #isCoveredByMaintenanceWindow()} read before the change
+   */
+  private void registerConnectivityChangeSince(ConnectivityState stateBefore, boolean maintenanceBefore) {
+    if (equipmentId == null) {
+      return;
+    }
+    var stateAfter = storedConnectivityState();
+    var maintenanceAfter = isCoveredByMaintenanceWindow();
+    if (stateAfter == stateBefore && maintenanceAfter == maintenanceBefore) {
+      return;
+    }
+    registerDomainEvent(new EquipmentConnectivityChangedEvent(
+        equipmentId, siteId, stateBefore, stateAfter, lastArrivalAt(), maintenanceAfter, Instant.now()));
   }
 
   /**

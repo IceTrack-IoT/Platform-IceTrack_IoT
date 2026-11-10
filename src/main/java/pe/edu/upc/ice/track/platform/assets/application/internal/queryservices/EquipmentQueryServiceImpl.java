@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.assets.application.internal.queryservices;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalMonitoringService;
 import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalServiceRequestService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
@@ -9,7 +10,9 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Equipment;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByIdQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentByOwnerQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentConnectivityQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentDirectoryQuery;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentConnectivity;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
@@ -17,8 +20,13 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentP
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Application service that resolves equipment read queries.
@@ -47,10 +55,14 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
 
   private static final String SITE_RESOURCE = "Site";
 
+  /** Offline window used when no policy answered for a unit: three one-minute synchronization windows. */
+  private static final Duration DEFAULT_OFFLINE_SILENCE = Duration.ofMinutes(3);
+
   private final EquipmentRepository equipmentRepository;
   private final SiteRepository siteRepository;
   private final AssetsExternalOwnerService assetsExternalOwnerService;
   private final AssetsExternalServiceRequestService assetsExternalServiceRequestService;
+  private final AssetsExternalMonitoringService assetsExternalMonitoringService;
 
   /**
    * Creates the query service with its dependencies.
@@ -60,16 +72,46 @@ public class EquipmentQueryServiceImpl implements EquipmentQueryService {
    * @param assetsExternalOwnerService outbound ACL service, used to resolve the caller to its owner
    * @param assetsExternalServiceRequestService outbound ACL service, used to check a technician's
    *                                            active assignments
+   * @param assetsExternalMonitoringService outbound ACL service, used to read the offline window of
+   *                                        the units whose connectivity is evaluated
    */
   public EquipmentQueryServiceImpl(
       EquipmentRepository equipmentRepository,
       SiteRepository siteRepository,
       AssetsExternalOwnerService assetsExternalOwnerService,
-      AssetsExternalServiceRequestService assetsExternalServiceRequestService) {
+      AssetsExternalServiceRequestService assetsExternalServiceRequestService,
+      AssetsExternalMonitoringService assetsExternalMonitoringService) {
     this.equipmentRepository = equipmentRepository;
     this.siteRepository = siteRepository;
     this.assetsExternalOwnerService = assetsExternalOwnerService;
     this.assetsExternalServiceRequestService = assetsExternalServiceRequestService;
+    this.assetsExternalMonitoringService = assetsExternalMonitoringService;
+  }
+
+  /**
+   * Evaluates the connectivity of the given units at one server instant.
+   *
+   * <p>The offline windows of every unit are read in one call; a unit the policy lookup somehow
+   * missed is judged with the built-in default of three one-minute synchronization windows.</p>
+   *
+   * @param query the units, already scoped to the caller
+   * @return the connectivity of each unit, by unit identifier
+   */
+  @Override
+  public Map<Long, EquipmentConnectivity> handle(GetEquipmentConnectivityQuery query) {
+    var units = query.equipment().stream().filter(unit -> unit.getEquipmentId() != null).toList();
+    if (units.isEmpty()) {
+      return Map.of();
+    }
+    var windows = assetsExternalMonitoringService.fetchOfflineSilence(
+        units.stream().map(Equipment::getEquipmentId).collect(Collectors.toSet()));
+    var now = Instant.now();
+    var connectivity = new HashMap<Long, EquipmentConnectivity>();
+    for (var unit : units) {
+      var window = windows.getOrDefault(unit.getEquipmentId(), DEFAULT_OFFLINE_SILENCE);
+      connectivity.put(unit.getEquipmentId(), EquipmentConnectivity.evaluate(unit, window, now));
+    }
+    return Map.copyOf(connectivity);
   }
 
   // inherited javadoc

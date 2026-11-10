@@ -74,10 +74,12 @@ public class ExternalAssetManagementService {
    * @param equipmentId        identifier of the equipment
    * @param temperatureCelsius the temperature the batch reports
    * @param recordedAt         when the batch was taken
+   * @param receivedAt         when the platform received the batch
    * @return {@code true} when the unit exists and was updated
    */
-  public boolean recordEquipmentReading(Long equipmentId, Double temperatureCelsius, Instant recordedAt) {
-    return assetContextFacade.recordEquipmentReading(equipmentId, temperatureCelsius, recordedAt);
+  public boolean recordEquipmentReading(
+      Long equipmentId, Double temperatureCelsius, Instant recordedAt, Instant receivedAt) {
+    return assetContextFacade.recordEquipmentReading(equipmentId, temperatureCelsius, recordedAt, receivedAt);
   }
 
   /**
