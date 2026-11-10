@@ -83,7 +83,8 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
         command.alertId(),
         buildAlertMessage(command),
         command.type(),
-        command.severity())));
+        command.severity(),
+        null)));
   }
 
   /**
@@ -93,14 +94,14 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
   @Override
   public List<Notification> handle(NotifyTechnicianAssignedCommand command) {
     var notifications = new ArrayList<Notification>();
-    notifications.add(deliver(command.technicianProfileId(), command.equipmentId(),
+    notifications.add(deliver(command.technicianProfileId(), command.equipmentId(), command.serviceRequestId(),
         NotificationType.SERVICE_REQUEST_UPDATE, NotificationSeverity.INFO,
         messageComposer.compose("notification.technician-assigned",
             command.serviceRequestId(), command.serviceType(), command.priority(), command.equipmentId(),
             command.siteId(), command.assignedAt())));
     var previous = command.previousTechnicianProfileId();
     if (previous != null && !previous.equals(command.technicianProfileId())) {
-      notifications.add(deliver(previous, command.equipmentId(),
+      notifications.add(deliver(previous, command.equipmentId(), command.serviceRequestId(),
           NotificationType.SERVICE_REQUEST_UPDATE, NotificationSeverity.INFO,
           messageComposer.compose("notification.technician-unassigned",
               command.serviceRequestId(), command.equipmentId())));
@@ -111,7 +112,7 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
   /** Tells the owner which technician rejected the request, and why. */
   @Override
   public Notification handle(NotifyServiceRequestRejectedCommand command) {
-    return deliver(command.ownerProfileId(), command.equipmentId(),
+    return deliver(command.ownerProfileId(), command.equipmentId(), command.serviceRequestId(),
         NotificationType.SERVICE_REQUEST_UPDATE, NotificationSeverity.WARNING,
         messageComposer.compose("notification.service-request-rejected",
             command.technicianProfileId(), command.serviceRequestId(), command.equipmentId(), command.reason()));
@@ -120,7 +121,7 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
   /** Tells the technician that was assigned that the owner canceled the request, and why. */
   @Override
   public Notification handle(NotifyServiceRequestCanceledCommand command) {
-    return deliver(command.technicianProfileId(), command.equipmentId(),
+    return deliver(command.technicianProfileId(), command.equipmentId(), command.serviceRequestId(),
         NotificationType.SERVICE_REQUEST_UPDATE, NotificationSeverity.WARNING,
         messageComposer.compose("notification.service-request-canceled",
             command.serviceRequestId(), command.equipmentId(), command.reason()));
@@ -141,13 +142,13 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
     }
     var origin = originLabel(command.origin());
     if (command.unlinked()) {
-      return Optional.of(deliver(owner.get(), command.equipmentId(),
+      return Optional.of(deliver(owner.get(), command.equipmentId(), null,
           NotificationType.UNLINKED_MAINTENANCE_WINDOW, NotificationSeverity.WARNING,
           messageComposer.compose("notification.maintenance-window-opened.unlinked",
               command.maintenanceWindowId(), command.equipmentId(), origin, command.startedAt(),
               command.expiresAt())));
     }
-    return Optional.of(deliver(owner.get(), command.equipmentId(),
+    return Optional.of(deliver(owner.get(), command.equipmentId(), command.serviceRequestId(),
         NotificationType.MAINTENANCE_WINDOW, NotificationSeverity.INFO,
         messageComposer.compose("notification.maintenance-window-opened",
             command.maintenanceWindowId(), command.equipmentId(), origin, command.startedAt(), command.expiresAt(),
@@ -170,7 +171,7 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
         : messageComposer.compose("notification.maintenance-window-closed",
             command.maintenanceWindowId(), command.equipmentId(), origin, command.endedAt(), command.closureReason(),
             command.serviceRequestId(), command.technicianProfileId());
-    return Optional.of(deliver(owner.get(), command.equipmentId(),
+    return Optional.of(deliver(owner.get(), command.equipmentId(), command.serviceRequestId(),
         NotificationType.MAINTENANCE_WINDOW, NotificationSeverity.INFO, message));
   }
 
@@ -205,8 +206,19 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
         .filter(notification -> notification.isAddressedTo(recipientUserId));
   }
 
-  private Notification deliver(Long recipientProfileId, Long equipmentId, NotificationType type,
-                              NotificationSeverity severity, String message) {
+  /**
+   * Creates a notification that has no alert as its source.
+   *
+   * @param recipientProfileId the owner or technician profile it is addressed to
+   * @param equipmentId        the unit it concerns, or {@code null}
+   * @param serviceRequestId   the service request it is about, or {@code null} when it concerns none
+   * @param type               the kind of notification
+   * @param severity           its urgency
+   * @param message            the text shown to the recipient
+   * @return the stored notification
+   */
+  private Notification deliver(Long recipientProfileId, Long equipmentId, Long serviceRequestId,
+                              NotificationType type, NotificationSeverity severity, String message) {
     return handle(new CreateNotificationCommand(
         recipientProfileId,
         equipmentId == null ? null : new EquipmentId(equipmentId),
@@ -214,7 +226,8 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
         null,
         message,
         type,
-        severity));
+        severity,
+        serviceRequestId));
   }
 
   private static String originLabel(String origin) {

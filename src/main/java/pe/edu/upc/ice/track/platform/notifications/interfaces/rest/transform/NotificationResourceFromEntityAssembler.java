@@ -18,10 +18,12 @@ public final class NotificationResourceFromEntityAssembler {
         notification.getEquipmentId() == null ? null : notification.getEquipmentId().equipmentId(),
         notification.getDeviceId() == null ? null : notification.getDeviceId().deviceId(),
         notification.getSourceAlertId() == null ? null : notification.getSourceAlertId().alertId(),
+        notification.getServiceRequestId(),
         notification.getMessage(),
         notification.getType().name(),
         notification.getSeverity().name(),
         notification.isRead(),
+        notification.getCreatedAt(),
         notification.getReadAt(),
         notification.getDismissedAt());
   }

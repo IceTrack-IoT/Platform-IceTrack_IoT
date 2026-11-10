@@ -17,8 +17,9 @@ import java.util.Optional;
 public class NotificationRepositoryImpl implements NotificationRepository {
 
   /**
-   * Most recent first. Notifications carry no creation timestamp, and identifiers are generated in
-   * insertion order, so the identifier is the creation order.
+   * Most recent first. Identifiers are generated in insertion order, so the identifier is the
+   * creation order; it is a total order too, which {@code created_at} alone is not, since
+   * notifications stored before that column existed share one value.
    */
   private static final Sort INBOX_ORDER = Sort.by(Sort.Direction.DESC, "id");
 

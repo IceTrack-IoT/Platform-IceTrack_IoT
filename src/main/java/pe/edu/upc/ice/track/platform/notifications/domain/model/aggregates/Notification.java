@@ -25,7 +25,12 @@ import java.util.Objects;
  *
  * <p>{@code sourceAlertId} is kept as a bare identifier, never as a reference to Monitoring's
  * {@code Alert} aggregate -- this context only ever imports primitives across the boundary,
- * the same discipline every other ACL in this platform follows.</p>
+ * the same discipline every other ACL in this platform follows. {@code serviceRequestId} follows
+ * the same rule towards Service Request Management: it names the request a notification is about,
+ * so a client can open that very request, and stays {@code null} for a notification about none.</p>
+ *
+ * <p>{@code createdAt} is when the notification was raised. It is set once, when the notification
+ * is created, and is what tells a recipient how recent a notification is.</p>
  */
 @Getter
 public class Notification extends AbstractDomainAggregateRoot<Notification> {
@@ -35,10 +40,12 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
   private EquipmentId equipmentId;
   private DeviceId deviceId;
   private AlertId sourceAlertId;
+  private final Long serviceRequestId;
   private final String message;
   private final NotificationType type;
   private final NotificationSeverity severity;
   private boolean isRead;
+  private Instant createdAt;
   private Instant readAt;
   private Instant dismissedAt;
 
@@ -54,24 +61,27 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
     this.equipmentId =command.equipmentId();
     this.deviceId = command.deviceId();
     this.sourceAlertId = command.sourceAlertId();
+    this.serviceRequestId = command.serviceRequestId();
     this.isRead = false;
+    this.createdAt = Instant.now();
   }
 
   /**
    * Rehydrates a {@code Notification} from persisted state, restoring every field exactly as
-   * stored -- including {@code isRead}, {@code readAt} and {@code dismissedAt}, which the
-   * creation constructor above cannot set. Used exclusively by
+   * stored -- including {@code createdAt}, {@code isRead}, {@code readAt} and {@code dismissedAt},
+   * which the creation constructor above cannot set. Used exclusively by
    * {@code NotificationPersistenceAssembler}; application and interface code must never call
    * this directly.
    */
   public static Notification rehydrate(
       Long id, Long recipientUserId, EquipmentId equipmentId, DeviceId deviceId, AlertId sourceAlertId,
-      String message, NotificationType type, NotificationSeverity severity,
-      boolean isRead, Instant readAt, Instant dismissedAt) {
-    var notification = new Notification(
-        new CreateNotificationCommand(recipientUserId, equipmentId, deviceId, sourceAlertId, message, type, severity));
+      Long serviceRequestId, String message, NotificationType type, NotificationSeverity severity,
+      boolean isRead, Instant createdAt, Instant readAt, Instant dismissedAt) {
+    var notification = new Notification(new CreateNotificationCommand(
+        recipientUserId, equipmentId, deviceId, sourceAlertId, message, type, severity, serviceRequestId));
     notification.id = id;
     notification.isRead = isRead;
+    notification.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
     notification.readAt = readAt;
     notification.dismissedAt = dismissedAt;
     return notification;
