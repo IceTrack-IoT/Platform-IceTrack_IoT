@@ -27,8 +27,9 @@ import java.util.function.Supplier;
  * owner cannot be resolved is streamed to nobody.</p>
  *
  * <p>Every event is written under the SSE event name {@value #TELEMETRY_UPDATE_EVENT}; its data
- * carries a {@code type} of {@code READING_RECORDED} or {@code ALERT_STATUS_CHANGED}. When no stream
- * is open on this instance, the owner is not even looked up.</p>
+ * carries a {@code type} of {@code READING_RECORDED} or {@code ALERT_STATUS_CHANGED}. When no owner
+ * is followed on this instance (no stream open, none closed within the replay window), the owner is
+ * not even looked up.</p>
  */
 @Component
 @Slf4j
@@ -81,7 +82,8 @@ public class TelemetryStreamEventDispatcher {
         log.debug("No owner resolved for equipment {}; telemetry update not streamed", equipmentId);
         return;
       }
-      if (telemetryStreamRegistry.streamCount(ownerProfileId.get()) == 0) {
+      // Followed also while the owner's browser is between two streams, so the update is kept for replay.
+      if (!telemetryStreamRegistry.isFollowed(ownerProfileId.get())) {
         return;
       }
       telemetryStreamRegistry.publish(ownerProfileId.get(), TELEMETRY_UPDATE_EVENT, payload.get());
