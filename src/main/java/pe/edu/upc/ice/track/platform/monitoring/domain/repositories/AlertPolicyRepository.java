@@ -2,6 +2,8 @@ package pe.edu.upc.ice.track.platform.monitoring.domain.repositories;
 
 import pe.edu.upc.ice.track.platform.monitoring.domain.model.aggregates.AlertPolicy;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -24,6 +26,13 @@ public interface AlertPolicyRepository {
    * @return  an {@link Optional} containing the policy if found, or empty if no policy is associated with the equipment
    */
   Optional<AlertPolicy> findByEquipmentId(Long equipmentId);
+
+  /**
+   *  Fetches the {@link AlertPolicy} of every unit, among the given ones, that has one of its own.
+   * @param equipmentIds the identifiers of the units; empty matches nothing
+   * @return  the policies bound to those units; a unit without a policy of its own contributes none
+   */
+  List<AlertPolicy> findByEquipmentIdIn(Collection<Long> equipmentIds);
 
   /** @return the platform-wide default policy, i.e. the one with a {@code null} equipmentId. */
   Optional<AlertPolicy> findDefaultPolicy();

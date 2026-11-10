@@ -10,8 +10,8 @@ import java.util.Optional;
 /**
  * Outbound service (the outbound half of the Anti-Corruption Layer between {@code monitoring} and
  * {@code assets}) through which the monitoring context retrieves the temperature threshold of an
- * equipment before evaluating an incoming reading, checks who owns a unit, and resolves the owner a
- * telemetry stream event must be delivered to.
+ * equipment before evaluating an incoming reading, checks who owns a unit or a site, lists the units
+ * of an owner, and resolves the owner a telemetry stream event must be delivered to.
  *
  * <p>This is the only class in {@code monitoring} that knows an {@code assets} context exists. It
  * talks to it exclusively through {@link AssetContextFacade}, whose whole signature is
@@ -95,5 +95,46 @@ public class ExternalAssetManagementService {
    */
   public List<Long> fetchOnlineEquipmentIds() {
     return assetContextFacade.fetchOnlineEquipmentIds();
+  }
+
+  /**
+   * @param siteId  identifier of the site
+   * @param ownerId identifier of the owner profile expected to own it
+   * @return {@code true} only when the site exists and belongs to that owner
+   */
+  public boolean isSiteOwnedBy(Long siteId, Long ownerId) {
+    return assetContextFacade.existsSiteForOwner(siteId, ownerId);
+  }
+
+  /**
+   * Lists the units of an owner. Monitoring keys its data by unit alone, so these units are what
+   * scopes an owner-wide read of alerts, policies or dashboard figures to the caller.
+   *
+   * @param ownerId identifier of the owner profile
+   * @param siteId  restrict to the units of a single site, may be {@code null}
+   * @return the units, empty when the owner is {@code null} or owns none there
+   */
+  public List<MonitoredEquipment> fetchEquipmentOwnedBy(Long ownerId, Long siteId) {
+    if (ownerId == null) {
+      return List.of();
+    }
+    return assetContextFacade.fetchEquipmentSummariesByOwner(ownerId, siteId).stream()
+        .map(unit -> new MonitoredEquipment(unit.equipmentId(), unit.status(), unit.lastReadingAt()))
+        .toList();
+  }
+
+  /**
+   * @param ownerId identifier of the owner profile
+   * @return the number of sites of that owner
+   */
+  public int countSitesOwnedBy(Long ownerId) {
+    return assetContextFacade.countSitesByOwner(ownerId);
+  }
+
+  /**
+   * @return the name of every lifecycle status a unit can hold, in declaration order
+   */
+  public List<String> fetchEquipmentStatusNames() {
+    return assetContextFacade.fetchEquipmentStatusNames();
   }
 }

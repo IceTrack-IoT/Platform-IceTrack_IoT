@@ -7,6 +7,8 @@ import pe.edu.upc.ice.track.platform.monitoring.domain.repositories.AlertPolicyR
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.assemblers.AlertPolicyPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.monitoring.infrastructure.persistence.jpa.repositories.AlertPolicyPersistenceRepository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -40,6 +42,16 @@ public class AlertPolicyRepositoryImpl implements AlertPolicyRepository {
   public Optional<AlertPolicy> findByEquipmentId(Long equipmentId) {
     return persistenceRepository.findByEquipmentId(equipmentId)
         .map(AlertPolicyPersistenceAssembler::toDomainFromPersistenceEntity);
+  }
+
+  @Override
+  public List<AlertPolicy> findByEquipmentIdIn(Collection<Long> equipmentIds) {
+    if (equipmentIds == null || equipmentIds.isEmpty()) {
+      return List.of();
+    }
+    return persistenceRepository.findByEquipmentIdIn(equipmentIds).stream()
+        .map(AlertPolicyPersistenceAssembler::toDomainFromPersistenceEntity)
+        .toList();
   }
 
   @Override

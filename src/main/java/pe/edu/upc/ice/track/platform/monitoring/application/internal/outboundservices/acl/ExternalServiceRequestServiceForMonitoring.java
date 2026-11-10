@@ -4,6 +4,8 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.acl.ServiceRequestContextFacade;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -44,5 +46,33 @@ public class ExternalServiceRequestServiceForMonitoring {
   public Optional<ServiceRequestAttribution> findInProgressServiceRequestAt(Long equipmentId, Instant instant) {
     return serviceRequestContextFacade.findInProgressServiceRequestAt(equipmentId, instant)
         .map(order -> new ServiceRequestAttribution(order.serviceRequestId(), order.technicianProfileId()));
+  }
+
+  /**
+   * Counts the service requests an owner created, per status, for the owner dashboard.
+   *
+   * @param ownerProfileId identifier of the owner profile
+   * @param siteId         restrict to the requests raised for a single site, may be {@code null}
+   * @return the totals, every status present
+   */
+  public ServiceRequestTotals countServiceRequests(Long ownerProfileId, Long siteId) {
+    var byStatus = new LinkedHashMap<String, Long>();
+    var active = 0L;
+    for (var statusCount : serviceRequestContextFacade.countServiceRequestsByStatus(ownerProfileId, siteId)) {
+      byStatus.put(statusCount.status(), statusCount.count());
+      if (statusCount.active()) {
+        active += statusCount.count();
+      }
+    }
+    return new ServiceRequestTotals(active, byStatus);
+  }
+
+  /**
+   * The service requests of an owner, counted, in this context's own terms.
+   *
+   * @param active   requests that are still open work
+   * @param byStatus requests per status name, in lifecycle order, every status present
+   */
+  public record ServiceRequestTotals(long active, Map<String, Long> byStatus) {
   }
 }
