@@ -24,12 +24,18 @@ import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+
 /**
  * ACL facade that exposes Profiles bounded context capabilities to other contexts.
  *
  * <p>This class <em>is</em> the published contract of the Anti-Corruption Layer of the
  * {@code profiles} context. Every parameter its public methods accept and every value they return
- * is a primitive, a boxed primitive or a {@link String}: no {@code Profile} aggregate, value object,
+ * is a primitive, a boxed primitive, a {@link String} or a collection or map of those: no
+ * {@code Profile} aggregate, value object,
  * factory, command, repository or JPA entity appears in its public signature. Callers depend on
  * this class alone and must never reach into {@code profiles.domain.*},
  * {@code profiles.application.*} or {@code profiles.infrastructure.*}.</p>
@@ -232,6 +238,30 @@ public class ProfilesContextFacade {
   public boolean isTechnicianEligibleForAssignment(Long technicianProfileId) {
     if (technicianProfileId == null) return false;
     return technicianProfileRepository.findById(technicianProfileId).isPresent();
+  }
+
+  /**
+   * Fetches the full names of technician profiles, by profile identifier.
+   *
+   * <p>Service Requests calls this to name the technician of each request in a listing in one
+   * call. An identifier that names no technician profile is left out of the answer.</p>
+   *
+   * @param technicianProfileIds identifiers of the technician profiles; {@code null} entries are
+   *                             ignored
+   * @return the full names of the technicians found, empty when none is
+   */
+  @Transactional(readOnly = true)
+  public Map<Long, String> fetchTechnicianFullNames(Collection<Long> technicianProfileIds) {
+    if (technicianProfileIds == null || technicianProfileIds.isEmpty()) {
+      return Map.of();
+    }
+    var names = new HashMap<Long, String>();
+    technicianProfileIds.stream()
+        .filter(Objects::nonNull)
+        .distinct()
+        .forEach(technicianProfileId -> technicianProfileRepository.findById(technicianProfileId)
+            .ifPresent(technician -> names.put(technicianProfileId, technician.getFullName().getFullName())));
+    return Map.copyOf(names);
   }
 
   /**

@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.service.request.domain.repositories;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestFilter;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestPage;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
@@ -40,25 +41,27 @@ public interface ServiceRequestRepository {
   /**
    * Find one page of the requests an owner created, newest first.
    *
-   * @param ownerId  the owner; required
-   * @param statuses restrict to these statuses; empty does not restrict
-   * @param page     zero-based page index; not negative
-   * @param size     maximum number of requests the page may hold; strictly positive
+   * @param ownerId the owner; required
+   * @param filter  status, unit, site, type, priority, creation-date and alert restrictions; never
+   *                widens the owner scope
+   * @param page    zero-based page index; not negative
+   * @param size    maximum number of requests the page may hold; strictly positive
    * @return the requests of that page and the total count
    */
-  ServiceRequestPage findPageByOwnerId(OwnerId ownerId, Set<ServiceStatus> statuses, int page, int size);
+  ServiceRequestPage findPageByOwnerId(OwnerId ownerId, ServiceRequestFilter filter, int page, int size);
 
   /**
    * Find one page of the requests currently assigned to a technician, newest first.
    *
    * @param technicianId the technician; required
-   * @param statuses     restrict to these statuses; empty does not restrict
+   * @param filter       status, unit, site, type, priority, creation-date and alert restrictions;
+   *                     never widens the technician scope
    * @param page         zero-based page index; not negative
    * @param size         maximum number of requests the page may hold; strictly positive
    * @return the requests of that page and the total count
    */
   ServiceRequestPage findPageByTechnicianId(
-      TechnicianProfileId technicianId, Set<ServiceStatus> statuses, int page, int size);
+      TechnicianProfileId technicianId, ServiceRequestFilter filter, int page, int size);
 
   /**
    * Find the completed requests of a unit, most recently completed first. Each of them holds the

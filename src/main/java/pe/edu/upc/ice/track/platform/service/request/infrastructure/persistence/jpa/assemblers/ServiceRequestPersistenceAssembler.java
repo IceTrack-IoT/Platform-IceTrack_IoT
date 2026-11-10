@@ -52,6 +52,7 @@ public final class ServiceRequestPersistenceAssembler {
         entity.getType(),
         entity.getPriority(),
         entity.getDescription(),
+        entity.getSourceAlertId(),
         entity.getStatus(),
         entity.getRequestedAt(),
         entity.getAssignedAt(),
@@ -92,6 +93,7 @@ public final class ServiceRequestPersistenceAssembler {
     entity.setType(serviceRequest.getType());
     entity.setPriority(serviceRequest.getPriority());
     entity.setDescription(serviceRequest.getDescription());
+    entity.setSourceAlertId(serviceRequest.getSourceAlertId());
     entity.setStatus(serviceRequest.getStatus());
     entity.setRequestedAt(serviceRequest.getCreatedAt());
     entity.setAssignedAt(serviceRequest.getAssignedAt());

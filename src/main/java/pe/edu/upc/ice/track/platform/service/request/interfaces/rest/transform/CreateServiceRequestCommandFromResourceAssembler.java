@@ -22,6 +22,7 @@ public class CreateServiceRequestCommandFromResourceAssembler {
         resource.equipmentId(),
         resource.type().toDomain(),
         resource.priority().toDomain(),
-        resource.description());
+        resource.description(),
+        resource.sourceAlertId());
   }
 }

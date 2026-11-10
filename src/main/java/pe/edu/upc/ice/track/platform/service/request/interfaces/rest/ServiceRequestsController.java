@@ -25,21 +25,27 @@ import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.service.request.application.commandservices.ServiceRequestCommandService;
 import pe.edu.upc.ice.track.platform.service.request.application.queryservices.ReviewQueryService;
 import pe.edu.upc.ice.track.platform.service.request.application.queryservices.ServiceRequestQueryService;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.AcceptServiceRequestCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.commands.RegenerateEdgeGrantCommand;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetReviewByServiceRequestIdQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestByIdQuery;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestDisplayDetailsQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListServiceRequestsQuery;
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestDisplayDetails;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestFilter;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.AssignTechnicianResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.CancelServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.CreateServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.IssuedEdgeGrantResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.PagedServiceRequestResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.PagedServiceRequestSummaryResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.RejectServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ReviewResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServicePriorityResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServiceStatusResource;
+import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.ServiceTypeResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.resources.StartServiceRequestResource;
 import pe.edu.upc.ice.track.platform.service.request.interfaces.rest.transform.AssignTechnicianCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.CallerRoleFromAuthenticationAssembler;
@@ -56,9 +62,11 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.resources.ErrorResou
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -84,6 +92,8 @@ public class ServiceRequestsController {
   private static final String SERVICE_REQUEST_RESOURCE = "Service_Request";
   private static final String REVIEW_RESOURCE = "Review";
   private static final String ASSIGNED_TO_ME = "me";
+  private static final String VIEW_FULL = "full";
+  private static final String VIEW_SUMMARY = "summary";
 
   private final ServiceRequestCommandService serviceRequestCommandService;
   private final ServiceRequestQueryService serviceRequestQueryService;
@@ -117,17 +127,23 @@ public class ServiceRequestsController {
   @Operation(
       summary = "Create a service request",
       description = "Creates a maintenance or repair request for a unit of the authenticated owner. "
-          + "The request starts PENDING, without a technician.",
+          + "The request starts PENDING, without a technician. A corrective request may name the alert it "
+          + "answers in source_alert_id: the alert must be one of the caller's, raised on the same unit, in any "
+          + "status.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "201",
           description = "Service request created",
           content = @Content(schema = @Schema(implementation = ServiceRequestResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid input data"),
+      @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR - invalid input data, or source_alert_id "
+          + "names an alert of another unit (details: Field source_alert_id: belongs to another unit)",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner"),
-      @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller")
+      @ApiResponse(responseCode = "404", description = "EQUIPMENT_NOT_FOUND - no such equipment is reachable by the "
+          + "caller; ALERT_NOT_FOUND - no such alert is reachable by the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
   })
   public ResponseEntity<?> createServiceRequest(
       @Valid @RequestBody CreateServiceRequestResource resource,
@@ -135,7 +151,7 @@ public class ServiceRequestsController {
     var command = CreateServiceRequestCommandFromResourceAssembler.toCommandFromResource(authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         serviceRequestCommandService.handle(command),
-        ServiceRequestResourceFromEntityAssembler::toResourceFromEntity,
+        this::toResource,
         HttpStatus.CREATED);
   }
 
@@ -145,25 +161,42 @@ public class ServiceRequestsController {
    * @param status         Restrict to these statuses, comma-separated or repeated; optional
    * @param assignedTo     {@code me} for the requests assigned to the calling technician, sent as the
    *                       {@code assigned_to} query parameter; optional
+   * @param equipmentId    Restrict to the requests for one unit; optional
+   * @param siteId         Restrict to the requests raised for one site; optional
+   * @param type           Restrict to these kinds of work; optional
+   * @param priority       Restrict to these urgencies; optional
+   * @param createdFrom    Inclusive lower bound of the creation instant; optional
+   * @param createdTo      Inclusive upper bound of the creation instant; optional
+   * @param sourceAlertId  Restrict to the requests opened for one alert; optional
+   * @param view           {@code full} (default) or {@code summary}; optional
    * @param page           Zero-based page index; defaults to 0
    * @param size           Page size, from 1 to 100; defaults to 20
    * @param authentication The authenticated principal, whose name and role identify the caller
-   * @return A {@link PagedServiceRequestResource}
+   * @return A {@link PagedServiceRequestResource}, or a {@link PagedServiceRequestSummaryResource}
+   *         for {@code view=summary}
    */
   @GetMapping
   @PreAuthorize("hasAnyAuthority('" + RoleAuthorities.ROLE_OWNER + "', '" + RoleAuthorities.ROLE_TECHNICIAN + "')")
   @Operation(
       summary = "List my service requests",
       description = "An owner lists the requests it created; a technician lists the requests assigned "
-          + "to it, which assigned_to=me makes explicit. Optionally filtered by one or more statuses, "
-          + "always paged and ordered by creation date, newest first.",
+          + "to it, which assigned_to=me makes explicit. Optionally filtered by status, unit, site, type, priority, "
+          + "creation period and source alert; every filter combines with the others and only narrows the caller's "
+          + "own requests, so a unit, site or alert of another owner yields an empty page. Always paged and ordered "
+          + "by creation date, newest first. view=summary answers PagedServiceRequestSummaryResponse items, without "
+          + "history, intervention details or maintenance windows.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
-          description = "Service requests found",
-          content = @Content(schema = @Schema(implementation = PagedServiceRequestResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid filter or paging value, such as an unknown status, a page size above 100, or assigned_to=me sent by an owner"),
+          description = "Service requests found: PagedServiceRequestResponse, or PagedServiceRequestSummaryResponse "
+              + "for view=summary",
+          content = @Content(schema = @Schema(
+              oneOf = {PagedServiceRequestResource.class, PagedServiceRequestSummaryResource.class}))),
+      @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR - invalid filter or paging value, such as an "
+          + "unknown status, type, priority or view, created_from after created_to, a page size above 100, or "
+          + "assigned_to=me sent by an owner",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is neither an owner nor a technician")
   })
@@ -174,6 +207,33 @@ public class ServiceRequestsController {
       @RequestParam(name = "assigned_to", required = false)
       @Parameter(description = "Only accepts 'me', for the requests assigned to the calling technician", example = "me")
       String assignedTo,
+      @RequestParam(name = "equipment_id", required = false)
+      @Parameter(description = "Restrict to the requests for one unit of the caller", example = "10")
+      Long equipmentId,
+      @RequestParam(name = "site_id", required = false)
+      @Parameter(description = "Restrict to the requests raised for one site of the caller", example = "1")
+      Long siteId,
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to these kinds of work, comma-separated", example = "REPAIR")
+      List<ServiceTypeResource> type,
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to these urgencies, comma-separated", example = "HIGH,URGENT")
+      List<ServicePriorityResource> priority,
+      @RequestParam(name = "created_from", required = false)
+      @Parameter(description = "Inclusive lower bound of created_at, ISO 8601 with Z or an offset",
+          example = "2026-10-01T00:00:00Z")
+      Instant createdFrom,
+      @RequestParam(name = "created_to", required = false)
+      @Parameter(description = "Inclusive upper bound of created_at, ISO 8601 with Z or an offset",
+          example = "2026-10-31T23:59:59Z")
+      Instant createdTo,
+      @RequestParam(name = "source_alert_id", required = false)
+      @Parameter(description = "Restrict to the requests opened for one alert", example = "301")
+      Long sourceAlertId,
+      @RequestParam(required = false)
+      @Parameter(description = "'full' (default) for whole requests, or 'summary' for list items without history, "
+          + "intervention details or maintenance windows", example = "summary")
+      String view,
       @RequestParam(required = false)
       @Parameter(description = "Zero-based page index", example = "0")
       Integer page,
@@ -181,15 +241,29 @@ public class ServiceRequestsController {
       @Parameter(description = "Page size, from 1 to 100", example = "20")
       Integer size,
       Authentication authentication) {
+    var summary = isSummaryView(view);
+    var filter = new ServiceRequestFilter(
+        toDomainSet(status, ServiceStatusResource::toDomain),
+        equipmentId,
+        siteId,
+        toDomainSet(type, ServiceTypeResource::toDomain),
+        toDomainSet(priority, ServicePriorityResource::toDomain),
+        createdFrom,
+        createdTo,
+        sourceAlertId);
     var query = new ListServiceRequestsQuery(
         authentication.getName(),
         CallerRoleFromAuthenticationAssembler.toCallerRoleFromAuthentication(authentication),
-        toDomainStatuses(status),
+        filter,
         isAssignedToMe(assignedTo),
         page,
         size);
-    return ResponseEntity.ok(ServiceRequestResourceFromEntityAssembler.toPagedResourceFromPage(
-        serviceRequestQueryService.handle(query)));
+    var requests = serviceRequestQueryService.handle(query);
+    var details = displayDetailsOf(requests.content(), summary);
+    if (summary) {
+      return ResponseEntity.ok(ServiceRequestResourceFromEntityAssembler.toPagedSummaryResourceFromPage(requests, details));
+    }
+    return ResponseEntity.ok(ServiceRequestResourceFromEntityAssembler.toPagedResourceFromPage(requests, details));
   }
 
   /**
@@ -229,7 +303,7 @@ public class ServiceRequestsController {
       return ErrorResponseAssembler.toErrorResponseFromApplicationError(
           ApplicationError.notFound(SERVICE_REQUEST_RESOURCE, String.valueOf(serviceRequestId)));
     }
-    return ResponseEntity.ok(ServiceRequestResourceFromEntityAssembler.toResourceFromEntity(serviceRequest.get()));
+    return ResponseEntity.ok(toResource(serviceRequest.get()));
   }
 
   /**
@@ -268,7 +342,7 @@ public class ServiceRequestsController {
         serviceRequestId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         serviceRequestCommandService.handle(command),
-        ServiceRequestResourceFromEntityAssembler::toResourceFromEntity,
+        this::toResource,
         HttpStatus.OK);
   }
 
@@ -305,7 +379,8 @@ public class ServiceRequestsController {
       Authentication authentication) {
     return ResponseEntityAssembler.toResponseEntityFromResult(
         serviceRequestCommandService.handle(new AcceptServiceRequestCommand(serviceRequestId, authentication.getName())),
-        ServiceRequestResourceFromEntityAssembler::toResourceFromAccepted,
+        accepted -> ServiceRequestResourceFromEntityAssembler.toResourceFromAccepted(
+            accepted, displayDetailsOf(List.of(accepted.serviceRequest()), false)),
         HttpStatus.OK);
   }
 
@@ -386,7 +461,7 @@ public class ServiceRequestsController {
         serviceRequestId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         serviceRequestCommandService.handle(command),
-        ServiceRequestResourceFromEntityAssembler::toResourceFromEntity,
+        this::toResource,
         HttpStatus.OK);
   }
 
@@ -427,7 +502,7 @@ public class ServiceRequestsController {
         serviceRequestId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         serviceRequestCommandService.handle(command),
-        ServiceRequestResourceFromEntityAssembler::toResourceFromEntity,
+        this::toResource,
         HttpStatus.OK);
   }
 
@@ -467,7 +542,7 @@ public class ServiceRequestsController {
         serviceRequestId, authentication.getName(), resource);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         serviceRequestCommandService.handle(command),
-        ServiceRequestResourceFromEntityAssembler::toResourceFromEntity,
+        this::toResource,
         HttpStatus.OK);
   }
 
@@ -511,17 +586,55 @@ public class ServiceRequestsController {
   }
 
   /**
-   * Translates the status filter into its domain counterpart. An empty entry, as left by a trailing
-   * comma, is ignored rather than failing the whole request.
+   * Converts one request into its full resource, with the names of its unit, site and technician.
+   *
+   * @param serviceRequest the request, already scoped to the caller
+   * @return the resource
    */
-  private static Set<ServiceStatus> toDomainStatuses(List<ServiceStatusResource> statuses) {
-    if (statuses == null) {
+  private ServiceRequestResource toResource(ServiceRequest serviceRequest) {
+    return ServiceRequestResourceFromEntityAssembler.toResourceFromEntity(
+        serviceRequest, displayDetailsOf(List.of(serviceRequest), false));
+  }
+
+  /**
+   * Resolves the names the given requests are shown with, and optionally their reviews, in one call.
+   *
+   * @param serviceRequests the requests, already scoped to the caller
+   * @param includeReviews  whether to resolve which of them were reviewed
+   * @return the details
+   */
+  private ServiceRequestDisplayDetails displayDetailsOf(List<ServiceRequest> serviceRequests, boolean includeReviews) {
+    return serviceRequestQueryService.handle(new GetServiceRequestDisplayDetailsQuery(serviceRequests, includeReviews));
+  }
+
+  /**
+   * Translates a multi-value enum parameter into its domain counterpart. An empty entry, as left by a
+   * trailing comma, is ignored rather than failing the whole request.
+   */
+  private static <R, D> Set<D> toDomainSet(List<R> values, Function<R, D> toDomain) {
+    if (values == null) {
       return Set.of();
     }
-    return statuses.stream()
+    return values.stream()
         .filter(Objects::nonNull)
-        .map(ServiceStatusResource::toDomain)
+        .map(toDomain)
         .collect(Collectors.toUnmodifiableSet());
+  }
+
+  /**
+   * Reads the {@code view} parameter: {@code full}, the default, or {@code summary}.
+   *
+   * @throws IllegalArgumentException for any other value, answered with 400 by
+   *                                  {@code GlobalExceptionHandler}
+   */
+  private static boolean isSummaryView(String view) {
+    if (view == null || view.isBlank() || VIEW_FULL.equalsIgnoreCase(view.strip())) {
+      return false;
+    }
+    if (VIEW_SUMMARY.equalsIgnoreCase(view.strip())) {
+      return true;
+    }
+    throw new IllegalArgumentException("Parameter 'view' must be one of [full, summary]");
   }
 
   /**

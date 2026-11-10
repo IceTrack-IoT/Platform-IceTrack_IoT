@@ -2,8 +2,10 @@ package pe.edu.upc.ice.track.platform.service.request.application.queryservices;
 
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestByIdQuery;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestDisplayDetailsQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListEquipmentInterventionsQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListServiceRequestsQuery;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestDisplayDetails;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestPage;
 
 import java.util.List;
@@ -43,4 +45,13 @@ public interface ServiceRequestQueryService {
    *         caller's reach, as opposed to a present but empty list for a unit never serviced
    */
   Optional<List<ServiceRequest>> handle(ListEquipmentInterventionsQuery query);
+
+  /**
+   * Resolve the unit, site and technician names of requests the caller already reached and,
+   * when asked, which of them were reviewed, with one read per other context.
+   *
+   * @param query The {@link GetServiceRequestDisplayDetailsQuery} Query
+   * @return the details; a name another context no longer knows is simply absent
+   */
+  ServiceRequestDisplayDetails handle(GetServiceRequestDisplayDetailsQuery query);
 }

@@ -86,6 +86,13 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
   private final ServiceType type;
   private final ServicePriority priority;
   private final String description;
+
+  /**
+   * The Monitoring and Alerting alert this corrective request was opened for, or {@code null}. Held
+   * by identifier only; the application layer checks it was raised on this request's unit before it
+   * reaches the aggregate. It never changes once the request exists.
+   */
+  private final Long sourceAlertId;
   private ServiceStatus status;
   private final Instant createdAt;
   private Instant assignedAt;
@@ -120,6 +127,7 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
    * @param priority     the urgency; required
    * @param description  what the owner needs; required, at most {@value #MAX_DESCRIPTION_LENGTH}
    *                     characters
+   * @param sourceAlertId the alert the request was opened for, may be {@code null}; positive otherwise
    * @param status       the current status; required
    * @param createdAt    when the request was created; required
    * @param assignedAt   when the current technician was assigned, may be {@code null}
@@ -136,8 +144,9 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
    */
   public ServiceRequest(ServiceRequestId id, OwnerId ownerId, EquipmentId equipmentId, SiteId siteId,
                         TechnicianProfileId technicianId, ServiceType type, ServicePriority priority,
-                        String description, ServiceStatus status, Instant createdAt, Instant assignedAt,
-                        Instant startedAt, Instant completedAt, Instant canceledAt, String cancelReason,
+                        String description, Long sourceAlertId, ServiceStatus status, Instant createdAt,
+                        Instant assignedAt, Instant startedAt, Instant completedAt, Instant canceledAt,
+                        String cancelReason,
                         Long version, List<StatusTransition> history, Intervention intervention,
                         List<MaintenanceWindowLink> maintenanceWindows) {
     this.id = id;
@@ -151,6 +160,10 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
     this.type = requireValue(type, "type");
     this.priority = requireValue(priority, "priority");
     this.description = validatedDescription(description);
+    if (sourceAlertId != null && sourceAlertId <= 0) {
+      throw new IllegalArgumentException("Service request sourceAlertId must be positive");
+    }
+    this.sourceAlertId = sourceAlertId;
     this.status = requireValue(status, "status");
     this.createdAt = requireValue(createdAt, "createdAt");
     this.assignedAt = assignedAt;
@@ -176,14 +189,16 @@ public class ServiceRequest extends AbstractDomainAggregateRoot<ServiceRequest> 
    * @param type        the kind of work; required
    * @param priority    the urgency; required
    * @param description what the owner needs; required
+   * @param sourceAlertId the alert the request is opened for, already verified to be raised on the
+   *                    unit; may be {@code null}
    * @return the new request, not yet persisted
    * @throws IllegalArgumentException when a value is missing or invalid
    */
   public static ServiceRequest create(OwnerId ownerId, EquipmentId equipmentId, SiteId siteId, ServiceType type,
-                                      ServicePriority priority, String description) {
+                                      ServicePriority priority, String description, Long sourceAlertId) {
     var now = currentInstant();
     var request = new ServiceRequest(null, ownerId, equipmentId, siteId, null, type, priority, description,
-        ServiceStatus.PENDING, now, null, null, null, null, null, null, List.of(), null, List.of());
+        sourceAlertId, ServiceStatus.PENDING, now, null, null, null, null, null, null, List.of(), null, List.of());
     request.history.add(StatusTransition.of(null, ServiceStatus.PENDING, ownerId.ownerId(), now, null, null));
     return request;
   }

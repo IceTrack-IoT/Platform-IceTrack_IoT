@@ -4,6 +4,8 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.iam.interfaces.acl.IamContextFacade;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.acl.ProfilesContextFacade;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -88,6 +90,19 @@ public class ExternalUserProfileService {
   public boolean isTechnicianEligibleForAssignment(Long technicianProfileId) {
     return technicianProfileId != null
         && profilesContextFacade.isTechnicianEligibleForAssignment(technicianProfileId);
+  }
+
+  /**
+   * Resolves the full names of technician profiles.
+   *
+   * @param technicianProfileIds identifiers of the technician profiles
+   * @return the full names found, by profile identifier; an unknown identifier is left out
+   */
+  public Map<Long, String> fetchTechnicianFullNames(Collection<Long> technicianProfileIds) {
+    if (technicianProfileIds == null || technicianProfileIds.isEmpty()) {
+      return Map.of();
+    }
+    return profilesContextFacade.fetchTechnicianFullNames(technicianProfileIds);
   }
 
   private Optional<Long> fetchUserIdByUsername(String username) {

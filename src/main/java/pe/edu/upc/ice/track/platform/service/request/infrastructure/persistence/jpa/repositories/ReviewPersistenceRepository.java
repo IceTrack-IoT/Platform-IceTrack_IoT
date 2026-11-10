@@ -4,7 +4,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.ReviewPersistenceEntity;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.projections.ReviewScoresProjection;
+import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.projections.ServiceRequestIdProjection;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,6 +31,15 @@ public interface ReviewPersistenceRepository extends JpaRepository<ReviewPersist
    * @return {@code true} when a review exists for it
    */
   boolean existsByServiceRequestId(Long serviceRequestId);
+
+  /**
+   * Finds which of the given service requests have been reviewed. The closed
+   * {@link ServiceRequestIdProjection} limits the selection to the request identifier.
+   *
+   * @param serviceRequestIds the requests; required and not empty
+   * @return one row per reviewed request among them
+   */
+  List<ServiceRequestIdProjection> findByServiceRequestIdIn(Collection<Long> serviceRequestIds);
 
   /**
    * Finds the scores of every review about a technician. The closed

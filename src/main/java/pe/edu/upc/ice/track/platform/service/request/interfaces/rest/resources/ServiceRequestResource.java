@@ -8,12 +8,18 @@ import java.util.List;
 /**
  * Outbound REST resource representing a service request, with its status history, the maintenance
  * windows of its work and, once completed, its intervention.
+ *
+ * <p>{@code equipment_name}, {@code site_name} and {@code technician_name} are read-only display
+ * values resolved from the other contexts when the resource is built, so a client needs no second
+ * read to show them.</p>
  */
 @Schema(
     name = "ServiceRequestResponse",
     description = "Service request with its status history",
     example = "{\"id\": 42, \"owner_id\": 3, \"equipment_id\": 10, \"site_id\": 1, \"technician_id\": 7, "
+        + "\"equipment_name\": \"Cold Room #01\", \"site_name\": \"Central Warehouse\", \"technician_name\": \"Ana Torres\", "
         + "\"type\": \"REPAIR\", \"priority\": \"HIGH\", \"description\": \"The display case does not hold 2 to 8 °C\", "
+        + "\"source_alert_id\": 301, "
         + "\"status\": \"ACCEPTED\", \"created_at\": \"2026-10-23T13:00:00Z\", \"assigned_at\": \"2026-10-23T13:10:00Z\", "
         + "\"started_at\": null, \"completed_at\": null, \"canceled_at\": null, \"cancel_reason\": null, "
         + "\"history\": [], \"intervention\": null, \"maintenance_windows\": []}")
@@ -33,6 +39,18 @@ public record ServiceRequestResource(
     @Schema(description = "Assigned technician; null while none is assigned", example = "7", nullable = true)
     Long technicianId,
 
+    @Schema(description = "Name of the unit, read-only; null when the unit is no longer known",
+        example = "Cold Room #01", nullable = true, accessMode = Schema.AccessMode.READ_ONLY)
+    String equipmentName,
+
+    @Schema(description = "Name of the site, read-only; null when the site is no longer known",
+        example = "Central Warehouse", nullable = true, accessMode = Schema.AccessMode.READ_ONLY)
+    String siteName,
+
+    @Schema(description = "Full name of the assigned technician, read-only; null while none is assigned",
+        example = "Ana Torres", nullable = true, accessMode = Schema.AccessMode.READ_ONLY)
+    String technicianName,
+
     @Schema(description = "Kind of work", example = "REPAIR")
     ServiceTypeResource type,
 
@@ -41,6 +59,10 @@ public record ServiceRequestResource(
 
     @Schema(description = "What the owner needs", example = "The display case does not hold 2 to 8 °C")
     String description,
+
+    @Schema(description = "The alert this corrective request was opened for; null when none", example = "301",
+        nullable = true)
+    Long sourceAlertId,
 
     @Schema(description = "Current lifecycle status", example = "ACCEPTED")
     ServiceStatusResource status,

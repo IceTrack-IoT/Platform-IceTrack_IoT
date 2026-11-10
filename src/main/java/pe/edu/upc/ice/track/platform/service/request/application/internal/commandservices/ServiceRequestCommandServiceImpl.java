@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.service.request.application.commandservices.ServiceRequestCommandService;
 import pe.edu.upc.ice.track.platform.service.request.application.internal.outboundservices.acl.ExternalEquipmentService;
+import pe.edu.upc.ice.track.platform.service.request.application.internal.outboundservices.acl.ExternalMonitoringService;
 import pe.edu.upc.ice.track.platform.service.request.application.internal.outboundservices.acl.ExternalUserProfileService;
 import pe.edu.upc.ice.track.platform.service.request.application.internal.outboundservices.tokens.EdgeGrantTokenService;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.EdgeGrant;
@@ -75,6 +76,8 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
 
   private static final String SERVICE_REQUEST_RESOURCE = "Service_Request";
   private static final String EQUIPMENT_RESOURCE = "Equipment";
+  private static final String ALERT_RESOURCE = "Alert";
+  private static final String SOURCE_ALERT_ID_FIELD = "source_alert_id";
   private static final String INVALID_STATUS_TRANSITION = "INVALID_STATUS_TRANSITION";
   private static final String TECHNICIAN_NOT_ELIGIBLE = "TECHNICIAN_NOT_ELIGIBLE";
 
@@ -87,6 +90,7 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
   private final ServiceRequestRepository serviceRequestRepository;
   private final ExternalEquipmentService externalEquipmentService;
   private final ExternalUserProfileService externalUserProfileService;
+  private final ExternalMonitoringService externalMonitoringService;
   private final EdgeGrantRepository edgeGrantRepository;
   private final EdgeGrantTokenService edgeGrantTokenService;
   private final Duration edgeGrantTimeToLive;
@@ -97,6 +101,8 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
    * @param serviceRequestRepository   The {@link ServiceRequestRepository} instance
    * @param externalEquipmentService   The {@link ExternalEquipmentService} instance
    * @param externalUserProfileService The {@link ExternalUserProfileService} instance
+   * @param externalMonitoringService  The {@link ExternalMonitoringService} instance, used to resolve
+   *                                   the alert a corrective request is opened for
    * @param edgeGrantRepository        The {@link EdgeGrantRepository} instance
    * @param edgeGrantTokenService      The {@link EdgeGrantTokenService} instance
    * @param edgeGrantTtlHours          how long an edge grant stays valid, in hours
@@ -105,6 +111,7 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
       ServiceRequestRepository serviceRequestRepository,
       ExternalEquipmentService externalEquipmentService,
       ExternalUserProfileService externalUserProfileService,
+      ExternalMonitoringService externalMonitoringService,
       EdgeGrantRepository edgeGrantRepository,
       EdgeGrantTokenService edgeGrantTokenService,
       @Value("${service-request.edge-grant.ttl-hours:24}") long edgeGrantTtlHours) {
@@ -114,6 +121,7 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
     this.serviceRequestRepository = serviceRequestRepository;
     this.externalEquipmentService = externalEquipmentService;
     this.externalUserProfileService = externalUserProfileService;
+    this.externalMonitoringService = externalMonitoringService;
     this.edgeGrantRepository = edgeGrantRepository;
     this.edgeGrantTokenService = edgeGrantTokenService;
     this.edgeGrantTimeToLive = Duration.ofHours(edgeGrantTtlHours);
@@ -131,15 +139,50 @@ public class ServiceRequestCommandServiceImpl implements ServiceRequestCommandSe
         return Result.failure(notReachableEquipment(command.equipmentId()));
       }
       var reference = equipment.get();
+      var sourceAlertFailure = checkSourceAlert(command.sourceAlertId(), ownerId, reference.equipmentId());
+      if (sourceAlertFailure.isPresent()) {
+        return Result.failure(sourceAlertFailure.get());
+      }
       return attempt(() -> ServiceRequest.create(
               new OwnerId(ownerId),
               new EquipmentId(reference.equipmentId()),
               new SiteId(reference.siteId()),
               command.type(),
               command.priority(),
-              command.description()))
+              command.description(),
+              command.sourceAlertId()))
           .map(request -> persist("Created", request));
     });
+  }
+
+  /**
+   * Checks the alert a new request is opened for, when one is named.
+   *
+   * <p>An alert that does not exist and an alert raised on a unit of another owner answer the same
+   * {@code 404 ALERT_NOT_FOUND}, so the check teaches nothing about other owners' alerts. An alert of
+   * the caller raised on another of its units is a mistake in the request rather than an absence:
+   * {@code 400 VALIDATION_ERROR}. The status of the alert does not matter, since the repair may come
+   * after the alert closed.</p>
+   *
+   * @param sourceAlertId the alert named by the request, may be {@code null}
+   * @param ownerId       the owner the caller acts as
+   * @param equipmentId   the unit the request is opened against, already verified to be the owner's
+   * @return the failure to report, or empty when no alert is named or the alert fits
+   */
+  private Optional<ApplicationError> checkSourceAlert(Long sourceAlertId, Long ownerId, Long equipmentId) {
+    if (sourceAlertId == null) {
+      return Optional.empty();
+    }
+    var alertEquipmentId = externalMonitoringService.fetchAlertEquipmentId(sourceAlertId)
+        .filter(alertUnit -> externalEquipmentService.isEquipmentOwnedBy(ownerId, alertUnit));
+    if (alertEquipmentId.isEmpty()) {
+      return Optional.of(ApplicationError.notFound(ALERT_RESOURCE, String.valueOf(sourceAlertId)));
+    }
+    if (!alertEquipmentId.get().equals(equipmentId)) {
+      return Optional.of(ApplicationError.validationError(
+          SOURCE_ALERT_ID_FIELD, "Field source_alert_id: belongs to another unit"));
+    }
+    return Optional.empty();
   }
 
   // inherited javadoc

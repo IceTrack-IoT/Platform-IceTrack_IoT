@@ -11,9 +11,14 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.T
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ReviewRepository;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.assemblers.ReviewPersistenceAssembler;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.entities.ReviewPersistenceEntity;
+import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.projections.ServiceRequestIdProjection;
 import pe.edu.upc.ice.track.platform.service.request.infrastructure.persistence.jpa.repositories.ReviewPersistenceRepository;
 
+import java.util.Collection;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Repository adapter that bridges the {@link ReviewRepository} port with Spring Data JPA.
@@ -72,6 +77,21 @@ public class ReviewRepositoryImpl implements ReviewRepository {
   public boolean existsByServiceRequestId(ServiceRequestId serviceRequestId) {
     return serviceRequestId != null
         && reviewPersistenceRepository.existsByServiceRequestId(serviceRequestId.serviceRequestId());
+  }
+
+  // inherited javadoc
+  @Override
+  public Set<Long> findReviewedServiceRequestIds(Collection<Long> serviceRequestIds) {
+    if (serviceRequestIds == null || serviceRequestIds.isEmpty()) {
+      return Set.of();
+    }
+    var distinct = serviceRequestIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+    if (distinct.isEmpty()) {
+      return Set.of();
+    }
+    return reviewPersistenceRepository.findByServiceRequestIdIn(distinct).stream()
+        .map(ServiceRequestIdProjection::getServiceRequestId)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   // inherited javadoc

@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestFilter;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestPage;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
@@ -89,22 +90,22 @@ public class ServiceRequestRepositoryImpl implements ServiceRequestRepository {
 
   // inherited javadoc
   @Override
-  public ServiceRequestPage findPageByOwnerId(OwnerId ownerId, Set<ServiceStatus> statuses, int page, int size) {
+  public ServiceRequestPage findPageByOwnerId(OwnerId ownerId, ServiceRequestFilter filter, int page, int size) {
     if (ownerId == null) {
       return ServiceRequestPage.empty(page, size);
     }
-    return findPage(ServiceRequestPersistenceSpecifications.ownedBy(ownerId.ownerId(), statuses), page, size);
+    return findPage(ServiceRequestPersistenceSpecifications.ownedBy(ownerId.ownerId(), filter), page, size);
   }
 
   // inherited javadoc
   @Override
   public ServiceRequestPage findPageByTechnicianId(
-      TechnicianProfileId technicianId, Set<ServiceStatus> statuses, int page, int size) {
+      TechnicianProfileId technicianId, ServiceRequestFilter filter, int page, int size) {
     if (technicianId == null) {
       return ServiceRequestPage.empty(page, size);
     }
     return findPage(
-        ServiceRequestPersistenceSpecifications.assignedTo(technicianId.technicianProfileId(), statuses), page, size);
+        ServiceRequestPersistenceSpecifications.assignedTo(technicianId.technicianProfileId(), filter), page, size);
   }
 
   // inherited javadoc

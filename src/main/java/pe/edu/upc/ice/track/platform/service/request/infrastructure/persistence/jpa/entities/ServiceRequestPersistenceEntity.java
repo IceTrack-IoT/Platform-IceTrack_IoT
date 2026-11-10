@@ -45,8 +45,9 @@ import java.util.List;
  * instant.</p>
  *
  * <p>The two composite indexes serve the two listings this context answers - an owner's requests
- * and a technician's assignments, both newest first - and the {@code equipment_id} index serves the
- * intervention history of a unit.</p>
+ * and a technician's assignments, both newest first - the {@code equipment_id} index serves the
+ * intervention history of a unit, and the {@code source_alert_id} index the requests opened for an
+ * alert.</p>
  *
  * <p>Every child cascades every operation and is only changed through this entity: the
  * {@code history} through {@link #addTransition}, the maintenance window links through
@@ -61,7 +62,8 @@ import java.util.List;
     indexes = {
         @Index(name = "idx_service_requests_owner_requested_at", columnList = "owner_id, requested_at"),
         @Index(name = "idx_service_requests_technician_requested_at", columnList = "technician_id, requested_at"),
-        @Index(name = "idx_service_requests_equipment_id", columnList = "equipment_id")})
+        @Index(name = "idx_service_requests_equipment_id", columnList = "equipment_id"),
+        @Index(name = "idx_service_requests_source_alert_id", columnList = "source_alert_id")})
 public class ServiceRequestPersistenceEntity extends AuditableAbstractPersistenceEntity {
 
   @Column(name = "owner_id", nullable = false, updatable = false)
@@ -88,6 +90,13 @@ public class ServiceRequestPersistenceEntity extends AuditableAbstractPersistenc
 
   @Column(name = "description", nullable = false, length = 1000, updatable = false)
   private String description;
+
+  /**
+   * The alert the request was opened for; {@code null} when it was opened without one. A plain
+   * column, never a foreign key: alerts live in Monitoring and Alerting.
+   */
+  @Column(name = "source_alert_id", updatable = false)
+  private Long sourceAlertId;
 
   @Enumerated(EnumType.STRING)
   @Column(name = "status", nullable = false, length = 20)

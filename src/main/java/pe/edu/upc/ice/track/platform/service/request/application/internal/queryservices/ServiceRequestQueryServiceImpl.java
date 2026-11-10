@@ -7,20 +7,26 @@ import pe.edu.upc.ice.track.platform.service.request.application.internal.outbou
 import pe.edu.upc.ice.track.platform.service.request.application.queryservices.ServiceRequestQueryService;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.aggregates.ServiceRequest;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestByIdQuery;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.GetServiceRequestDisplayDetailsQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListEquipmentInterventionsQuery;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.queries.ListServiceRequestsQuery;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestDisplayDetails;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestPage;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
+import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ReviewRepository;
 import pe.edu.upc.ice.track.platform.service.request.domain.repositories.ServiceRequestRepository;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Application service that resolves service request read queries.
@@ -43,6 +49,7 @@ public class ServiceRequestQueryServiceImpl implements ServiceRequestQueryServic
       ServiceStatus.PENDING, ServiceStatus.ACCEPTED, ServiceStatus.IN_PROGRESS, ServiceStatus.COMPLETED);
 
   private final ServiceRequestRepository serviceRequestRepository;
+  private final ReviewRepository reviewRepository;
   private final ExternalEquipmentService externalEquipmentService;
   private final ExternalUserProfileService externalUserProfileService;
 
@@ -50,14 +57,19 @@ public class ServiceRequestQueryServiceImpl implements ServiceRequestQueryServic
    * Creates the query service with its dependencies.
    *
    * @param serviceRequestRepository   service request repository port
-   * @param externalEquipmentService   outbound ACL service, used to check the owner of a unit
+   * @param reviewRepository           review repository port, used to tell which requests were reviewed
+   * @param externalEquipmentService   outbound ACL service, used to check the owner of a unit and to
+   *                                   name units and sites
    * @param externalUserProfileService outbound ACL service, used to resolve the caller to its profile
+   *                                   and to name technicians
    */
   public ServiceRequestQueryServiceImpl(
       ServiceRequestRepository serviceRequestRepository,
+      ReviewRepository reviewRepository,
       ExternalEquipmentService externalEquipmentService,
       ExternalUserProfileService externalUserProfileService) {
     this.serviceRequestRepository = serviceRequestRepository;
+    this.reviewRepository = reviewRepository;
     this.externalEquipmentService = externalEquipmentService;
     this.externalUserProfileService = externalUserProfileService;
   }
@@ -86,10 +98,10 @@ public class ServiceRequestQueryServiceImpl implements ServiceRequestQueryServic
    * Lists one page of the caller's requests.
    *
    * <p>The scope - created by the owner, or assigned to the technician - is resolved from the caller
-   * and handed to the repository as a mandatory restriction; the status filter can only narrow
-   * it.</p>
+   * and handed to the repository as a mandatory restriction; the filters can only narrow it, so a
+   * unit, site or alert of another owner yields an empty page rather than an error.</p>
    *
-   * @param query the query naming the caller, the status filter and the requested page
+   * @param query the query naming the caller, the filters and the requested page
    * @return the requested page, empty when the caller holds no profile of its role
    */
   @Override
@@ -98,13 +110,54 @@ public class ServiceRequestQueryServiceImpl implements ServiceRequestQueryServic
     if (query.callerRole() == CallerRole.TECHNICIAN) {
       return externalUserProfileService.fetchTechnicianIdByUsername(query.username())
           .map(technicianId -> serviceRequestRepository.findPageByTechnicianId(
-              new TechnicianProfileId(technicianId), query.statuses(), query.page(), query.size()))
+              new TechnicianProfileId(technicianId), query.filter(), query.page(), query.size()))
           .orElseGet(() -> ServiceRequestPage.empty(query.page(), query.size()));
     }
     return externalUserProfileService.fetchOwnerIdByUsername(query.username())
         .map(ownerId -> serviceRequestRepository.findPageByOwnerId(
-            new OwnerId(ownerId), query.statuses(), query.page(), query.size()))
+            new OwnerId(ownerId), query.filter(), query.page(), query.size()))
         .orElseGet(() -> ServiceRequestPage.empty(query.page(), query.size()));
+  }
+
+  /**
+   * Resolves the names a set of requests is shown with, and optionally their reviews.
+   *
+   * <p>Units and sites are named from their owner's directory, read once per distinct owner among
+   * the requests - one owner for an owner's listing, a few for a technician's - instead of once per
+   * request. Technicians are named in one call, and reviews in one read.</p>
+   *
+   * @param query the requests, already scoped to the caller
+   * @return the details
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public ServiceRequestDisplayDetails handle(GetServiceRequestDisplayDetailsQuery query) {
+    var requests = query.serviceRequests();
+    if (requests.isEmpty()) {
+      return ServiceRequestDisplayDetails.NONE;
+    }
+    var equipmentNames = new HashMap<Long, String>();
+    var siteNames = new HashMap<Long, String>();
+    requests.stream()
+        .map(request -> request.getOwnerId().ownerId())
+        .distinct()
+        .forEach(ownerId -> {
+          equipmentNames.putAll(externalEquipmentService.fetchEquipmentNamesByOwner(ownerId));
+          siteNames.putAll(externalEquipmentService.fetchSiteNamesByOwner(ownerId));
+        });
+    var technicianIds = requests.stream()
+        .map(ServiceRequest::getTechnicianId)
+        .filter(Objects::nonNull)
+        .map(TechnicianProfileId::technicianProfileId)
+        .collect(Collectors.toSet());
+    var technicianNames = externalUserProfileService.fetchTechnicianFullNames(technicianIds);
+    Set<Long> reviewed = query.includeReviews()
+        ? reviewRepository.findReviewedServiceRequestIds(requests.stream()
+            .filter(request -> request.getId() != null)
+            .map(request -> request.getId().serviceRequestId())
+            .toList())
+        : Set.of();
+    return new ServiceRequestDisplayDetails(equipmentNames, siteNames, technicianNames, reviewed);
   }
 
   /**

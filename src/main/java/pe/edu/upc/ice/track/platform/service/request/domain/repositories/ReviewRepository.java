@@ -5,7 +5,9 @@ import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.R
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
 
+import java.util.Collection;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Review repository port.
@@ -42,6 +44,14 @@ public interface ReviewRepository {
    * @return {@code true} when a review exists for it
    */
   boolean existsByServiceRequestId(ServiceRequestId serviceRequestId);
+
+  /**
+   * Find which of the given service requests have been reviewed, in one read.
+   *
+   * @param serviceRequestIds the requests
+   * @return the identifiers of the reviewed requests among them, empty when none is
+   */
+  Set<Long> findReviewedServiceRequestIds(Collection<Long> serviceRequestIds);
 
   /**
    * Compute the average rating a technician received across every review about them.

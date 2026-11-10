@@ -1,9 +1,7 @@
 package pe.edu.upc.ice.track.platform.service.request.domain.model.queries;
 
-import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestFilter;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.CallerRole;
-
-import java.util.Set;
 
 /**
  * Query to list one page of the caller's service requests, newest first.
@@ -16,7 +14,8 @@ import java.util.Set;
  * @param username     username of the authenticated caller; required
  * @param callerRole   the role the caller acts in; {@code null} is treated as
  *                     {@link CallerRole#OWNER}
- * @param statuses     restrict to these statuses; {@code null} or empty does not restrict
+ * @param filter       status, unit, site, type, priority, creation-date and alert restrictions;
+ *                     {@code null} restricts nothing
  * @param assignedToMe whether the caller asked for the requests assigned to it
  * @param page         zero-based page index; {@code null} means the first page
  * @param size         page size, from 1 to {@link #MAX_PAGE_SIZE}; {@code null} means
@@ -25,7 +24,7 @@ import java.util.Set;
 public record ListServiceRequestsQuery(
     String username,
     CallerRole callerRole,
-    Set<ServiceStatus> statuses,
+    ServiceRequestFilter filter,
     boolean assignedToMe,
     Integer page,
     Integer size) {
@@ -47,7 +46,7 @@ public record ListServiceRequestsQuery(
    */
   public ListServiceRequestsQuery {
     callerRole = callerRole == null ? CallerRole.OWNER : callerRole;
-    statuses = statuses == null ? Set.of() : Set.copyOf(statuses);
+    filter = filter == null ? ServiceRequestFilter.NONE : filter;
     page = page == null ? 0 : page;
     size = size == null ? DEFAULT_PAGE_SIZE : size;
     if (page < 0) {
