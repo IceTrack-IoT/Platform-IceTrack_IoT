@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.device.interfaces.rest;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -24,14 +25,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.device.application.commandservices.DeviceCommandService;
 import pe.edu.upc.ice.track.platform.device.application.queryservices.DeviceQueryService;
+import pe.edu.upc.ice.track.platform.device.application.results.DeviceCredentialResult;
+import pe.edu.upc.ice.track.platform.device.application.results.DeviceDetailsPage;
+import pe.edu.upc.ice.track.platform.device.domain.model.aggregates.Device;
 import pe.edu.upc.ice.track.platform.device.domain.model.commands.ChangeDeviceStatusCommand;
 import pe.edu.upc.ice.track.platform.device.domain.model.commands.RotateApiKeyCommand;
 import pe.edu.upc.ice.track.platform.device.domain.model.commands.UnpairDeviceCommand;
 import pe.edu.upc.ice.track.platform.device.domain.model.queries.GetDeviceByIdQuery;
-import pe.edu.upc.ice.track.platform.device.domain.model.queries.GetDevicesByEquipmentQuery;
+import pe.edu.upc.ice.track.platform.device.domain.model.queries.GetDevicesQuery;
+import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DeviceStatus;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.ChangeDeviceStatusResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceCredentialResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceResource;
+import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceStatusResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.RegisterDeviceResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.transform.DeviceCredentialResourceAssembler;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.transform.DeviceResourceFromEntityAssembler;
@@ -43,6 +49,9 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorRespo
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * REST API through which an owner pairs and manages the IoT boards of its refrigeration units.
@@ -50,6 +59,10 @@ import java.util.List;
  * <p>Every endpoint here is called by the owner's web application with a user JWT. The boards
  * themselves never call these endpoints: they authenticate with their API key on the edge routes
  * ({@code POST /api/v1/telemetry}, {@code /api/v1/devices/me/**}).</p>
+ *
+ * <p>Every {@link DeviceResource} answered here, by a read or by a change, names the unit the device
+ * is linked to and the site of that unit. The listing answers a plain array by default and a page
+ * wrapper only when the caller supplies both {@code page} and {@code size}.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/devices", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -91,7 +104,7 @@ public class DeviceController {
     return ResponseEntityAssembler.toResponseEntityFromResult(
         deviceCommandService.handle(RegisterDeviceCommandFromResourceAssembler
             .toCommandFromResource(authentication.getName(), resource)),
-        DeviceCredentialResourceAssembler::toResourceFromResult,
+        this::toCredentialResource,
         HttpStatus.CREATED);
   }
 
@@ -109,28 +122,74 @@ public class DeviceController {
           content = @Content(schema = @Schema(implementation = ErrorResource.class)))})
   public ResponseEntity<?> getDevice(@PathVariable Long deviceId, Authentication authentication) {
     return deviceQueryService.handle(new GetDeviceByIdQuery(deviceId, authentication.getName()))
-        .<ResponseEntity<?>>map(device -> ResponseEntity.ok(DeviceResourceFromEntityAssembler.toResourceFromEntity(device)))
+        .<ResponseEntity<?>>map(device -> ResponseEntity.ok(DeviceResourceFromEntityAssembler.toResourceFromDetails(device)))
         .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
             ApplicationError.notFound("Device", String.valueOf(deviceId))));
   }
 
+  /**
+   * Lists the devices linked to the caller's units: its whole inventory, or the part the filters
+   * select.
+   *
+   * @param equipmentId    Restrict to the device of a single unit of the caller, optional
+   * @param siteId         Restrict to the devices of the units of a single site of the caller, optional
+   * @param status         Restrict to these statuses, comma-separated or repeated; optional
+   * @param search         Case-insensitive text matched against the device uid or board model, optional
+   * @param page           Zero-based page index; supply together with {@code size} to page
+   * @param size           Page size; supply together with {@code page} to page
+   * @param authentication The authenticated principal, whose name identifies the caller
+   * @return A plain {@link DeviceResource} array, or a page wrapper when paging was requested
+   */
   @GetMapping
   @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
-  @Operation(summary = "List the devices of an equipment unit",
-      description = "Lists the devices linked to one of the caller's units; an empty list for any other unit.",
+  @Operation(summary = "List my devices",
+      description = "Lists the devices linked (paired or revoked) to the units of the authenticated owner, "
+          + "ordered by device_uid. Without a filter it answers the whole inventory in one read. It can be "
+          + "narrowed to one unit, to the units of one site, to a set of statuses and by a search on the "
+          + "device uid or board model; every filter combines with the others. An unpaired device belongs "
+          + "to no owner, so status=UNPAIRED matches nothing. Each device carries the name and the site of "
+          + "its unit. Supplying both page and size returns a page wrapper with the total count instead of "
+          + "a plain array; a size above 100 is capped to 100.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Devices found",
           content = @Content(array = @ArraySchema(schema = @Schema(implementation = DeviceResource.class)))),
+      @ApiResponse(responseCode = "400",
+          description = "VALIDATION_ERROR - unknown status, search above 64 characters, negative page or size below 1",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
       @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
-      @ApiResponse(responseCode = "403", description = "Caller is not an owner")})
-  public ResponseEntity<?> getDevicesByEquipment(@RequestParam("equipment_id") Long equipmentId,
-                                                  Authentication authentication) {
-    List<DeviceResource> resources = deviceQueryService
-        .handle(new GetDevicesByEquipmentQuery(equipmentId, authentication.getName())).stream()
-        .map(DeviceResourceFromEntityAssembler::toResourceFromEntity)
-        .toList();
-    return ResponseEntity.ok(resources);
+      @ApiResponse(responseCode = "403", description = "Caller is not an owner"),
+      @ApiResponse(responseCode = "404",
+          description = "SITE_NOT_FOUND or EQUIPMENT_NOT_FOUND - the site or unit of a filter is not reachable by the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))})
+  public ResponseEntity<?> getDevices(
+      @RequestParam(name = "equipment_id", required = false)
+      @Parameter(description = "Restrict to the device of a single unit of the caller", example = "21")
+      Long equipmentId,
+      @RequestParam(name = "site_id", required = false)
+      @Parameter(description = "Restrict to the devices of the units of a single site of the caller", example = "1")
+      Long siteId,
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to these statuses, comma-separated", example = "PAIRED,REVOKED")
+      List<DeviceStatusResource> status,
+      @RequestParam(required = false)
+      @Parameter(description = "Case-insensitive search matching the device uid or board model", example = "ESP32")
+      String search,
+      @RequestParam(required = false)
+      @Parameter(description = "Zero-based page index; supply with size", example = "0")
+      Integer page,
+      @RequestParam(required = false)
+      @Parameter(description = "Page size, capped at 100; supply with page", example = "20")
+      Integer size,
+      Authentication authentication) {
+    var query = new GetDevicesQuery(
+        authentication.getName(), equipmentId, siteId, toDomainStatuses(status), search, page, size);
+    return ResponseEntityAssembler.<DeviceDetailsPage, Object>toResponseEntityFromResult(
+        deviceQueryService.handle(query),
+        devices -> query.isPaged()
+            ? DeviceResourceFromEntityAssembler.toPagedResourceFromPage(devices)
+            : DeviceResourceFromEntityAssembler.toResourcesFromDetails(devices.content()),
+        HttpStatus.OK);
   }
 
   @PostMapping("/{deviceId}/unpair")
@@ -150,7 +209,7 @@ public class DeviceController {
   public ResponseEntity<?> unpairDevice(@PathVariable Long deviceId, Authentication authentication) {
     return ResponseEntityAssembler.toResponseEntityFromResult(
         deviceCommandService.handle(new UnpairDeviceCommand(deviceId, authentication.getName())),
-        DeviceResourceFromEntityAssembler::toResourceFromEntity,
+        this::toDeviceResource,
         HttpStatus.OK);
   }
 
@@ -170,7 +229,7 @@ public class DeviceController {
   public ResponseEntity<?> rotateApiKey(@PathVariable Long deviceId, Authentication authentication) {
     return ResponseEntityAssembler.toResponseEntityFromResult(
         deviceCommandService.handle(new RotateApiKeyCommand(deviceId, authentication.getName())),
-        DeviceCredentialResourceAssembler::toResourceFromResult,
+        this::toCredentialResource,
         HttpStatus.OK);
   }
 
@@ -198,7 +257,35 @@ public class DeviceController {
     return ResponseEntityAssembler.toResponseEntityFromResult(
         deviceCommandService.handle(new ChangeDeviceStatusCommand(
             deviceId, authentication.getName(), resource.newStatus().toDomain())),
-        DeviceResourceFromEntityAssembler::toResourceFromEntity,
+        this::toDeviceResource,
         HttpStatus.OK);
+  }
+
+  /**
+   * Converts the device a command just changed, described with the unit it is linked to.
+   */
+  private DeviceResource toDeviceResource(Device device) {
+    return DeviceResourceFromEntityAssembler.toResourceFromDetails(deviceQueryService.describe(device));
+  }
+
+  /**
+   * Converts a credential issuance result, its device described with the unit it is linked to.
+   */
+  private DeviceCredentialResource toCredentialResource(DeviceCredentialResult result) {
+    return DeviceCredentialResourceAssembler.toResourceFromResult(result, deviceQueryService.describe(result.device()));
+  }
+
+  /**
+   * Translates the status filter into its domain counterpart. An empty entry, as left by a trailing
+   * comma, is ignored rather than failing the whole request.
+   */
+  private static Set<DeviceStatus> toDomainStatuses(List<DeviceStatusResource> statuses) {
+    if (statuses == null) {
+      return Set.of();
+    }
+    return statuses.stream()
+        .filter(Objects::nonNull)
+        .map(DeviceStatusResource::toDomain)
+        .collect(Collectors.toUnmodifiableSet());
   }
 }

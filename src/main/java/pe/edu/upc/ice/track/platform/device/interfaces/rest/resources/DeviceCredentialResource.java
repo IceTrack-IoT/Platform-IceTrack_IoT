@@ -9,7 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
         + "or credential rotation. The edge sends it in the X-API-Key header.",
     example = "{\"device\": {\"id\": 7, \"device_uid\": \"ESP32-ICE-001\", \"board_model\": \"ESP32-DevKitC\", "
         + "\"firmware_version\": \"1.0.0\", \"status\": \"PAIRED\", \"paired_equipment_id\": 21, "
-        + "\"last_seen_at\": null}, "
+        + "\"paired_equipment_name\": \"Cold Room #01\", \"paired_site_id\": 1, \"last_seen_at\": null}, "
         + "\"api_key\": \"it_dev_9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"}"
 )
 public record DeviceCredentialResource(
