@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.notifications.application.commandservices.NotificationCommandService;
 import pe.edu.upc.ice.track.platform.notifications.application.internal.messages.NotificationMessageComposer;
 import pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.acl.ExternalAssetManagementServiceForNotifications;
+import pe.edu.upc.ice.track.platform.notifications.application.internal.outboundservices.acl.ExternalProfilesServiceForNotifications;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.aggregates.Notification;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.CreateNotificationCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.DismissNotificationCommand;
@@ -21,6 +22,7 @@ import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyS
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyTechnicianAssignedCommand;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.events.NotificationCreatedEvent;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.BulkReadResult;
+import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.MessageTemplate;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationSeverity;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationType;
 import pe.edu.upc.ice.track.platform.notifications.domain.repositories.NotificationRepository;
@@ -31,8 +33,18 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentI
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
+/**
+ * Default {@link NotificationCommandService}.
+ *
+ * <p>Every notification is created with its English {@code message} and its template: a stable
+ * {@code message_key} from the {@link MessageTemplate} catalog and the values a client fills into it
+ * to show the text in the user's own language. Unit and technician names are read through the
+ * outbound services when the notification is created, so a template never needs a second lookup on
+ * the client.</p>
+ */
 @Service
 @Slf4j
 public class NotificationCommandServiceImpl implements NotificationCommandService {
@@ -40,15 +52,18 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
   private final NotificationRepository notificationRepository;
   private final ApplicationEventPublisher eventPublisher;
   private final ExternalAssetManagementServiceForNotifications externalAssetManagementService;
+  private final ExternalProfilesServiceForNotifications externalProfilesService;
   private final NotificationMessageComposer messageComposer;
 
   public NotificationCommandServiceImpl(NotificationRepository notificationRepository,
                                         ApplicationEventPublisher eventPublisher,
                                         ExternalAssetManagementServiceForNotifications externalAssetManagementService,
+                                        ExternalProfilesServiceForNotifications externalProfilesService,
                                         NotificationMessageComposer messageComposer) {
     this.notificationRepository = notificationRepository;
     this.eventPublisher = eventPublisher;
     this.externalAssetManagementService = externalAssetManagementService;
+    this.externalProfilesService = externalProfilesService;
     this.messageComposer = messageComposer;
   }
 
@@ -117,15 +132,80 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
           command.alertId().alertId(), equipmentId);
       return Optional.empty();
     }
+    var equipmentName = externalAssetManagementService.fetchEquipmentName(equipmentId).orElse(null);
+    var breach = command.type() == NotificationType.TEMPERATURE_EXCURSION ? breachedLimit(command) : null;
     return Optional.of(handle(new CreateNotificationCommand(
         recipientUserId.get(),
         command.equipmentId(),
         null,
         command.alertId(),
-        buildAlertMessage(command),
+        buildAlertMessage(command, equipmentName, breach),
         command.type(),
         command.severity(),
-        null)));
+        null,
+        alertTemplate(command, equipmentName, breach))));
+  }
+
+  /**
+   * Finds which limit of its band a unit's excursion crossed, from the peak temperature.
+   *
+   * @param command the alert command
+   * @return the limit crossed, or {@code null} when the peak or the band is unknown, or lies inside it
+   */
+  private BreachedLimit breachedLimit(NotifyAlertRaisedCommand command) {
+    if (command.peakTemperature() == null) {
+      return null;
+    }
+    var band = externalAssetManagementService.fetchThresholdRange(command.equipmentId().equipmentId()).orElse(null);
+    if (band == null || band.length < 2) {
+      return null;
+    }
+    if (command.peakTemperature() > band[1]) {
+      return new BreachedLimit("MAX", band[1]);
+    }
+    if (command.peakTemperature() < band[0]) {
+      return new BreachedLimit("MIN", band[0]);
+    }
+    return null;
+  }
+
+  /**
+   * Builds the template of an alert notification.
+   *
+   * @param command       the alert command
+   * @param equipmentName the unit's name, or {@code null} when unknown
+   * @param breach        the limit an excursion crossed, or {@code null}
+   * @return the template
+   */
+  private static MessageTemplate alertTemplate(NotifyAlertRaisedCommand command, String equipmentName, BreachedLimit breach) {
+    var equipmentId = command.equipmentId().equipmentId();
+    return switch (command.type()) {
+      case TEMPERATURE_EXCURSION -> MessageTemplate.of(MessageTemplate.ALERT_TEMPERATURE_EXCURSION_RAISED)
+          .with("equipment_id", equipmentId)
+          .with("equipment_name", equipmentName)
+          .with("temperature", command.peakTemperature())
+          .with("limit", breach == null ? null : breach.limit())
+          .with("threshold", breach == null ? null : breach.threshold())
+          .build();
+      case DEVICE_OFFLINE -> MessageTemplate.of(MessageTemplate.ALERT_DEVICE_OFFLINE_RAISED)
+          .with("equipment_id", equipmentId)
+          .with("equipment_name", equipmentName)
+          .with("silent_minutes", command.silentMinutes())
+          .build();
+      default -> MessageTemplate.of(MessageTemplate.ALERT_SENSOR_FAILURE_RAISED)
+          .with("equipment_id", equipmentId)
+          .with("equipment_name", equipmentName)
+          .build();
+    };
+  }
+
+  /**
+   * The limit of a band an excursion crossed.
+   *
+   * @param limit     {@code MAX} or {@code MIN}
+   * @param threshold the value of that limit, in Celsius
+   */
+  private record BreachedLimit(String limit, double threshold) {
   }
 
   /**
@@ -135,17 +215,27 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
   @Override
   public List<Notification> handle(NotifyTechnicianAssignedCommand command) {
     var notifications = new ArrayList<Notification>();
+    var equipmentName = equipmentNameOf(command.equipmentId());
     notifications.add(deliver(command.technicianProfileId(), command.equipmentId(), command.serviceRequestId(),
         NotificationType.SERVICE_REQUEST_UPDATE, NotificationSeverity.INFO,
         messageComposer.compose("notification.technician-assigned",
             command.serviceRequestId(), command.serviceType(), command.priority(), command.equipmentId(),
-            command.siteId(), command.assignedAt())));
+            command.siteId(), command.assignedAt()),
+        MessageTemplate.of(MessageTemplate.SERVICE_REQUEST_ASSIGNED)
+            .with("service_request_id", command.serviceRequestId())
+            .with("equipment_name", equipmentName)
+            .with("technician_name", externalProfilesService.fetchTechnicianFullName(command.technicianProfileId()).orElse(null))
+            .build()));
     var previous = command.previousTechnicianProfileId();
     if (previous != null && !previous.equals(command.technicianProfileId())) {
       notifications.add(deliver(previous, command.equipmentId(), command.serviceRequestId(),
           NotificationType.SERVICE_REQUEST_UPDATE, NotificationSeverity.INFO,
           messageComposer.compose("notification.technician-unassigned",
-              command.serviceRequestId(), command.equipmentId())));
+              command.serviceRequestId(), command.equipmentId()),
+          MessageTemplate.of(MessageTemplate.SERVICE_REQUEST_UNASSIGNED)
+              .with("service_request_id", command.serviceRequestId())
+              .with("equipment_name", equipmentName)
+              .build()));
     }
     return notifications;
   }
@@ -156,7 +246,12 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
     return deliver(command.ownerProfileId(), command.equipmentId(), command.serviceRequestId(),
         NotificationType.SERVICE_REQUEST_UPDATE, NotificationSeverity.WARNING,
         messageComposer.compose("notification.service-request-rejected",
-            command.technicianProfileId(), command.serviceRequestId(), command.equipmentId(), command.reason()));
+            command.technicianProfileId(), command.serviceRequestId(), command.equipmentId(), command.reason()),
+        MessageTemplate.of(MessageTemplate.SERVICE_REQUEST_REJECTED)
+            .with("service_request_id", command.serviceRequestId())
+            .with("equipment_name", equipmentNameOf(command.equipmentId()))
+            .with("reason", command.reason())
+            .build());
   }
 
   /** Tells the technician that was assigned that the owner canceled the request, and why. */
@@ -165,7 +260,12 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
     return deliver(command.technicianProfileId(), command.equipmentId(), command.serviceRequestId(),
         NotificationType.SERVICE_REQUEST_UPDATE, NotificationSeverity.WARNING,
         messageComposer.compose("notification.service-request-canceled",
-            command.serviceRequestId(), command.equipmentId(), command.reason()));
+            command.serviceRequestId(), command.equipmentId(), command.reason()),
+        MessageTemplate.of(MessageTemplate.SERVICE_REQUEST_CANCELED)
+            .with("service_request_id", command.serviceRequestId())
+            .with("equipment_name", equipmentNameOf(command.equipmentId()))
+            .with("reason", command.reason())
+            .build());
   }
 
   /**
@@ -182,18 +282,24 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
       return Optional.empty();
     }
     var origin = originLabel(command.origin());
+    var template = MessageTemplate.of(MessageTemplate.MAINTENANCE_WINDOW_OPENED)
+        .with("equipment_name", equipmentNameOf(command.equipmentId()))
+        .with("origin", command.origin())
+        .build();
     if (command.unlinked()) {
       return Optional.of(deliver(owner.get(), command.equipmentId(), null,
           NotificationType.UNLINKED_MAINTENANCE_WINDOW, NotificationSeverity.WARNING,
           messageComposer.compose("notification.maintenance-window-opened.unlinked",
               command.maintenanceWindowId(), command.equipmentId(), origin, command.startedAt(),
-              command.expiresAt())));
+              command.expiresAt()),
+          template));
     }
     return Optional.of(deliver(owner.get(), command.equipmentId(), command.serviceRequestId(),
         NotificationType.MAINTENANCE_WINDOW, NotificationSeverity.INFO,
         messageComposer.compose("notification.maintenance-window-opened",
             command.maintenanceWindowId(), command.equipmentId(), origin, command.startedAt(), command.expiresAt(),
-            command.serviceRequestId(), command.technicianProfileId())));
+            command.serviceRequestId(), command.technicianProfileId()),
+        template));
   }
 
   /** Tells the owner of the unit that a maintenance window closed, when and why. */
@@ -212,8 +318,12 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
         : messageComposer.compose("notification.maintenance-window-closed",
             command.maintenanceWindowId(), command.equipmentId(), origin, command.endedAt(), command.closureReason(),
             command.serviceRequestId(), command.technicianProfileId());
+    var template = MessageTemplate.of(MessageTemplate.MAINTENANCE_WINDOW_CLOSED)
+        .with("equipment_name", equipmentNameOf(command.equipmentId()))
+        .with("closure_reason", command.closureReason())
+        .build();
     return Optional.of(deliver(owner.get(), command.equipmentId(), command.serviceRequestId(),
-        NotificationType.MAINTENANCE_WINDOW, NotificationSeverity.INFO, message));
+        NotificationType.MAINTENANCE_WINDOW, NotificationSeverity.INFO, message, template));
   }
 
   /**
@@ -298,11 +408,13 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
    * @param serviceRequestId   the service request it is about, or {@code null} when it concerns none
    * @param type               the kind of notification
    * @param severity           its urgency
-   * @param message            the text shown to the recipient
+   * @param message            the English text shown to the recipient
+   * @param template           the template key and values clients localize the text from
    * @return the stored notification
    */
   private Notification deliver(Long recipientProfileId, Long equipmentId, Long serviceRequestId,
-                              NotificationType type, NotificationSeverity severity, String message) {
+                              NotificationType type, NotificationSeverity severity, String message,
+                              MessageTemplate template) {
     return handle(new CreateNotificationCommand(
         recipientProfileId,
         equipmentId == null ? null : new EquipmentId(equipmentId),
@@ -311,7 +423,18 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
         message,
         type,
         severity,
-        serviceRequestId));
+        serviceRequestId,
+        template));
+  }
+
+  /**
+   * Reads the name of a unit for a template.
+   *
+   * @param equipmentId the unit, or {@code null}
+   * @return its name, or {@code null} when unknown
+   */
+  private String equipmentNameOf(Long equipmentId) {
+    return externalAssetManagementService.fetchEquipmentName(equipmentId).orElse(null);
   }
 
   private static String originLabel(String origin) {
@@ -322,12 +445,28 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
     };
   }
 
-  private static String buildAlertMessage(NotifyAlertRaisedCommand command) {
-    var equipmentId = command.equipmentId().equipmentId();
-    if (command.peakTemperature() == null) {
-      return "Equipment %d reported a new %s alert.".formatted(equipmentId, command.type().name());
+  /**
+   * Composes the English text of an alert notification, naming the unit when its name is known.
+   *
+   * <p>Formatted with {@link Locale#ROOT}, so a decimal point is never written as a comma whatever the
+   * server locale.</p>
+   */
+  private static String buildAlertMessage(NotifyAlertRaisedCommand command, String equipmentName, BreachedLimit breach) {
+    var unit = equipmentName == null
+        ? "Equipment %d".formatted(command.equipmentId().equipmentId())
+        : equipmentName;
+    if (breach != null) {
+      return String.format(Locale.ROOT, "%s reached %.1f °C, %s its %s of %.1f °C",
+          unit, command.peakTemperature(), "MAX".equals(breach.limit()) ? "above" : "below",
+          "MAX".equals(breach.limit()) ? "maximum" : "minimum", breach.threshold());
     }
-    return "Equipment %d reported a %s alert, peak temperature %.1f C."
-        .formatted(equipmentId, command.type().name(), command.peakTemperature());
+    if (command.type() == NotificationType.DEVICE_OFFLINE && command.silentMinutes() != null) {
+      return "%s stopped reporting: no reading for %d minutes.".formatted(unit, command.silentMinutes());
+    }
+    if (command.peakTemperature() == null) {
+      return "%s reported a new %s alert.".formatted(unit, command.type().name());
+    }
+    return String.format(Locale.ROOT, "%s reported a %s alert, peak temperature %.1f °C.",
+        unit, command.type().name(), command.peakTemperature());
   }
 }

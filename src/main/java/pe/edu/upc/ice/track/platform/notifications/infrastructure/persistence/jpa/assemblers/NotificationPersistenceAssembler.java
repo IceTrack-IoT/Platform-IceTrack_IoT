@@ -32,6 +32,8 @@ public final class NotificationPersistenceAssembler {
     entity.setSourceAlertId(notification.getSourceAlertId() == null ? null : notification.getSourceAlertId().alertId());
     entity.setServiceRequestId(notification.getServiceRequestId());
     entity.setMessage(notification.getMessage());
+    entity.setMessageKey(notification.getTemplate().key());
+    entity.setMessageParams(notification.getTemplate().params());
     entity.setType(NotificationType.valueOf(notification.getType().name()));
     entity.setSeverity(NotificationSeverity.valueOf(notification.getSeverity().name()));
     entity.setRead(notification.isRead());
@@ -56,6 +58,9 @@ public final class NotificationPersistenceAssembler {
         entity.getSourceAlertId() == null ? null : new AlertId(entity.getSourceAlertId()),
         entity.getServiceRequestId(),
         entity.getMessage(),
+        entity.getMessageKey() == null
+            ? MessageTemplate.untemplated()
+            : new MessageTemplate(entity.getMessageKey(), entity.getMessageParams()),
         entity.getType(),
         entity.getSeverity(),
         entity.isRead(),

@@ -20,18 +20,29 @@ import java.util.Objects;
  * @param type            kind of notification; required
  * @param severity        urgency of the notification; required
  * @param peakTemperature peak temperature observed, in Celsius; may be {@code null}
+ * @param silentMinutes   for an offline alert, how many minutes of silence raised it; {@code null}
+ *                        otherwise or when unknown
  */
 public record NotifyAlertRaisedCommand(
     AlertId alertId,
     EquipmentId equipmentId,
     NotificationType type,
     NotificationSeverity severity,
-    Double peakTemperature) {
+    Double peakTemperature,
+    Long silentMinutes) {
 
   public NotifyAlertRaisedCommand {
     Objects.requireNonNull(alertId, "alertId must not be null");
     Objects.requireNonNull(equipmentId, "equipmentId must not be null");
     Objects.requireNonNull(type, "type must not be null");
     Objects.requireNonNull(severity, "severity must not be null");
+  }
+
+  /**
+   * Creates the command without the offline window.
+   */
+  public NotifyAlertRaisedCommand(AlertId alertId, EquipmentId equipmentId, NotificationType type,
+                                  NotificationSeverity severity, Double peakTemperature) {
+    this(alertId, equipmentId, type, severity, peakTemperature, null);
   }
 }

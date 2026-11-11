@@ -7,8 +7,10 @@ import lombok.Setter;
 import org.hibernate.annotations.ColumnDefault;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationSeverity;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationType;
+import pe.edu.upc.ice.track.platform.notifications.infrastructure.persistence.jpa.converters.MessageParamsPersistenceConverter;
 
 import java.time.Instant;
+import java.util.Map;
 
 /**
  * JPA persistence entity for a {@code Notification}, mapped to the {@code notifications} table.
@@ -39,6 +41,18 @@ public class NotificationPersistenceEntity {
 
   @Column(nullable = false, length = 255)
   private String message;
+
+  /**
+   * Key of the template the message was composed from. Nullable, so the column can be added to a
+   * table that already holds rows; such a row reads back as untemplated.
+   */
+  @Column(name = "message_key", length = 100)
+  private String messageKey;
+
+  /** Values filled into the template, as a JSON object; nullable for the same reason. */
+  @Convert(converter = MessageParamsPersistenceConverter.class)
+  @Column(name = "message_params", length = 2000)
+  private Map<String, Object> messageParams;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 30)

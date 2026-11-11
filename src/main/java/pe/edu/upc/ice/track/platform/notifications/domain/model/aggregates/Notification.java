@@ -31,6 +31,11 @@ import java.util.Objects;
  *
  * <p>{@code createdAt} is when the notification was raised. It is set once, when the notification
  * is created, and is what tells a recipient how recent a notification is.</p>
+ *
+ * <p>{@code message} is the English text, composed once when the notification is created.
+ * {@code template} is its machine form - a stable key and the values filled into it - from which a
+ * client renders the text in the user's own language. A notification stored before templates were
+ * recorded carries {@link MessageTemplate#untemplated()}.</p>
  */
 @Getter
 public class Notification extends AbstractDomainAggregateRoot<Notification> {
@@ -42,6 +47,7 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
   private AlertId sourceAlertId;
   private final Long serviceRequestId;
   private final String message;
+  private final MessageTemplate template;
   private final NotificationType type;
   private final NotificationSeverity severity;
   private boolean isRead;
@@ -56,7 +62,8 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
   public Notification(CreateNotificationCommand command) {
     this.recipientUserId = Objects.requireNonNull(command.recipientUserId(), "recipientUserId must not be null");
     this.message = Objects.requireNonNull(command.message(), "message must not be null");
-    this.type = Objects.requireNonNull(command.type(), "type must not be null");
+    this.template = command.template() == null ? MessageTemplate.untemplated() : command.template();
+    this.type =Objects.requireNonNull(command.type(), "type must not be null");
     this.severity = Objects.requireNonNull(command.severity(), "severity must not be null");
     this.equipmentId =command.equipmentId();
     this.deviceId = command.deviceId();
@@ -75,10 +82,10 @@ public class Notification extends AbstractDomainAggregateRoot<Notification> {
    */
   public static Notification rehydrate(
       Long id, Long recipientUserId, EquipmentId equipmentId, DeviceId deviceId, AlertId sourceAlertId,
-      Long serviceRequestId, String message, NotificationType type, NotificationSeverity severity,
-      boolean isRead, Instant createdAt, Instant readAt, Instant dismissedAt) {
+      Long serviceRequestId, String message, MessageTemplate template, NotificationType type,
+      NotificationSeverity severity, boolean isRead, Instant createdAt, Instant readAt, Instant dismissedAt) {
     var notification = new Notification(new CreateNotificationCommand(
-        recipientUserId, equipmentId, deviceId, sourceAlertId, message, type, severity, serviceRequestId));
+        recipientUserId, equipmentId, deviceId, sourceAlertId, message, type, severity, serviceRequestId, template));
     notification.id = id;
     notification.isRead = isRead;
     notification.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
