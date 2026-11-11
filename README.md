@@ -277,7 +277,7 @@ Statuses are `UNPAIRED`, `PAIRED` and `REVOKED`. Keys are stored only as SHA-256
 
 **Telemetry ingestion** (`POST /api/v1/telemetry`) answers `201` for a new batch and `200` with the stored reading when the same `reading_uid` is resubmitted. Every new batch, in the same transaction, sets the unit `online` (unless `DEACTIVATED`) and moves its `last_reading_at` / `last_known_temperature` to the batch's `recorded_at` / `avg_temperature` (never backwards for a batch delivered late), sets the device's `last_seen_at` to the arrival time, and resolves the unit's active `DEVICE_OFFLINE` alert.
 
-**Device offline detection.** A unit is offline once no reading arrived for `60 s × missed_sync_windows_for_offline` of its alert policy (3 minutes by default). `EquipmentConnectivityCommandService` marks such units offline and raises one `OPEN`, `WARNING` `DEVICE_OFFLINE` alert each (none during a maintenance window, never a second one while one is active), which notifies the owner. Nothing schedules the detection yet: the periodic trigger is pending, so until it is added no `DEVICE_OFFLINE` alert is raised at runtime and `EQUIPMENT_UPTIME` reports read 100 %.
+**Device offline detection.** A unit is offline once no reading arrived for `60 s × missed_sync_windows_for_offline` of its alert policy (3 minutes by default). `EquipmentConnectivityCommandService` marks such units offline and raises one `OPEN`, `WARNING` `DEVICE_OFFLINE` alert each (none during a maintenance window, never a second one while one is active), which notifies the owner. `OfflineDetectionScheduler` runs the detection every `OFFLINE_DETECTION_DELAY_MS` (60 s); `OFFLINE_DETECTION_ENABLED=false` switches it off.
 
 Each batch carries temperatures twice:
 
