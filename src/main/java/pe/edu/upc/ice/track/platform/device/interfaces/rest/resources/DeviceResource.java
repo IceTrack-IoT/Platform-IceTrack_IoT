@@ -10,6 +10,9 @@ import java.time.Instant;
  * <p>{@code paired_equipment_name} and {@code paired_site_id} are read-only companions of
  * {@code paired_equipment_id}: they describe the unit at the time of the read, so a device list can
  * be shown without also reading the equipment directory.</p>
+ *
+ * <p>{@code connectivity} is evaluated by the server on every read, so a client never compares its
+ * own clock with {@code last_seen_at}.</p>
  */
 @Schema(
     name = "DeviceResponse",
@@ -17,7 +20,8 @@ import java.time.Instant;
     example = "{\"id\": 7, \"device_uid\": \"ESP32-ICE-001\", \"board_model\": \"ESP32-DevKitC\", "
         + "\"firmware_version\": \"1.0.0\", \"status\": \"PAIRED\", \"paired_equipment_id\": 21, "
         + "\"paired_equipment_name\": \"Cold Room #01\", \"paired_site_id\": 1, "
-        + "\"last_seen_at\": \"2026-10-23T17:00:00Z\"}"
+        + "\"last_seen_at\": \"2026-10-23T17:00:00Z\", \"connectivity\": {\"state\": \"REPORTING\", "
+        + "\"silent_after_seconds\": 180, \"silent_since\": null, \"evaluated_at\": \"2026-10-23T17:01:10Z\"}}"
 )
 public record DeviceResource(
     @Schema(description = "Device unique identifier", example = "7")
@@ -49,5 +53,9 @@ public record DeviceResource(
 
     @Schema(description = "When the platform received the device's latest reading batch; null before the first one",
         example = "2026-10-23T22:00:00Z", nullable = true)
-    Instant lastSeenAt) {
+    Instant lastSeenAt,
+
+    @Schema(description = "Connectivity evaluated by the server at read time; read-only",
+        accessMode = Schema.AccessMode.READ_ONLY)
+    DeviceConnectivityResource connectivity) {
 }

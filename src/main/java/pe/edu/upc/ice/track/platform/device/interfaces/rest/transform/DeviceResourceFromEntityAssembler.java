@@ -2,6 +2,9 @@ package pe.edu.upc.ice.track.platform.device.interfaces.rest.transform;
 
 import pe.edu.upc.ice.track.platform.device.application.results.DeviceDetails;
 import pe.edu.upc.ice.track.platform.device.application.results.DeviceDetailsPage;
+import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DeviceConnectivity;
+import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceConnectivityResource;
+import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceConnectivityStateResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceStatusResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.PagedDeviceResource;
@@ -30,7 +33,25 @@ public final class DeviceResourceFromEntityAssembler {
         device.getPairedEquipmentId(),
         details.pairedEquipmentName(),
         details.pairedSiteId(),
-        device.getLastSeenAt());
+        device.getLastSeenAt(),
+        toResourceFromConnectivity(details.connectivity()));
+  }
+
+  /**
+   * Converts an evaluated connectivity into its resource.
+   *
+   * @param connectivity the connectivity, may be {@code null}
+   * @return the resource, or {@code null} when there is none
+   */
+  public static DeviceConnectivityResource toResourceFromConnectivity(DeviceConnectivity connectivity) {
+    if (connectivity == null) {
+      return null;
+    }
+    return new DeviceConnectivityResource(
+        DeviceConnectivityStateResource.fromDomain(connectivity.state()),
+        connectivity.silentAfter() == null ? null : Math.toIntExact(connectivity.silentAfter().toSeconds()),
+        connectivity.silentSince(),
+        connectivity.evaluatedAt());
   }
 
   /**
