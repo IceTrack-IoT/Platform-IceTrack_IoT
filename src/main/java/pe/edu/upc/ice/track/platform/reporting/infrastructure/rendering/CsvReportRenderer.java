@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.reporting.infrastructure.rendering;
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportContent;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportRenderer;
+import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportSection;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.KpiValue;
 
 import java.nio.charset.StandardCharsets;
@@ -36,6 +37,13 @@ public class CsvReportRenderer implements ReportRenderer {
     row(sb, "KPI", "Value", "Unit");
     for (KpiValue kpi : content.kpis()) {
       row(sb, kpi.label(), String.format(Locale.ROOT, "%.2f", kpi.value()), kpi.unit());
+    }
+    for (ReportSection section : content.sections()) {
+      sb.append(NEWLINE);
+      row(sb, section.title());
+      for (ReportSection.Row sectionRow : section.rows()) {
+        row(sb, sectionRow.label(), sectionRow.value());
+      }
     }
     return sb.toString().getBytes(StandardCharsets.UTF_8);
   }

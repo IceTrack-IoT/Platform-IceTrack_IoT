@@ -7,6 +7,7 @@ import org.openpdf.text.pdf.PdfWriter;
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportContent;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportRenderer;
+import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportSection;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.KpiValue;
 
 import java.io.ByteArrayOutputStream;
@@ -16,7 +17,8 @@ import java.util.Locale;
  * Realizes {@link ReportRenderer} for {@code ReportFormat.PDF} using OpenPDF.
  *
  * <p>Lays the report out as a title, a short block of metadata (type, generation time, date
- * range) and a three-column table of KPIs (name, value, unit).</p>
+ * range), a three-column table of KPIs (name, value, unit) and, when the report has any, one
+ * two-column table (label, value) per detail section under its heading.</p>
  */
 @Service("PDF")
 public class PdfReportRenderer implements ReportRenderer {
@@ -55,6 +57,19 @@ public class PdfReportRenderer implements ReportRenderer {
         table.addCell(new PdfPCell(new Phrase(kpi.unit(), cellFont)));
       }
       document.add(table);
+
+      Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 13);
+      for (ReportSection section : content.sections()) {
+        document.add(new Paragraph(" "));
+        document.add(new Paragraph(section.title(), sectionFont));
+        var sectionTable = new PdfPTable(new float[] {2f, 5f});
+        sectionTable.setWidthPercentage(100);
+        for (ReportSection.Row row : section.rows()) {
+          sectionTable.addCell(new PdfPCell(new Phrase(row.label(), headerFont)));
+          sectionTable.addCell(new PdfPCell(new Phrase(row.value() == null ? "" : row.value(), cellFont)));
+        }
+        document.add(sectionTable);
+      }
 
       document.close();
       return out.toByteArray();

@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.iam.interfaces.acl.IamContextFacade;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.acl.ProfilesContextFacade;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -51,6 +52,18 @@ public class ExternalProfilesServiceForReporting {
     }
     return Optional.ofNullable(profilesContextFacade.fetchOwnerIdByUserId(userId))
         .filter(ExternalProfilesServiceForReporting::isFound);
+  }
+
+  /**
+   * @param technicianProfileId identifier of the technician profile, may be {@code null}
+   * @return the technician's full name, or empty when no technician profile carries the identifier
+   */
+  public Optional<String> fetchTechnicianFullName(Long technicianProfileId) {
+    if (technicianProfileId == null) {
+      return Optional.empty();
+    }
+    return Optional.ofNullable(profilesContextFacade.fetchTechnicianFullNames(List.of(technicianProfileId))
+        .get(technicianProfileId));
   }
 
   private static boolean isFound(Long identifier) {

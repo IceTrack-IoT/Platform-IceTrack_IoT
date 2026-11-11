@@ -38,6 +38,7 @@ public class ReportPersistenceAssembler {
         filters.siteId() != null ? filters.siteId().siteId() : null,
         filters.equipmentId() != null ? filters.equipmentId().equipmentId() : null,
         filters.technicianId() != null ? filters.technicianId().technicianId() : null,
+        filters.serviceRequestId(),
         range.from(),
         range.to(),
         report.getRequestedAt(),
@@ -56,7 +57,8 @@ public class ReportPersistenceAssembler {
         entity.getSiteId() != null ? new SiteId(entity.getSiteId()) : null,
         entity.getEquipmentId() != null ? new EquipmentId(entity.getEquipmentId()) : null,
         entity.getTechnicianId() != null ? new TechnicianId(entity.getTechnicianId()) : null,
-        new DateRange(entity.getRangeFrom(), entity.getRangeTo()));
+        new DateRange(entity.getRangeFrom(), entity.getRangeTo()),
+        entity.getServiceRequestId());
 
     var file = entity.getFileKey() != null
         ? new ReportFile(entity.getFileKey(), entity.getFileContentType(),

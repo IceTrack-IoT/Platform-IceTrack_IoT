@@ -122,6 +122,16 @@ public class Report extends AbstractDomainAggregateRoot<Report> {
   }
 
   /**
+   * Whether this report may be deleted: only once the worker is done with it, that is when it is
+   * {@code COMPLETED} or {@code FAILED}.
+   *
+   * @return {@code false} while the report is {@code PENDING} or {@code GENERATING}
+   */
+  public boolean canBeDeleted() {
+    return status == ReportStatus.COMPLETED || status == ReportStatus.FAILED;
+  }
+
+  /**
    * Whether a downloadable file exists for this report.
    *
    * @return {@code true} only for a {@code COMPLETED} report with a stored file

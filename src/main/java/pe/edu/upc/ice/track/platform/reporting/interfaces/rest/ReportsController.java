@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,6 +27,7 @@ import pe.edu.upc.ice.track.platform.reporting.application.commandservices.Repor
 import pe.edu.upc.ice.track.platform.reporting.application.internal.queryservices.KpiPayloadReader;
 import pe.edu.upc.ice.track.platform.reporting.application.queryservices.ReportQueryService;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates.Report;
+import pe.edu.upc.ice.track.platform.reporting.domain.model.commands.DeleteReportCommand;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportByIdQuery;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportDownloadLinkQuery;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.queries.GetReportPageByUserQuery;
@@ -70,6 +72,9 @@ import java.util.stream.Collectors;
  * items are always summaries, without {@code result_payload} or {@code kpis}; a plain listing returns
  * summaries when asked with {@code include=summary}.</p>
  *
+ * <p>A finished report ({@code COMPLETED} or {@code FAILED}) can be deleted with
+ * {@code DELETE /api/v1/reports/{id}}, which also removes its stored file.</p>
+ *
  * <p>Every endpoint is for owners and acts on the authenticated caller. There is no requester
  * parameter anywhere: a report of anybody else answers 404, exactly like a missing one.</p>
  */
@@ -105,15 +110,22 @@ public class ReportsController {
   @Operation(summary = "Request a new report",
       description = "Saves a report request for the authenticated owner in PENDING status and answers at once. "
           + "The report is generated in the background: poll GET /api/v1/reports/{id} until it is COMPLETED "
-          + "or FAILED. A site or unit filter must belong to the caller.",
+          + "or FAILED. A site or unit filter must belong to the caller. A SERVICE_INTERVENTION report documents "
+          + "one COMPLETED service request of the caller, named by filters.service_request_id, and may leave "
+          + "from and to out to cover the request's own period; every other type requires from and to and "
+          + "refuses service_request_id.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses(value = {
       @ApiResponse(responseCode = "202", description = "Report accepted and queued for generation",
           content = @Content(schema = @Schema(implementation = ReportResource.class))),
-      @ApiResponse(responseCode = "400", description = "Invalid report request"),
+      @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR - invalid report request, such as a missing "
+          + "period, or service_request_id missing for SERVICE_INTERVENTION or sent for another type"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not an owner"),
-      @ApiResponse(responseCode = "404", description = "The requested site or unit is not reachable by the caller")
+      @ApiResponse(responseCode = "404", description = "SITE_NOT_FOUND, EQUIPMENT_NOT_FOUND or "
+          + "SERVICE_REQUEST_NOT_FOUND - a filter is not reachable by the caller"),
+      @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION - the service request of a "
+          + "SERVICE_INTERVENTION report is not COMPLETED")
   })
   public ResponseEntity<?> requestReport(
       @Valid @RequestBody CreateReportResource resource,
@@ -198,6 +210,42 @@ public class ReportsController {
           .cacheControl(CacheControl.noStore())
           .body(ReportResourceFromEntityAssembler.toResourceFromDownloadLink(success.value()));
       case Result.Failure<ReportDownloadLink, ApplicationError> failure ->
+          ErrorResponseAssembler.toErrorResponseFromApplicationError(failure.error());
+    };
+  }
+
+  /**
+   * Deletes one of the caller's finished reports, together with its stored file.
+   *
+   * @param reportId       the identifier of the report
+   * @param authentication the authenticated principal, who must be the requester
+   * @return 204 No Content, or the reason the report cannot be deleted
+   */
+  @DeleteMapping("/{reportId}")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(summary = "Delete a report",
+      description = "Deletes the caller's COMPLETED or FAILED report and removes its stored file; a download link "
+          + "issued before stops working once the file is gone. A report still PENDING or GENERATING belongs to "
+          + "the generation worker and cannot be deleted. Deleting the same report again answers 404.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(responseCode = "204", description = "Report and file deleted"),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "ACCESS_DENIED - the caller is not an owner",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "404", description = "REPORT_NOT_FOUND - no such report belongs to the caller",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class))),
+      @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION - the report is PENDING or "
+          + "GENERATING; details names its status",
+          content = @Content(schema = @Schema(implementation = ErrorResource.class)))
+  })
+  public ResponseEntity<?> deleteReport(
+      @Parameter(description = "Identifier of the report", example = "8", required = true)
+      @PathVariable Long reportId,
+      Authentication authentication) {
+    return switch (reportCommandService.handle(new DeleteReportCommand(reportId, authentication.getName()))) {
+      case Result.Success<Long, ApplicationError> success -> ResponseEntity.noContent().build();
+      case Result.Failure<Long, ApplicationError> failure ->
           ErrorResponseAssembler.toErrorResponseFromApplicationError(failure.error());
     };
   }

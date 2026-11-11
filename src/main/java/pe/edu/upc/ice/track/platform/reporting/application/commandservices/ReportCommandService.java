@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.reporting.application.commandservices;
 
 import pe.edu.upc.ice.track.platform.reporting.domain.model.aggregates.Report;
+import pe.edu.upc.ice.track.platform.reporting.domain.model.commands.DeleteReportCommand;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.commands.RequestReportCommand;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
@@ -23,4 +24,14 @@ public interface ReportCommandService {
    *         failure for an invalid request
    */
   Result<Report, ApplicationError> handle(RequestReportCommand command);
+
+  /**
+   *  Handles the command to delete one of the caller's finished reports. Its stored file is removed
+   *  once the deletion has committed.
+   * @param command the report to delete and the caller
+   * @return the identifier of the deleted report; a 404 {@code REPORT_NOT_FOUND} failure when the report
+   *         does not exist or belongs to somebody else; or a 409 {@code INVALID_STATUS_TRANSITION}
+   *         failure while it is {@code PENDING} or {@code GENERATING}
+   */
+  Result<Long, ApplicationError> handle(DeleteReportCommand command);
 }

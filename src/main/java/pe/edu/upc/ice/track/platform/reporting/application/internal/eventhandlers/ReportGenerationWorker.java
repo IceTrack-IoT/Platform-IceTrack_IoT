@@ -123,9 +123,10 @@ public class ReportGenerationWorker {
       }
 
       List<KpiValue> kpis = strategy.generate(report.getFilters());
+      var sections = strategy.sections(report.getFilters());
       var payload = writeAsJson(kpis);
       var bytes = renderer.render(new ReportContent(
-          report.getTitle(), report.getType(), report.getFilters(), Instant.now(), kpis));
+          report.getTitle(), report.getType(), report.getFilters(), Instant.now(), kpis, sections));
 
       var key = "reports/%d/%d.%s".formatted(ownerId, report.getId(), renderer.fileExtension());
       storedKey = key;

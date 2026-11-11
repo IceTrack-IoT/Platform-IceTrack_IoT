@@ -99,6 +99,7 @@ public class ReportResourceFromEntityAssembler {
         filters.siteId() != null ? filters.siteId().siteId() : null,
         filters.equipmentId() != null ? filters.equipmentId().equipmentId() : null,
         filters.technicianId() != null ? filters.technicianId().technicianId() : null,
+        filters.serviceRequestId(),
         filters.dateRange().from(),
         filters.dateRange().to(),
         report.getRequestedAt(),

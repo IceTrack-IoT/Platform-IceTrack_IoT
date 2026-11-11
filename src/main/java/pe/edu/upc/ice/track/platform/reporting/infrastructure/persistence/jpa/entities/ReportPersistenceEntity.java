@@ -17,7 +17,8 @@ import java.time.Instant;
  *
  * <p>{@code ReportFilters}/{@code DateRange} are not mapped as embeddables; their fields are
  * flattened into plain columns ({@code site_id}, {@code equipment_id}, {@code technician_id},
- * {@code range_from}, {@code range_to}) and reassembled by {@code ReportPersistenceAssembler},
+ * {@code service_request_id}, {@code range_from}, {@code range_to}) and reassembled by
+ * {@code ReportPersistenceAssembler},
  * mirroring how other aggregates in this codebase keep their persistence entities free of domain
  * value-object types.</p>
  */
@@ -62,6 +63,10 @@ public class ReportPersistenceEntity {
 
   @Column(name = "technician_id")
   private Long technicianId;
+
+  /** The service request a service document is about; {@code NULL} for every other type. */
+  @Column(name = "service_request_id")
+  private Long serviceRequestId;
 
   @Column(name = "range_from", nullable = false)
   private Instant rangeFrom;

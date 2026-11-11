@@ -12,7 +12,8 @@ public enum ReportTypeResource {
   MAINTENANCE_COMPLIANCE,
   EQUIPMENT_UPTIME,
   TECHNICIAN_PERFORMANCE,
-  TEMPERATURE_EXCURSION;
+  TEMPERATURE_EXCURSION,
+  SERVICE_INTERVENTION;
 
   /**
    * Translates this REST constant into its domain counterpart.

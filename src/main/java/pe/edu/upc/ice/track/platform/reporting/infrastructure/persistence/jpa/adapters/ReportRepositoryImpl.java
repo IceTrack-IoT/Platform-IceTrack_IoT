@@ -72,4 +72,12 @@ public class ReportRepositoryImpl implements ReportRepository {
         .toList();
     return new ReportPage(content, page, size, slice.getTotalElements());
   }
+
+  @Override
+  public void deleteById(Long reportId) {
+    if (reportId == null) {
+      return;
+    }
+    reportPersistenceRepository.deleteById(reportId);
+  }
 }
