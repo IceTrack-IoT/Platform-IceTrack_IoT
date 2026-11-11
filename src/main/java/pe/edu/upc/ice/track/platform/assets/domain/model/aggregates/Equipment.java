@@ -88,6 +88,13 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
   private final Integer configVersion;
 
   /**
+   * Optimistic concurrency token assigned by persistence, {@code null} until the unit is first saved.
+   * Distinct from {@code configVersion}: it grows on every change the owner can make (name, type,
+   * reminder interval, threshold, status), and not on the telemetry Monitoring records.
+   */
+  private Long version;
+
+  /**
    * When the platform received the unit's latest reading batch, by the server clock; {@code null}
    * while the unit never reported, or reported only before this value was recorded.
    */
@@ -165,12 +172,13 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
    * @param lastReceivedAt        when the platform received the latest reading batch, may be
    *                              {@code null}
    * @param underMaintenance      whether a maintenance window currently covers the unit
+   * @param version               the optimistic concurrency token
    */
   public Equipment(Long equipmentId, Long siteId, String uid, String name, EquipmentType equipmentType,
                    StatusEquipment status, boolean online, TemperatureThreshold temperatureThreshold,
                    Integer reminderIntervalDays, Instant lastReadingAt, Double lastKnownTemperature,
                    Integer configVersion, StatusEquipment statusBeforeMaintenance, Instant lastReceivedAt,
-                   boolean underMaintenance) {
+                   boolean underMaintenance, Long version) {
     this.equipmentId = equipmentId;
     this.siteId = Objects.requireNonNull(siteId, "siteId must not be null");
     this.uid = validatedUid(uid);
@@ -187,6 +195,7 @@ public class Equipment extends AbstractDomainAggregateRoot<Equipment> {
     this.statusBeforeMaintenance = statusBeforeMaintenance;
     this.lastReceivedAt = lastReceivedAt;
     this.underMaintenance = underMaintenance;
+    this.version = version;
   }
 
   /**

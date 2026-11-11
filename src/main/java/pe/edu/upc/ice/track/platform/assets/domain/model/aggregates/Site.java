@@ -2,8 +2,10 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.aggregates;
 
 import lombok.Getter;
 import pe.edu.upc.ice.track.platform.assets.domain.model.events.SiteCreatedEvent;
+import pe.edu.upc.ice.track.platform.assets.domain.model.events.SiteGeocodingPendingEvent;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Address;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeoLocation;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingFailureReason;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingStatus;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.SiteContactPhone;
 import pe.edu.upc.ice.track.platform.shared.domain.model.aggregates.AbstractDomainAggregateRoot;
@@ -20,7 +22,8 @@ import java.util.Objects;
  * that has already been verified against the geocoding provider (see {@code VerifiedAddress}). Such
  * a site is {@link GeocodingStatus#RESOLVED} and always carries its location; the provider is not
  * consulted again when it is saved. Sites created before verification existed may hold another
- * status and no location; they are kept as they are and reported without coordinates.</p>
+ * status and no location; they are reported without coordinates, together with the reason the last
+ * lookup failed, and the owner may ask for them to be located again.</p>
  *
  * <p>No JPA or persistence annotation is present here - the mapping lives exclusively in
  * {@code SitePersistenceEntity}.</p>
@@ -51,6 +54,12 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
   private GeoLocation location;
 
   /**
+   * Why the last lookup did not locate the site; {@code null} unless the status is {@code FAILED} or
+   * {@code NOT_FOUND}.
+   */
+  private GeocodingFailureReason geocodingFailureReason;
+
+  /**
    * Registers a new site at a verified address.
    *
    * @param ownerId     identifier of the owner the site belongs to; required
@@ -65,7 +74,7 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
   public static Site registerVerified(Long ownerId, String name, Address address, String contactName,
                                       SiteContactPhone phone, GeoLocation location) {
     return new Site(null, ownerId, null, name, address, contactName, phone, 0,
-        GeocodingStatus.RESOLVED, Objects.requireNonNull(location, "location must not be null"));
+        GeocodingStatus.RESOLVED, Objects.requireNonNull(location, "location must not be null"), null);
   }
 
   /**
@@ -81,10 +90,13 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
    * @param equipmentCount  the number of units installed at the site
    * @param geocodingStatus the stored geocoding status; {@code RESOLVED} for verified sites
    * @param location        the coordinates; ignored unless the status is {@code RESOLVED}
+   * @param geocodingFailureReason why the last lookup failed; ignored unless the status is
+   *                        {@code FAILED} or {@code NOT_FOUND}
    * @throws IllegalArgumentException when a value violates a domain invariant
    */
   public Site(Long siteId, Long ownerId, Long version, String name, Address address, String contactName,
-              SiteContactPhone phone, Integer equipmentCount, GeocodingStatus geocodingStatus, GeoLocation location) {
+              SiteContactPhone phone, Integer equipmentCount, GeocodingStatus geocodingStatus, GeoLocation location,
+              GeocodingFailureReason geocodingFailureReason) {
     this.siteId = siteId;
     this.ownerId = Objects.requireNonNull(ownerId, "ownerId must not be null");
     this.version = version;
@@ -96,6 +108,7 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
     this.geocodingStatus = Objects.requireNonNull(geocodingStatus, "geocodingStatus must not be null");
     // Coordinates stored next to any other status belong to an address the site no longer vouches for.
     this.location = geocodingStatus == GeocodingStatus.RESOLVED ? location : null;
+    this.geocodingFailureReason = isUnlocatedOutcome(geocodingStatus) ? geocodingFailureReason : null;
   }
 
   /**
@@ -128,6 +141,71 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
     this.address = Objects.requireNonNull(verifiedAddress, "address must not be null");
     this.location = Objects.requireNonNull(location, "location must not be null");
     this.geocodingStatus = GeocodingStatus.RESOLVED;
+    this.geocodingFailureReason = null;
+  }
+
+  /**
+   * Tells whether the owner may ask for this site to be located again.
+   *
+   * @return {@code true} unless the site is already {@code RESOLVED}
+   */
+  public boolean canRetryGeocoding() {
+    return geocodingStatus != GeocodingStatus.RESOLVED;
+  }
+
+  /**
+   * Records that a lookup of the current address located the site.
+   *
+   * <p>The address itself is kept as the owner wrote it; only the coordinates are added.</p>
+   *
+   * @param resolvedLocation the coordinates found; required
+   */
+  public void recordGeocodingResolved(GeoLocation resolvedLocation) {
+    this.location = Objects.requireNonNull(resolvedLocation, "location must not be null");
+    this.geocodingStatus = GeocodingStatus.RESOLVED;
+    this.geocodingFailureReason = null;
+  }
+
+  /**
+   * Records that a lookup of the current address ended without a location.
+   *
+   * @param status the final status; {@code FAILED} or {@code NOT_FOUND}
+   * @param reason why the site could not be located; required
+   * @throws IllegalArgumentException when the status is not a failure status
+   */
+  public void recordGeocodingFailure(GeocodingStatus status, GeocodingFailureReason reason) {
+    if (!isUnlocatedOutcome(status)) {
+      throw new IllegalArgumentException("A geocoding failure must be recorded as FAILED or NOT_FOUND");
+    }
+    this.geocodingStatus = status;
+    this.geocodingFailureReason = Objects.requireNonNull(reason, "reason must not be null");
+    this.location = null;
+  }
+
+  /**
+   * Leaves the site waiting for its location while the lookup continues in the background, and
+   * raises the event that starts it.
+   */
+  public void markGeocodingPending() {
+    this.geocodingStatus = GeocodingStatus.PENDING;
+    this.geocodingFailureReason = null;
+    this.location = null;
+    registerDomainEvent(new SiteGeocodingPendingEvent(siteId));
+  }
+
+  /**
+   * Tells why the site has no location, as reported to clients.
+   *
+   * <p>A site that failed before reasons were recorded reports {@link GeocodingFailureReason#UNKNOWN}
+   * rather than nothing.</p>
+   *
+   * @return the reason, or {@code null} unless the status is {@code FAILED} or {@code NOT_FOUND}
+   */
+  public GeocodingFailureReason reportedGeocodingFailureReason() {
+    if (!isUnlocatedOutcome(geocodingStatus)) {
+      return null;
+    }
+    return geocodingFailureReason == null ? GeocodingFailureReason.UNKNOWN : geocodingFailureReason;
   }
 
   /**
@@ -173,6 +251,10 @@ public class Site extends AbstractDomainAggregateRoot<Site> {
    */
   public void onCreated() {
     registerDomainEvent(SiteCreatedEvent.from(this));
+  }
+
+  private static boolean isUnlocatedOutcome(GeocodingStatus status) {
+    return status == GeocodingStatus.FAILED || status == GeocodingStatus.NOT_FOUND;
   }
 
   private static String validatedName(String name) {

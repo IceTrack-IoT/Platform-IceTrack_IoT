@@ -72,11 +72,18 @@ public class SiteRepositoryImpl implements SiteRepository {
   @Override
   public Site save(Site site) {
     var isNew = site.getSiteId() == null;
-    var savedEntity = sitePersistenceRepository.save(SitePersistenceAssembler.toPersistenceFromDomain(site));
+    // Events raised by the caller's copy (an existing site) are published too: the saved copy is a
+    // fresh reconstitution and would not carry them.
+    var raisedEvents = List.copyOf(site.domainEvents());
+    site.clearDomainEvents();
+    // Flushed at once so the answered copy carries the version the write produced, which is what a
+    // client sends back in If-Match next.
+    var savedEntity = sitePersistenceRepository.saveAndFlush(SitePersistenceAssembler.toPersistenceFromDomain(site));
     var savedSite = SitePersistenceAssembler.toDomainFromPersistence(savedEntity);
     if (isNew) {
       savedSite.onCreated();
     }
+    raisedEvents.forEach(eventPublisher::publishEvent);
     savedSite.domainEvents().forEach(eventPublisher::publishEvent);
     savedSite.clearDomainEvents();
     return savedSite;

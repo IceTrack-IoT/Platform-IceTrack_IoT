@@ -52,6 +52,7 @@ import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.UpdateEqui
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ConditionalResponseAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.IfMatchHeaderAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 import java.util.List;
@@ -328,16 +329,20 @@ public class EquipmentController {
       @ApiResponse(responseCode = "400", description = "Invalid input data, such as a non-positive maintenance interval"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
-      @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller")
+      @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller"),
+      @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION_CONFLICT - If-Match names a version other than the current one")
   })
   public ResponseEntity<?> updateEquipment(
       @PathVariable
       @Parameter(description = "Equipment unique identifier", example = "10", required = true)
       Long equipmentId,
       @Valid @RequestBody UpdateEquipmentResource resource,
+      @RequestHeader(value = IfMatchHeaderAssembler.IF_MATCH_HEADER, required = false)
+      @Parameter(description = "Version of the unit being edited, as read from its version property", example = "\"2\"")
+      String ifMatch,
       Authentication authentication) {
     var command = UpdateEquipmentCommandFromResourceAssembler.toCommandFromResource(
-        equipmentId, authentication.getName(), resource);
+        equipmentId, authentication.getName(), resource, ifMatch);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
         this::toResource,
@@ -370,16 +375,20 @@ public class EquipmentController {
       @ApiResponse(responseCode = "400", description = "Invalid band: a bound outside 0 to 30 °C, or a minimum greater than or equal to its maximum"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
-      @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller")
+      @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller"),
+      @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION_CONFLICT - If-Match names a version other than the current one")
   })
   public ResponseEntity<?> changeThreshold(
       @PathVariable
       @Parameter(description = "Equipment unique identifier", example = "10", required = true)
       Long equipmentId,
       @Valid @RequestBody ChangeThresholdResource resource,
+      @RequestHeader(value = IfMatchHeaderAssembler.IF_MATCH_HEADER, required = false)
+      @Parameter(description = "Version of the unit being edited, as read from its version property", example = "\"2\"")
+      String ifMatch,
       Authentication authentication) {
     var command = ChangeThresholdCommandFromResourceAssembler.toCommandFromResource(
-        equipmentId, authentication.getName(), resource);
+        equipmentId, authentication.getName(), resource, ifMatch);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
         this::toResource,
@@ -415,16 +424,20 @@ public class EquipmentController {
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account is not an owner, or is an owner without an owner profile"),
       @ApiResponse(responseCode = "404", description = "No such equipment is reachable by the caller"),
-      @ApiResponse(responseCode = "409", description = "The requested status transition is not allowed")
+      @ApiResponse(responseCode = "409", description = "The requested status transition is not allowed, or "
+          + "CONCURRENT_MODIFICATION_CONFLICT when If-Match names a version other than the current one")
   })
   public ResponseEntity<?> changeStatus(
       @PathVariable
       @Parameter(description = "Equipment unique identifier", example = "10", required = true)
       Long equipmentId,
       @Valid @RequestBody ChangeStatusResource resource,
+      @RequestHeader(value = IfMatchHeaderAssembler.IF_MATCH_HEADER, required = false)
+      @Parameter(description = "Version of the unit being edited, as read from its version property", example = "\"2\"")
+      String ifMatch,
       Authentication authentication) {
     var command = ChangeStatusCommandFromResourceAssembler.toCommandFromResource(
-        equipmentId, authentication.getName(), resource);
+        equipmentId, authentication.getName(), resource, ifMatch);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         equipmentCommandService.handle(command),
         this::toResource,

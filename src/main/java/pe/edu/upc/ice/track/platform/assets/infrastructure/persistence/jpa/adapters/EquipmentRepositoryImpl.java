@@ -190,7 +190,9 @@ public class EquipmentRepositoryImpl implements EquipmentRepository {
   @Override
   public Equipment save(Equipment equipment) {
     var isNew = equipment.getEquipmentId() == null;
-    var savedEntity = equipmentPersistenceRepository.save(
+    // Flushed at once so the answered copy carries the version the write produced, which is what a
+    // client sends back in If-Match next.
+    var savedEntity = equipmentPersistenceRepository.saveAndFlush(
         EquipmentPersistenceAssembler.toPersistenceFromDomain(equipment));
     Equipment savedEquipment;
     if (equipment.getSiteName() == null) {

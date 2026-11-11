@@ -35,7 +35,8 @@ public final class SitePersistenceAssembler {
         entity.getPhone(),
         entity.getEquipmentCount(),
         entity.getGeocodingStatus(),
-        toLocation(entity));
+        toLocation(entity),
+        entity.getGeocodingFailureReason());
   }
 
   /**
@@ -58,6 +59,7 @@ public final class SitePersistenceAssembler {
     entity.setPhone(site.getPhone());
     entity.setEquipmentCount(site.getEquipmentCount());
     entity.setGeocodingStatus(site.getGeocodingStatus());
+    entity.setGeocodingFailureReason(site.getGeocodingFailureReason());
     var location = site.isLocated() ? site.getLocation() : null;
     entity.setLatitude(location == null ? null : location.latitude());
     entity.setLongitude(location == null ? null : location.longitude());

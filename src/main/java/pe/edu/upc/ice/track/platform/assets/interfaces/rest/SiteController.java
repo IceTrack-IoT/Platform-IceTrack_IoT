@@ -21,12 +21,15 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.AddressValidationCommandService;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.SiteCommandService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.EquipmentQueryService;
 import pe.edu.upc.ice.track.platform.assets.application.queryservices.SiteQueryService;
+import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RetrySiteGeocodingCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentBySiteQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetEquipmentConnectivityQuery;
 import pe.edu.upc.ice.track.platform.assets.domain.model.queries.GetSiteByIdQuery;
@@ -39,6 +42,8 @@ import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.ValidateAd
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.AddressValidationResourceFromResultAssembler;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform.ValidateAddressCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.AddressValidationResult;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingStatus;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.IfMatchHeaderAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.SiteResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.UpdateSiteAddressResource;
@@ -63,8 +68,9 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  * a client cannot register a site for somebody else or read one that is not its own.</p>
  *
  * <p>Every endpoint declares its roles through method security, so an account outside them is
- * answered with 403 before a service is reached. Registration, the listing and both updates are
- * {@code OWNER_ROLE} only. Fetching a site and listing its equipment are also open to
+ * answered with 403 before a service is reached. Registration, the listing, both updates and the
+ * geocoding retry are {@code OWNER_ROLE} only. Both updates accept the site's {@code version} in
+ * {@code If-Match} and refuse a stale one with 409 {@code CONCURRENT_MODIFICATION_CONFLICT}. Fetching a site and listing its equipment are also open to
  * {@code TECHNICIAN_ROLE}: the role the caller acts in is handed to the query services, which do
  * not scope a technician by ownership, since a technician is sent to sites of any owner.</p>
  *
@@ -351,16 +357,20 @@ public class SiteController {
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
       @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller"),
-      @ApiResponse(responseCode = "409", description = "The site exists but belongs to another owner")
+      @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION_CONFLICT - If-Match names a version "
+          + "other than the current one, or another write overlapped this one")
   })
   public ResponseEntity<?> updateSite(
       @PathVariable
       @Parameter(description = "Site unique identifier", example = "1", required = true)
       Long siteId,
       @Valid @RequestBody UpdateSiteResource resource,
+      @RequestHeader(value = IfMatchHeaderAssembler.IF_MATCH_HEADER, required = false)
+      @Parameter(description = "Version of the site being edited, as read from its version property", example = "\"3\"")
+      String ifMatch,
       Authentication authentication) {
     var command = UpdateSiteInfoCommandFromResourceAssembler.toCommandFromResource(
-        siteId, authentication.getName(), resource);
+        siteId, authentication.getName(), resource, ifMatch);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         siteCommandService.handle(command),
         SiteResourceFromEntityAssembler::toResourceFromEntity,
@@ -391,19 +401,70 @@ public class SiteController {
       @ApiResponse(responseCode = "400", description = "ADDRESS_VALIDATION_REQUIRED or PIN_OUT_OF_RANGE"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
-      @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller")
+      @ApiResponse(responseCode = "404", description = "No such site is reachable by the caller"),
+      @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION_CONFLICT - If-Match names a version "
+          + "other than the current one, or another write overlapped this one")
   })
   public ResponseEntity<?> updateSiteAddress(
       @PathVariable
       @Parameter(description = "Site unique identifier", example = "1", required = true)
       Long siteId,
       @Valid @RequestBody UpdateSiteAddressResource resource,
+      @RequestHeader(value = IfMatchHeaderAssembler.IF_MATCH_HEADER, required = false)
+      @Parameter(description = "Version of the site being edited, as read from its version property", example = "\"3\"")
+      String ifMatch,
       Authentication authentication) {
     var command = UpdateSiteAddressCommandFromResourceAssembler.toCommandFromResource(
-        siteId, authentication.getName(), resource);
+        siteId, authentication.getName(), resource, ifMatch);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         siteCommandService.handle(command),
         SiteResourceFromEntityAssembler::toResourceFromEntity,
         HttpStatus.OK);
+  }
+
+  /**
+   * Locates again one of the authenticated owner's sites that has no location.
+   *
+   * @param siteId The site identifier
+   * @param authentication The authenticated principal, whose name identifies the caller
+   * @return The {@link SiteResource} with 200 OK when the lookup finished, with 202 Accepted while it
+   *         continues in the background, or the reason it was refused
+   */
+  @PostMapping("/{siteId}/geocoding/retry")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(
+      summary = "Retry locating a site",
+      description = "Looks the site's current address up again with Google Maps. No request body. Answers 200 with "
+          + "the site when the lookup finished (RESOLVED, or NOT_FOUND with its geocoding_failure_reason), or 202 "
+          + "with geocoding_status PENDING when the maps service could not answer right away and the lookup "
+          + "continues in the background. Shares the 20 per minute limit of POST /validate-address.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Lookup finished",
+          content = @Content(schema = @Schema(implementation = SiteResource.class))),
+      @ApiResponse(
+          responseCode = "202",
+          description = "Lookup continues in the background; the site is PENDING",
+          content = @Content(schema = @Schema(implementation = SiteResource.class))),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "Forbidden - the authenticated account has no owner profile"),
+      @ApiResponse(responseCode = "404", description = "SITE_NOT_FOUND - no such site is reachable by the caller"),
+      @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION - the site is already RESOLVED"),
+      @ApiResponse(responseCode = "429", description = "TOO_MANY_REQUESTS - the shared 20 per minute limit is used up; Retry-After is 60"),
+      @ApiResponse(responseCode = "503", description = "GEOCODING_UNAVAILABLE - the maps service refused the request; Retry-After is 30")
+  })
+  public ResponseEntity<?> retrySiteGeocoding(
+      @PathVariable
+      @Parameter(description = "Site unique identifier", example = "1", required = true)
+      Long siteId,
+      Authentication authentication) {
+    return switch (siteCommandService.handle(new RetrySiteGeocodingCommand(siteId, authentication.getName()))) {
+      case Result.Success<Site, ApplicationError> success -> ResponseEntity
+          .status(success.value().getGeocodingStatus() == GeocodingStatus.PENDING ? HttpStatus.ACCEPTED : HttpStatus.OK)
+          .body(SiteResourceFromEntityAssembler.toResourceFromEntity(success.value()));
+      case Result.Failure<Site, ApplicationError> failure -> validationFailure(failure.error());
+    };
   }
 }

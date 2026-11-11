@@ -4,16 +4,25 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.commands;
  * Command to replace the editable details of an existing site. The address is not part of it:
  * it changes only through {@link UpdateSiteAddressCommand}, with a verified token.
  *
- * @param siteId      identifier of the site to update; required
- * @param username    username of the authenticated caller; required
- * @param name        the new site name; required
- * @param contactName the new contact name; required
- * @param phone       the new contact phone number; required
+ * @param siteId          identifier of the site to update; required
+ * @param username        username of the authenticated caller; required
+ * @param name            the new site name; required
+ * @param contactName     the new contact name; required
+ * @param phone           the new contact phone number; required
+ * @param expectedVersion the version the caller edited, from {@code If-Match}; {@code null} skips the check
  */
 public record UpdateSiteInfoCommand(
     Long siteId,
     String username,
     String name,
     String contactName,
-    String phone) {
+    String phone,
+    Long expectedVersion) {
+
+  /**
+   * Creates the command without a version precondition.
+   */
+  public UpdateSiteInfoCommand(Long siteId, String username, String name, String contactName, String phone) {
+    this(siteId, username, name, contactName, phone, null);
+  }
 }

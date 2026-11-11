@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.assets.interfaces.rest.transform;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeoLocation;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.GeoLocationResource;
+import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.GeocodingFailureReasonResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.GeocodingStatusResource;
 import pe.edu.upc.ice.track.platform.assets.interfaces.rest.resources.SiteResource;
 
@@ -37,8 +38,10 @@ public class SiteResourceFromEntityAssembler {
         entity.getPhone().value(),
         entity.getEquipmentCount(),
         GeocodingStatusResource.fromDomain(entity.getGeocodingStatus()),
+        GeocodingFailureReasonResource.fromDomain(entity.reportedGeocodingFailureReason()),
         location == null ? null : new GeoLocationResource(location.latitude(), location.longitude(), location.placeId()),
-        location == null ? null : toNavigationUrl(location));
+        location == null ? null : toNavigationUrl(location),
+        entity.getVersion() == null ? 0L : entity.getVersion());
   }
 
   /**

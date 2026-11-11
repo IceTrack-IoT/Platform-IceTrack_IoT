@@ -20,6 +20,7 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateEquipmen
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.TemperatureThreshold;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.EquipmentRepository;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
+import pe.edu.upc.ice.track.platform.shared.application.concurrency.VersionPrecondition;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
@@ -43,6 +44,10 @@ import java.util.Optional;
  * <p>A caller that asks for a unit it does not own is told the unit does not exist rather than
  * that it belongs to somebody else: the alternative would turn this endpoint into an oracle for
  * discovering which identifiers are real.</p>
+ *
+ * <p>The update, threshold and status commands may carry the version the caller edited
+ * ({@code If-Match}); when the unit has moved past it the command is refused with
+ * {@code CONCURRENT_MODIFICATION_CONFLICT} before anything changes.</p>
  */
 @Service
 @Slf4j
@@ -122,7 +127,7 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(UpdateEquipmentCommand command) {
-    return reachableEquipment(command.equipmentId(), command.username()).flatMap(equipment -> {
+    return reachableEquipment(command.equipmentId(), command.username(), command.expectedVersion()).flatMap(equipment -> {
       try {
         equipment.updateInfo(command.name(), command.equipmentType(), command.reminderIntervalDays());
         var savedEquipment = equipmentRepository.save(equipment);
@@ -130,6 +135,8 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
         return Result.success(savedEquipment);
       } catch (IllegalArgumentException e) {
         return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
+      } catch (OptimisticLockingFailureException e) {
+        throw e;
       } catch (Exception e) {
         return Result.failure(ApplicationError.unexpected("Equipment update", e.getMessage()));
       }
@@ -140,7 +147,7 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(ChangeThresholdCommand command) {
-    return reachableEquipment(command.equipmentId(), command.username()).flatMap(equipment -> {
+    return reachableEquipment(command.equipmentId(), command.username(), command.expectedVersion()).flatMap(equipment -> {
       try {
         // The threshold value object rejects an inverted band by throwing, before the aggregate is
         // modified, so the domain event it registers is never raised for a rejected threshold.
@@ -154,6 +161,8 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
         return Result.success(equipmentRepository.findById(savedEquipment.getEquipmentId()).orElse(savedEquipment));
       } catch (IllegalArgumentException e) {
         return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
+      } catch (OptimisticLockingFailureException e) {
+        throw e;
       } catch (Exception e) {
         return Result.failure(ApplicationError.unexpected("Equipment threshold update", e.getMessage()));
       }
@@ -265,7 +274,7 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
   @Override
   @Transactional
   public Result<Equipment, ApplicationError> handle(ChangeStatusCommand command) {
-    return reachableEquipment(command.equipmentId(), command.username()).flatMap(equipment -> {
+    return reachableEquipment(command.equipmentId(), command.username(), command.expectedVersion()).flatMap(equipment -> {
       try {
         equipment.changeStatus(command.newStatus());
         var savedEquipment = equipmentRepository.save(equipment);
@@ -276,6 +285,8 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
         return Result.failure(ApplicationError.conflict(EQUIPMENT_RESOURCE, e.getMessage()));
       } catch (IllegalArgumentException e) {
         return Result.failure(ApplicationError.validationError(EQUIPMENT_RESOURCE, e.getMessage()));
+      } catch (OptimisticLockingFailureException e) {
+        throw e;
       } catch (Exception e) {
         return Result.failure(ApplicationError.unexpected("Equipment status update", e.getMessage()));
       }
@@ -308,6 +319,23 @@ public class EquipmentCommandServiceImpl implements EquipmentCommandService {
           .filter(candidate -> isSiteOwnedBy(candidate.getSiteId(), ownerId));
       return equipment.<Result<Equipment, ApplicationError>>map(Result::success).orElseGet(() -> Result.failure(notReachableEquipment(equipmentId)));
     });
+  }
+
+  /**
+   * Loads a unit the caller may act on, as {@link #reachableEquipment(Long, String)} does, and checks
+   * it is still at the version the caller edited.
+   *
+   * @param equipmentId     the unit identifier
+   * @param username        username of the requesting caller
+   * @param expectedVersion the version named by {@code If-Match}, or {@code null} to skip the check
+   * @return the unit, or the failure of the ownership check, or a 409
+   *         {@code CONCURRENT_MODIFICATION_CONFLICT} naming the current version
+   */
+  private Result<Equipment, ApplicationError> reachableEquipment(Long equipmentId, String username, Long expectedVersion) {
+    return reachableEquipment(equipmentId, username).flatMap(equipment ->
+        VersionPrecondition.check(expectedVersion, equipment.getVersion())
+            .<Result<Equipment, ApplicationError>>map(Result::failure)
+            .orElseGet(() -> Result.success(equipment)));
   }
 
   /**

@@ -7,16 +7,24 @@ import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.assets.application.commandservices.SiteCommandService;
 import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.acl.AssetsExternalOwnerService;
 import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.addressvalidation.AddressValidationTokenPort;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.addressvalidation.ValidationRateLimiterPort;
+import pe.edu.upc.ice.track.platform.assets.application.internal.outboundservices.geocoding.GeocodingPort;
 import pe.edu.upc.ice.track.platform.assets.domain.model.aggregates.Site;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RegisterSiteCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.ResumeSiteGeocodingCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.commands.RetrySiteGeocodingCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateSiteAddressCommand;
 import pe.edu.upc.ice.track.platform.assets.domain.model.commands.UpdateSiteInfoCommand;
+import pe.edu.upc.ice.track.platform.assets.domain.model.policies.CoveragePolicy;
 import pe.edu.upc.ice.track.platform.assets.domain.model.policies.PinDistancePolicy;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Address;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeoLocation;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingFailureReason;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingStatus;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.SiteContactPhone;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.VerifiedAddress;
 import pe.edu.upc.ice.track.platform.assets.domain.repositories.SiteRepository;
+import pe.edu.upc.ice.track.platform.shared.application.concurrency.VersionPrecondition;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
@@ -29,8 +37,12 @@ import pe.edu.upc.ice.track.platform.shared.application.result.Result;
  *
  * <p>An address enters a site only through a validation token issued for the same owner. The token
  * is checked here, then the optional pin is checked against the verified point (at most 150 meters
- * away). The site is saved as {@code RESOLVED} with those coordinates; the geocoding provider is never
- * queried.</p>
+ * away). The site is saved as {@code RESOLVED} with those coordinates; the geocoding provider is not
+ * queried. The provider is only queried to locate again a site that has no location, and such a retry
+ * is charged to the same per-caller quota as address validation.</p>
+ *
+ * <p>An update carrying the version the caller edited is refused with
+ * {@code CONCURRENT_MODIFICATION_CONFLICT} when the site has moved past it.</p>
  *
  * <p>An {@link OptimisticLockingFailureException} is rethrown rather than turned into a result, so
  * the global handler answers 409 {@code CONCURRENT_MODIFICATION_CONFLICT}.</p>
@@ -44,6 +56,8 @@ public class SiteCommandServiceImpl implements SiteCommandService {
   private final SiteRepository siteRepository;
   private final AssetsExternalOwnerService assetsExternalOwnerService;
   private final AddressValidationTokenPort addressValidationTokenPort;
+  private final GeocodingPort geocodingPort;
+  private final ValidationRateLimiterPort validationRateLimiter;
 
   /**
    * Constructor
@@ -51,14 +65,20 @@ public class SiteCommandServiceImpl implements SiteCommandService {
    * @param siteRepository             the {@link SiteRepository} instance
    * @param assetsExternalOwnerService the owner resolution ACL
    * @param addressValidationTokenPort the port that checks validation tokens
+   * @param geocodingPort              the port that locates an address, used by geocoding retries
+   * @param validationRateLimiter      the per-caller quota shared with address validation
    */
   public SiteCommandServiceImpl(
       SiteRepository siteRepository,
       AssetsExternalOwnerService assetsExternalOwnerService,
-      AddressValidationTokenPort addressValidationTokenPort) {
+      AddressValidationTokenPort addressValidationTokenPort,
+      GeocodingPort geocodingPort,
+      ValidationRateLimiterPort validationRateLimiter) {
     this.siteRepository = siteRepository;
     this.assetsExternalOwnerService = assetsExternalOwnerService;
     this.addressValidationTokenPort = addressValidationTokenPort;
+    this.geocodingPort = geocodingPort;
+    this.validationRateLimiter = validationRateLimiter;
   }
 
   // inherited javadoc
@@ -92,6 +112,10 @@ public class SiteCommandServiceImpl implements SiteCommandService {
   @Transactional
   public Result<Site, ApplicationError> handle(UpdateSiteInfoCommand command) {
     return reachableSite(command.siteId(), command.username()).flatMap(site -> {
+      var stale = VersionPrecondition.check(command.expectedVersion(), site.getVersion());
+      if (stale.isPresent()) {
+        return Result.failure(stale.get());
+      }
       try {
         site.updateInfo(command.name(), command.contactName(), new SiteContactPhone(command.phone()));
         var savedSite = siteRepository.save(site);
@@ -111,7 +135,11 @@ public class SiteCommandServiceImpl implements SiteCommandService {
   @Override
   @Transactional
   public Result<Site, ApplicationError> handle(UpdateSiteAddressCommand command) {
-    return reachableSite(command.siteId(), command.username()).flatMap(site ->
+    return reachableSite(command.siteId(), command.username())
+        .flatMap(site -> VersionPrecondition.check(command.expectedVersion(), site.getVersion())
+            .<Result<Site, ApplicationError>>map(Result::failure)
+            .orElseGet(() -> Result.success(site)))
+        .flatMap(site ->
         verifiedAddress(command.validationToken(), site.getOwnerId()).flatMap(verified ->
             pinnedLocation(verified, command.pinLatitude(), command.pinLongitude()).flatMap(location -> {
               try {
@@ -127,6 +155,93 @@ public class SiteCommandServiceImpl implements SiteCommandService {
                 return Result.failure(ApplicationError.unexpected("Site address update", e.getMessage()));
               }
             })));
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public Result<Site, ApplicationError> handle(RetrySiteGeocodingCommand command) {
+    return reachableSite(command.siteId(), command.username()).flatMap(site -> {
+      if (!site.canRetryGeocoding()) {
+        return Result.failure(new ApplicationError(
+            "INVALID_STATUS_TRANSITION",
+            "The site is already located",
+            "Only a site whose geocoding_status is PENDING, FAILED or NOT_FOUND can be located again"));
+      }
+      if (!validationRateLimiter.tryAcquire(command.username())) {
+        return Result.failure(ApplicationError.tooManyRequests(
+            "More than 20 address validations or geocoding retries within one minute; try again shortly"));
+      }
+      var outcome = siteRepository.save(applyLookup(site, false));
+      log.info("Geocoding retry of site {} ended {}", outcome.getSiteId(), outcome.getGeocodingStatus());
+      if (outcome.getGeocodingStatus() == GeocodingStatus.FAILED
+          && outcome.getGeocodingFailureReason() == GeocodingFailureReason.PROVIDER_UNAVAILABLE) {
+        return Result.failure(new ApplicationError(
+            "GEOCODING_UNAVAILABLE",
+            "The maps service is unavailable",
+            "PERMANENT_FAILURE"));
+      }
+      return Result.success(outcome);
+    });
+  }
+
+  // inherited javadoc
+  @Override
+  @Transactional
+  public Result<Site, ApplicationError> handle(ResumeSiteGeocodingCommand command) {
+    var site = siteRepository.findById(command.siteId());
+    if (site.isEmpty()) {
+      return Result.failure(ApplicationError.notFound(SITE_RESOURCE, String.valueOf(command.siteId())));
+    }
+    if (site.get().getGeocodingStatus() != GeocodingStatus.PENDING) {
+      // Located or re-addressed meanwhile: nothing is left to do.
+      return Result.success(site.get());
+    }
+    var outcome = siteRepository.save(applyLookup(site.get(), command.finalAttempt()));
+    log.info("Background geocoding of site {} ended {}", outcome.getSiteId(), outcome.getGeocodingStatus());
+    return Result.success(outcome);
+  }
+
+  /**
+   * Looks the site's current address up and records the outcome on the site.
+   *
+   * <ul>
+   *   <li>A single match inside the service area locates the site.</li>
+   *   <li>A match outside it leaves the site {@code NOT_FOUND} with {@code OUT_OF_COVERAGE}.</li>
+   *   <li>No match, or an ambiguous one, leaves it {@code NOT_FOUND} with {@code ADDRESS_NOT_FOUND}.</li>
+   *   <li>A provider that refused the request leaves it {@code FAILED} with
+   *       {@code PROVIDER_UNAVAILABLE}.</li>
+   *   <li>A provider that could not answer right away leaves it {@code PENDING}, raising the event
+   *       that continues in the background, unless this is the final attempt, which leaves it
+   *       {@code FAILED} instead.</li>
+   * </ul>
+   *
+   * @param site         the site to locate
+   * @param finalAttempt whether no attempt follows this one
+   * @return the same site, changed
+   */
+  private Site applyLookup(Site site, boolean finalAttempt) {
+    var result = geocodingPort.geocode(site.getAddress().value(), null);
+    switch (result.outcome()) {
+      case RESOLVED -> {
+        var location = result.location();
+        if (CoveragePolicy.areaOf(location.latitude(), location.longitude()).isPresent()) {
+          site.recordGeocodingResolved(location);
+        } else {
+          site.recordGeocodingFailure(GeocodingStatus.NOT_FOUND, GeocodingFailureReason.OUT_OF_COVERAGE);
+        }
+      }
+      case NOT_FOUND -> site.recordGeocodingFailure(GeocodingStatus.NOT_FOUND, GeocodingFailureReason.ADDRESS_NOT_FOUND);
+      case PERMANENT_FAILURE -> site.recordGeocodingFailure(GeocodingStatus.FAILED, GeocodingFailureReason.PROVIDER_UNAVAILABLE);
+      case TRANSIENT_FAILURE -> {
+        if (finalAttempt) {
+          site.recordGeocodingFailure(GeocodingStatus.FAILED, GeocodingFailureReason.PROVIDER_UNAVAILABLE);
+        } else {
+          site.markGeocodingPending();
+        }
+      }
+    }
+    return site;
   }
 
   /**
