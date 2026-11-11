@@ -26,7 +26,8 @@ public class DashboardConfigResourceFromEntityAssembler {
         toResourceFromValueObject(entity.getDefaultTemperatureRange()),
         entity.getCards().stream()
             .map(DashboardConfigResourceFromEntityAssembler::toCardResourceFromEntity)
-            .toList());
+            .toList(),
+        entity.getVersion() == null ? 0L : entity.getVersion());
   }
 
   /**

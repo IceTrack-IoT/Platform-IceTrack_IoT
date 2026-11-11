@@ -13,21 +13,23 @@ import java.util.Objects;
  * <p>The identifiers and the email address are not part of the command: the account binding
  * never changes, and the email is owned by the account in the IAM context.</p>
  *
- * @param ownerId  identifier of the owner to update; required
- * @param fullName the new name; required
- * @param phone    the new phone number; required
- * @param address  the new street address; required
- * @param ruc      the new taxpayer registration number; required
+ * @param ownerId         identifier of the owner to update; required
+ * @param fullName        the new name; required
+ * @param phone           the new phone number; required
+ * @param address         the new street address; required
+ * @param ruc             the new taxpayer registration number; required
+ * @param expectedVersion the version the caller edited, from {@code If-Match}; {@code null} skips the check
  */
 public record UpdateOwnerCommand(
     Long ownerId,
     PersonName fullName,
     Phone phone,
     StreetAddress address,
-    Ruc ruc) {
+    Ruc ruc,
+    Long expectedVersion) {
 
   /**
-   * Validates that every component was supplied.
+   * Validates that every required component was supplied.
    */
   public UpdateOwnerCommand {
     Objects.requireNonNull(ownerId, "ownerId must not be null");
@@ -35,5 +37,12 @@ public record UpdateOwnerCommand(
     Objects.requireNonNull(phone, "phone must not be null");
     Objects.requireNonNull(address, "address must not be null");
     Objects.requireNonNull(ruc, "ruc must not be null");
+  }
+
+  /**
+   * Creates the command without a version precondition.
+   */
+  public UpdateOwnerCommand(Long ownerId, PersonName fullName, Phone phone, StreetAddress address, Ruc ruc) {
+    this(ownerId, fullName, phone, address, ruc, null);
   }
 }

@@ -66,6 +66,9 @@ public final class ProfilePersistenceAssembler {
     // For new profiles, leave ID null to allow JPA to generate it
     if (profile.getUserProfileId() != null) {
       entity.setId(profile.getUserProfileId());
+      // A stored profile is merged with the version it was read with, so a write based on a copy
+      // that another write has overtaken is refused instead of overwriting it.
+      entity.setVersion(profile.getVersion());
     }
     var name = profile.getFullName();
     var phone = profile.getPhone();

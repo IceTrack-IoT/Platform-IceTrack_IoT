@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.profiles.application.internal.commandservices;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.DashboardConfigCommandService;
@@ -14,6 +15,7 @@ import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.UpdateDashbo
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.CardLayoutItem;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.TemperatureRange;
 import pe.edu.upc.ice.track.platform.profiles.domain.repositories.DashboardConfigRepository;
+import pe.edu.upc.ice.track.platform.shared.application.concurrency.VersionPrecondition;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.SiteId;
@@ -25,6 +27,10 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
  * <p>Every command first checks, through the {@link ExternalIamService} ACL, that the platform
  * account it targets exists: a dashboard configuration is never created for, nor changed on behalf
  * of, an account IAM does not know.</p>
+ *
+ * <p>The layout, visibility and defaults updates may carry the version the caller edited
+ * ({@code If-Match}); a configuration that has moved past it is left untouched and the command is
+ * refused with {@code CONCURRENT_MODIFICATION_CONFLICT}.</p>
  */
 @Service
 @Slf4j
@@ -73,6 +79,9 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
       return Result.success(savedDashboardConfig);
     } catch (IllegalArgumentException e) {
       return Result.failure(ApplicationError.validationError(DASHBOARD_CONFIG_RESOURCE, e.getMessage()));
+    } catch (OptimisticLockingFailureException e) {
+      // The write overlapped another one; GlobalExceptionHandler answers 409.
+      throw e;
     } catch (Exception e) {
       return Result.failure(ApplicationError.unexpected("Dashboard configuration creation", e.getMessage()));
     }
@@ -89,6 +98,10 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
     if (existingDashboardConfig.isEmpty()) {
       return Result.failure(ApplicationError.notFound(DASHBOARD_CONFIG_RESOURCE, "user " + command.userId()));
     }
+    var stale = VersionPrecondition.check(command.expectedVersion(), existingDashboardConfig.get().getVersion());
+    if (stale.isPresent()) {
+      return Result.failure(stale.get());
+    }
     try {
       var dashboardConfig = existingDashboardConfig.get();
       dashboardConfig.updateLayout(command.cards().stream()
@@ -99,6 +112,9 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
       return Result.success(savedDashboardConfig);
     } catch (IllegalArgumentException e) {
       return Result.failure(ApplicationError.validationError(DASHBOARD_CARD_RESOURCE, e.getMessage()));
+    } catch (OptimisticLockingFailureException e) {
+      // The write overlapped another one; GlobalExceptionHandler answers 409.
+      throw e;
     } catch (Exception e) {
       return Result.failure(ApplicationError.unexpected("Dashboard layout update", e.getMessage()));
     }
@@ -119,12 +135,19 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
     if (dashboardConfig.findCard(command.cardId()).isEmpty()) {
       return Result.failure(ApplicationError.notFound(DASHBOARD_CARD_RESOURCE, command.cardId().toString()));
     }
+    var stale = VersionPrecondition.check(command.expectedVersion(), dashboardConfig.getVersion());
+    if (stale.isPresent()) {
+      return Result.failure(stale.get());
+    }
     try {
       dashboardConfig.toggleCardVisibility(command.cardId());
       var savedDashboardConfig = dashboardConfigRepository.save(dashboardConfig);
       log.info("Toggled the visibility of card {} of dashboard configuration {}",
           command.cardId(), savedDashboardConfig.getDashboardConfigId());
       return Result.success(savedDashboardConfig);
+    } catch (OptimisticLockingFailureException e) {
+      // The write overlapped another one; GlobalExceptionHandler answers 409.
+      throw e;
     } catch (Exception e) {
       return Result.failure(ApplicationError.unexpected("Dashboard card visibility toggle", e.getMessage()));
     }
@@ -147,6 +170,9 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
       var savedDashboardConfig = dashboardConfigRepository.save(dashboardConfig);
       log.info("Reset dashboard configuration {} to the default card layout", savedDashboardConfig.getDashboardConfigId());
       return Result.success(savedDashboardConfig);
+    } catch (OptimisticLockingFailureException e) {
+      // The write overlapped another one; GlobalExceptionHandler answers 409.
+      throw e;
     } catch (Exception e) {
       return Result.failure(ApplicationError.unexpected("Dashboard layout reset", e.getMessage()));
     }
@@ -163,6 +189,10 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
     if (existingDashboardConfig.isEmpty()) {
       return Result.failure(ApplicationError.notFound(DASHBOARD_CONFIG_RESOURCE, "user " + command.userId()));
     }
+    var stale = VersionPrecondition.check(command.expectedVersion(), existingDashboardConfig.get().getVersion());
+    if (stale.isPresent()) {
+      return Result.failure(stale.get());
+    }
     try {
       var dashboardConfig = existingDashboardConfig.get();
       dashboardConfig.updateDefaults(
@@ -173,6 +203,9 @@ public class DashboardConfigCommandServiceImpl implements DashboardConfigCommand
       return Result.success(savedDashboardConfig);
     } catch (IllegalArgumentException e) {
       return Result.failure(ApplicationError.validationError(DASHBOARD_CONFIG_RESOURCE, e.getMessage()));
+    } catch (OptimisticLockingFailureException e) {
+      // The write overlapped another one; GlobalExceptionHandler answers 409.
+      throw e;
     } catch (Exception e) {
       return Result.failure(ApplicationError.unexpected("Dashboard defaults update", e.getMessage()));
     }

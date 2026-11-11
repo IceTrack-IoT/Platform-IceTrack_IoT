@@ -58,6 +58,13 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
   private static final Comparator<DashboardCard> BY_DEFAULT_LAYOUT = Comparator.comparing(DashboardCard::getCardType);
 
   private final Long dashboardConfigId;
+
+  /**
+   * Optimistic concurrency token assigned by persistence, {@code null} until the configuration is
+   * first saved. It grows on every change, cards included.
+   */
+  private final Long version;
+
   private final UserId userId;
   private SiteId defaultSiteId;
   private TemperatureRange defaultTemperatureRange;
@@ -94,10 +101,28 @@ public class DashboardConfig extends AbstractDomainAggregateRoot<DashboardConfig
    */
   public DashboardConfig(Long dashboardConfigId, UserId userId, SiteId defaultSiteId,
                          TemperatureRange defaultTemperatureRange, Collection<DashboardCard> cards) {
+    this(dashboardConfigId, null, userId, defaultSiteId, defaultTemperatureRange, cards);
+  }
+
+  /**
+   * Reconstitutes a dashboard configuration together with its concurrency version, as
+   * {@link #DashboardConfig(Long, UserId, SiteId, TemperatureRange, Collection)} does.
+   *
+   * @param dashboardConfigId       the persistence identity, or {@code null} for a configuration not yet persisted
+   * @param version                 the optimistic concurrency token, or {@code null} when not yet persisted
+   * @param userId                  identifier of the account the configuration belongs to; required
+   * @param defaultSiteId           the site the dashboard opens on; required
+   * @param defaultTemperatureRange the temperature range the dashboard opens on; required
+   * @param cards                   the stored cards of the dashboard, at most one per type; required, may be empty
+   * @throws IllegalStateException when two stored cards share a type
+   */
+  public DashboardConfig(Long dashboardConfigId, Long version, UserId userId, SiteId defaultSiteId,
+                         TemperatureRange defaultTemperatureRange, Collection<DashboardCard> cards) {
     Objects.requireNonNull(userId, "userId must not be null");
     Objects.requireNonNull(userId.userId(), "userId must carry an identifier");
     Objects.requireNonNull(cards, "cards must not be null");
     this.dashboardConfigId = dashboardConfigId;
+    this.version = version;
     this.userId = userId;
     this.defaultSiteId = requireSiteId(defaultSiteId);
     this.defaultTemperatureRange = Objects.requireNonNull(defaultTemperatureRange, "defaultTemperatureRange must not be null");

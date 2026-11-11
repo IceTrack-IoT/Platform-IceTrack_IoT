@@ -55,7 +55,10 @@ public class OwnerProfileRepositoryImpl implements OwnerProfileRepository {
   @Override
   public OwnerProfile save(OwnerProfile owner) {
     boolean isNew = owner.getUserProfileId() == null;
-    var savedEntity = ownerProfilePersistenceRepository.save(OwnerProfilePersistenceAssembler.toPersistenceFromDomain(owner));
+    // Flushed at once so the answered copy carries the version the write produced, which is what the
+    // owner sends back in If-Match next.
+    var savedEntity = ownerProfilePersistenceRepository.saveAndFlush(
+        OwnerProfilePersistenceAssembler.toPersistenceFromDomain(owner));
     var savedOwner = OwnerProfilePersistenceAssembler.toDomainFromPersistence(savedEntity);
     if (isNew) {
       savedOwner.onCreated();

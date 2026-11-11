@@ -1,5 +1,7 @@
 package pe.edu.upc.ice.track.platform.profiles.infrastructure.persistence.jpa.adapters;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.aggregates.DashboardConfig;
@@ -22,9 +24,12 @@ import java.util.Optional;
 public class DashboardConfigRepositoryImpl implements DashboardConfigRepository {
 
   private final DashboardConfigPersistenceRepository dashboardConfigPersistenceRepository;
+  private final EntityManager entityManager;
 
-  public DashboardConfigRepositoryImpl(DashboardConfigPersistenceRepository dashboardConfigPersistenceRepository) {
+  public DashboardConfigRepositoryImpl(
+      DashboardConfigPersistenceRepository dashboardConfigPersistenceRepository, EntityManager entityManager) {
     this.dashboardConfigPersistenceRepository = dashboardConfigPersistenceRepository;
+    this.entityManager = entityManager;
   }
 
   @Override
@@ -56,7 +61,13 @@ public class DashboardConfigRepositoryImpl implements DashboardConfigRepository 
             .orElseThrow(() -> new IllegalStateException(
                 "Dashboard configuration %s no longer exists".formatted(dashboardConfig.getDashboardConfigId())));
     DashboardConfigPersistenceAssembler.copyToPersistence(dashboardConfig, entity);
-    // Flushed so the identities of newly attached cards are assigned before mapping back.
+    if (dashboardConfig.getDashboardConfigId() != null) {
+      // Card changes live in the child rows, which would leave the version untouched; every save of an
+      // existing configuration is a change the client must see as a new version. The pessimistic variant
+      // increments at once, so the copy answered below already carries the new version.
+      entityManager.lock(entity, LockModeType.PESSIMISTIC_FORCE_INCREMENT);
+    }
+    // Flushed so the identities of newly attached cards, and the new version, are assigned before mapping back.
     var savedEntity = dashboardConfigPersistenceRepository.saveAndFlush(entity);
     return DashboardConfigPersistenceAssembler.toDomainFromPersistence(savedEntity);
   }

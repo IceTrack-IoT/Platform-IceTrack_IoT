@@ -13,12 +13,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.DashboardConfigCommandService;
@@ -26,6 +28,7 @@ import pe.edu.upc.ice.track.platform.profiles.application.queryservices.Dashboar
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.ResetDashboardConfigToDefaultCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.ToggleCardVisibilityCommand;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.queries.GetDashboardConfigByUserIdQuery;
+import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.ProfileAccessEvaluator;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.CreateDashboardConfigResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.DashboardConfigResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateDashboardDefaultsResource;
@@ -36,6 +39,7 @@ import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.UpdateDa
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.transform.UpdateDashboardLayoutCommandFromResourceAssembler;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.IfMatchHeaderAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 /**
@@ -46,6 +50,10 @@ import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEn
  * have no endpoint of their own outside it, and every change returns the whole, updated
  * configuration. The configuration is created with one card of each type, and cards are never
  * added or deleted afterwards: they are only shown, hidden and reordered.</p>
+ *
+ * <p>{@code GET /me} reads the caller's own configuration without an account identifier. The layout,
+ * visibility and defaults updates accept the configuration's {@code version} in {@code If-Match} and
+ * refuse a stale one with 409 {@code CONCURRENT_MODIFICATION_CONFLICT}.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/profiles/dashboard-configs", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -55,17 +63,52 @@ public class DashboardConfigsController {
 
   private final DashboardConfigQueryService dashboardConfigQueryService;
   private final DashboardConfigCommandService dashboardConfigCommandService;
+  private final ProfileAccessEvaluator profileAccessEvaluator;
 
   /**
    * Constructor
    * @param dashboardConfigQueryService   The {@link DashboardConfigQueryService} instance
    * @param dashboardConfigCommandService The {@link DashboardConfigCommandService} instance
+   * @param profileAccessEvaluator        The {@link ProfileAccessEvaluator} resolving the caller's account
    */
   public DashboardConfigsController(
       DashboardConfigQueryService dashboardConfigQueryService,
-      DashboardConfigCommandService dashboardConfigCommandService) {
+      DashboardConfigCommandService dashboardConfigCommandService,
+      ProfileAccessEvaluator profileAccessEvaluator) {
     this.dashboardConfigQueryService = dashboardConfigQueryService;
     this.dashboardConfigCommandService = dashboardConfigCommandService;
+    this.profileAccessEvaluator = profileAccessEvaluator;
+  }
+
+  /**
+   * Get the dashboard configuration of the authenticated account
+   * @param authentication The authenticated principal
+   * @return A {@link DashboardConfigResource} resource for the caller's configuration
+   */
+  @GetMapping("/me")
+  @PreAuthorize("isAuthenticated()")
+  @Operation(
+      summary = "Get my dashboard configuration",
+      description = "Retrieves the dashboard configuration, cards included, of the authenticated account, resolved "
+          + "from the access token; no account identifier is needed. Answers 404 while it is not set up.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Dashboard configuration found",
+          content = @Content(schema = @Schema(implementation = DashboardConfigResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "404", description = "DASHBOARD_CONFIG_NOT_FOUND - the account has no dashboard configuration")
+  })
+  public ResponseEntity<?> getMyDashboardConfig(Authentication authentication) {
+    var dashboardConfig = profileAccessEvaluator.resolveAccountId(authentication)
+        .flatMap(userId -> dashboardConfigQueryService.handle(new GetDashboardConfigByUserIdQuery(userId)));
+    if (dashboardConfig.isEmpty()) {
+      return ErrorResponseAssembler.toErrorResponseFromApplicationError(
+          ApplicationError.notFound(DASHBOARD_CONFIG_RESOURCE, "me"));
+    }
+    return ResponseEntity.ok(DashboardConfigResourceFromEntityAssembler.toResourceFromEntity(dashboardConfig.get()));
   }
 
   /**
@@ -156,15 +199,20 @@ public class DashboardConfigsController {
       @ApiResponse(responseCode = "400", description = "Invalid layout, such as a missing, unknown or repeated "
           + "card, or a repeated or out of range position"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not this account"),
-      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration")
+      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration"),
+      @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION_CONFLICT - If-Match names a version other than the current one")
   })
   public ResponseEntity<?> updateLayout(
       @PathVariable
       @Parameter(description = "Platform account unique identifier", example = "42", required = true)
       Long userId,
-      @Valid @RequestBody UpdateDashboardLayoutResource resource
+      @Valid @RequestBody UpdateDashboardLayoutResource resource,
+      @RequestHeader(value = IfMatchHeaderAssembler.IF_MATCH_HEADER, required = false)
+      @Parameter(description = "Version of the configuration being edited, as read from its version property", example = "\"4\"")
+      String ifMatch
   ) {
-    var updateDashboardLayoutCommand = UpdateDashboardLayoutCommandFromResourceAssembler.toCommandFromResource(userId, resource);
+    var updateDashboardLayoutCommand =
+        UpdateDashboardLayoutCommandFromResourceAssembler.toCommandFromResource(userId, resource, ifMatch);
     var result = dashboardConfigCommandService.handle(updateDashboardLayoutCommand);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         result,
@@ -191,7 +239,8 @@ public class DashboardConfigsController {
           content = @Content(schema = @Schema(implementation = DashboardConfigResource.class))
       ),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not this account"),
-      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration, or the dashboard has no such card")
+      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration, or the dashboard has no such card"),
+      @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION_CONFLICT - If-Match names a version other than the current one")
   })
   public ResponseEntity<?> toggleCardVisibility(
       @PathVariable
@@ -199,9 +248,13 @@ public class DashboardConfigsController {
       Long userId,
       @PathVariable
       @Parameter(description = "Dashboard card unique identifier", example = "7", required = true)
-      Long cardId
+      Long cardId,
+      @RequestHeader(value = IfMatchHeaderAssembler.IF_MATCH_HEADER, required = false)
+      @Parameter(description = "Version of the configuration being edited, as read from its version property", example = "\"4\"")
+      String ifMatch
   ) {
-    var result = dashboardConfigCommandService.handle(new ToggleCardVisibilityCommand(userId, cardId));
+    var result = dashboardConfigCommandService.handle(
+        new ToggleCardVisibilityCommand(userId, cardId, IfMatchHeaderAssembler.toExpectedVersion(ifMatch)));
     return ResponseEntityAssembler.toResponseEntityFromResult(
         result,
         DashboardConfigResourceFromEntityAssembler::toResourceFromEntity,
@@ -262,16 +315,20 @@ public class DashboardConfigsController {
       ),
       @ApiResponse(responseCode = "400", description = "Invalid input data"),
       @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not this account"),
-      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration")
+      @ApiResponse(responseCode = "404", description = "The account has no dashboard configuration"),
+      @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION_CONFLICT - If-Match names a version other than the current one")
   })
   public ResponseEntity<?> updateDefaults(
       @PathVariable
       @Parameter(description = "Platform account unique identifier", example = "42", required = true)
       Long userId,
-      @Valid @RequestBody UpdateDashboardDefaultsResource resource
+      @Valid @RequestBody UpdateDashboardDefaultsResource resource,
+      @RequestHeader(value = IfMatchHeaderAssembler.IF_MATCH_HEADER, required = false)
+      @Parameter(description = "Version of the configuration being edited, as read from its version property", example = "\"4\"")
+      String ifMatch
   ) {
     var updateDashboardDefaultsCommand =
-        UpdateDashboardDefaultsCommandFromResourceAssembler.toCommandFromResource(userId, resource);
+        UpdateDashboardDefaultsCommandFromResourceAssembler.toCommandFromResource(userId, resource, ifMatch);
     var result = dashboardConfigCommandService.handle(updateDashboardDefaultsCommand);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         result,

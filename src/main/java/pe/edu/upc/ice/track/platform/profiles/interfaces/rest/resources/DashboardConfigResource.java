@@ -10,7 +10,7 @@ import java.util.List;
 @Schema(
     name = "DashboardConfigResponse",
     description = "Dashboard configuration information response",
-    example = "{\"id\": 1, \"user_id\": 42, \"default_site_id\": 3, \"default_temperature_range\": {\"min\": 2, \"max\": 8, \"unit\": \"C\", \"label\": \"2°C to 8°C\"}, \"cards\": [{\"card_id\": 7, \"card_type\": \"MONITORED_EQUIPMENT\", \"order\": 1, \"is_visible\": true}, {\"card_id\": 8, \"card_type\": \"OPEN_ALERTS\", \"order\": 2, \"is_visible\": true}, {\"card_id\": 9, \"card_type\": \"ACTIVE_ORDERS\", \"order\": 3, \"is_visible\": true}, {\"card_id\": 10, \"card_type\": \"EQUIPMENT_STATUS\", \"order\": 4, \"is_visible\": true}]}"
+    example = "{\"id\": 1, \"user_id\": 42, \"default_site_id\": 3, \"default_temperature_range\": {\"min\": 2, \"max\": 8, \"unit\": \"C\", \"label\": \"2°C to 8°C\"}, \"cards\": [{\"card_id\": 7, \"card_type\": \"MONITORED_EQUIPMENT\", \"order\": 1, \"is_visible\": true}, {\"card_id\": 8, \"card_type\": \"OPEN_ALERTS\", \"order\": 2, \"is_visible\": true}, {\"card_id\": 9, \"card_type\": \"ACTIVE_ORDERS\", \"order\": 3, \"is_visible\": true}, {\"card_id\": 10, \"card_type\": \"EQUIPMENT_STATUS\", \"order\": 4, \"is_visible\": true}], \"version\": 4}"
 )
 public record DashboardConfigResource(
     @Schema(description = "Dashboard configuration unique identifier", example = "1")
@@ -26,6 +26,10 @@ public record DashboardConfigResource(
     TemperatureRangeResource defaultTemperatureRange,
 
     @Schema(description = "Cards of the dashboard, one per card type, sorted by their order")
-    List<DashboardCardResource> cards
+    List<DashboardCardResource> cards,
+
+    @Schema(description = "Concurrency version; grows on every change, cards included. Send it back in If-Match "
+        + "to update the configuration", example = "4")
+    Long version
 ) {
 }
