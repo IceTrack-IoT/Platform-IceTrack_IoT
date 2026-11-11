@@ -156,8 +156,9 @@ public class WebSecurityConfiguration {
       cors.setAllowedHeaders(List.of("*"));
       // Without this a browser hides these headers from the web application: ETag is what a
       // conditional read sends back in If-None-Match, Retry-After is how long to wait after a 429
-      // or a 503, and X-Telemetry-Bucket is the bucket width an aggregated telemetry history used.
-      cors.setExposedHeaders(List.of("ETag", "Retry-After", "X-Telemetry-Bucket"));
+      // or a 503, X-Telemetry-Bucket is the bucket width an aggregated telemetry history used, and
+      // Idempotent-Replayed tells a retried creation that it was answered from the stored first result.
+      cors.setExposedHeaders(List.of("ETag", "Retry-After", "X-Telemetry-Bucket", "Idempotent-Replayed"));
       return cors;
     }));
     http.csrf(AbstractHttpConfigurer::disable)
