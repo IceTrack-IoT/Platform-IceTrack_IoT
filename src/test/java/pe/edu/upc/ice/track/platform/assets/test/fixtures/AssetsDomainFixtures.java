@@ -20,8 +20,6 @@ public final class AssetsDomainFixtures {
     throw new AssertionError("AssetsDomainFixtures is a utility class and must not be instantiated.");
   }
 
-  // ---------- Identifiers ----------
-
   public static final Long OWNER_ID = 42L;
   public static final Long OTHER_OWNER_ID = 99L;
   public static final Long USER_ID = 3L;
@@ -30,14 +28,8 @@ public final class AssetsDomainFixtures {
   public static final Long OTHER_SITE_ID = 8L;
   public static final Long EQUIPMENT_ID = 10L;
   public static final Long OTHER_EQUIPMENT_ID = 11L;
-
-  // ---------- Callers ----------
-
   public static final String USERNAME = "owner@icetrack.pe";
   public static final String TECHNICIAN_USERNAME = "technician@icetrack.pe";
-
-  // ---------- Site ----------
-
   public static final String VALID_SITE_NAME = "Sede Central";
   public static final String VALID_CONTACT_NAME = "Maria Lopez";
   public static final String VALID_PHONE = "+51 987654321";
@@ -66,15 +58,11 @@ public final class AssetsDomainFixtures {
   public static final double FAR_PIN_LATITUDE = -12.0831;
   public static final double FAR_PIN_LONGITUDE = -77.0465;
 
-  // ---------- Equipment ----------
-
   public static final String VALID_UID = "ESP32-0001";
   public static final String VALID_EQUIPMENT_NAME = "Refrigerador 1";
   public static final Double VALID_MIN_CELSIUS = 2.0;
   public static final Double VALID_MAX_CELSIUS = 8.0;
   public static final Integer VALID_REMINDER_INTERVAL_DAYS = 90;
-
-  // ---------- Value objects ----------
 
   public static GeoLocation geoLocation() {
     return new GeoLocation(LIMA_LATITUDE, LIMA_LONGITUDE, VALID_PLACE_ID);
@@ -89,8 +77,6 @@ public final class AssetsDomainFixtures {
     return new TemperatureThreshold(VALID_MIN_CELSIUS, VALID_MAX_CELSIUS);
   }
 
-  // ---------- Aggregates ----------
-
   /** An {@code ACTIVE}, offline unit with id {@link #EQUIPMENT_ID}, installed at {@link #SITE_ID}. */
   public static Equipment equipment() {
     return equipmentBuilder().build();
@@ -100,7 +86,6 @@ public final class AssetsDomainFixtures {
     return new EquipmentBuilder();
   }
 
-  /** A located site with id {@link #SITE_ID}, owned by {@link #OWNER_ID}. */
   public static Site site() {
     return siteBuilder().build();
   }
@@ -109,10 +94,6 @@ public final class AssetsDomainFixtures {
     return new SiteBuilder();
   }
 
-  /**
-   * Fluent builder over the reconstitution constructor of {@link Equipment}. Defaults describe an
-   * {@code ACTIVE} unit that never reported.
-   */
   public static final class EquipmentBuilder {
     private Long equipmentId = EQUIPMENT_ID;
     private Long siteId = SITE_ID;

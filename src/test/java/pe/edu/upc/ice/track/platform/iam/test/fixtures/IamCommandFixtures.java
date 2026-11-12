@@ -5,7 +5,6 @@ import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.ClientChannel
 
 import static pe.edu.upc.ice.track.platform.iam.test.fixtures.IamDomainFixtures.*;
 
-/** iam command factories. Each returns a fresh, valid command built from the canonical constants. */
 public final class IamCommandFixtures {
 
   private IamCommandFixtures() {

@@ -22,8 +22,6 @@ public final class DeviceCommandFixtures {
     throw new AssertionError("DeviceCommandFixtures is a utility class and must not be instantiated.");
   }
 
-  // ---------- Commands ----------
-
   public static RegisterDeviceCommand registerDeviceCommand() {
     return registerDeviceCommand(EQUIPMENT_ID, VALID_DEVICE_UID, VALID_BOARD_MODEL, VALID_FIRMWARE_VERSION);
   }
@@ -49,7 +47,6 @@ public final class DeviceCommandFixtures {
     return new GetDeviceByIdQuery(DEVICE_ID, USERNAME);
   }
 
-  /** An unfiltered, unpaged listing of every device of the caller. */
   public static GetDevicesQuery devicesQuery() {
     return new GetDevicesQuery(USERNAME, null, null, null, null, null, null);
   }

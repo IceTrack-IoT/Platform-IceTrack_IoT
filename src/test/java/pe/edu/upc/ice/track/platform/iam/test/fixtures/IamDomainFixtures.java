@@ -9,17 +9,12 @@ import pe.edu.upc.ice.track.platform.iam.domain.model.valueobjects.*;
 import java.time.Duration;
 import java.time.Instant;
 
-/**
- * Canonical constants and domain object factories for the iam context. Every factory returns a
- * fresh, valid instance; tests MUST NOT build iam domain objects inline.
- */
+
 public final class IamDomainFixtures {
 
   private IamDomainFixtures() {
     throw new AssertionError("IamDomainFixtures is a utility class and must not be instantiated.");
   }
-
-  // ---------- Constants ----------
 
   public static final Long USER_ID = 10L;
   public static final Long OTHER_USER_ID = 11L;
@@ -46,8 +41,6 @@ public final class IamDomainFixtures {
   public static final Duration REFRESH_TTL = Duration.ofDays(7);
   public static final Duration GRACE_PERIOD = Duration.ofSeconds(30);
 
-  // ---------- Roles ----------
-
   public static Role ownerRole() {
     return new Role(ROLE_ID, Roles.OWNER_ROLE);
   }
@@ -56,8 +49,6 @@ public final class IamDomainFixtures {
     return new Role(2L, Roles.TECHNICIAN_ROLE);
   }
 
-  // ---------- Value objects ----------
-
   public static ContactDetails contactDetails() {
     return new ContactDetails("999888777", "Av. Lima", "123", "Lima", "15001", "Peru");
   }
@@ -65,8 +56,6 @@ public final class IamDomainFixtures {
   public static SessionTokens sessionTokens() {
     return new SessionTokens(ACCESS_TOKEN, RAW_REFRESH_TOKEN);
   }
-
-  // ---------- Users ----------
 
   public static User localOwner() {
     return new User(USER_ID, USERNAME, ENCODED_PASSWORD, ownerRole(), AuthProvider.LOCAL, null);
@@ -84,7 +73,6 @@ public final class IamDomainFixtures {
     return new User(USER_ID, USERNAME, "", technicianRole(), AuthProvider.GOOGLE, GOOGLE_SUB);
   }
 
-  // ---------- Refresh tokens ----------
 
   public static RefreshToken activeRefreshToken() {
     return activeRefreshToken(USER_ID, REFRESH_DIGEST, ClientChannel.WEB);
@@ -109,8 +97,6 @@ public final class IamDomainFixtures {
         OTHER_REFRESH_DIGEST, channel);
   }
 
-  // ---------- Google identity ----------
-
   public static GoogleUserInfo googleUserInfo() {
     return new GoogleUserInfo(GOOGLE_SUB, EMAIL, true, FULL_NAME, "Juan", "Perez", "https://pic.example/p.png");
   }
@@ -119,9 +105,6 @@ public final class IamDomainFixtures {
     return new GoogleUserInfo(GOOGLE_SUB, EMAIL, false, FULL_NAME, "Juan", "Perez", null);
   }
 
-  // ---------- Persistence simulation ----------
-
-  /** Returns a copy of the user carrying the canonical persisted id, as a repository save would. */
   public static User persisted(User user) {
     return new User(USER_ID, user.getUsername(), user.getPassword(), user.getRole(), user.getProvider(),
         user.getExternalId());

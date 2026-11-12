@@ -29,8 +29,6 @@ public final class AssetsCommandFixtures {
     throw new AssertionError("AssetsCommandFixtures is a utility class and must not be instantiated.");
   }
 
-  // ---------- Equipment commands ----------
-
   public static RegisterEquipmentCommand registerEquipmentCommand() {
     return registerEquipmentCommand(VALID_UID, VALID_MIN_CELSIUS, VALID_MAX_CELSIUS);
   }
@@ -79,8 +77,6 @@ public final class AssetsCommandFixtures {
     return new MarkEquipmentOfflineCommand(EQUIPMENT_ID);
   }
 
-  // ---------- Site commands ----------
-
   public static RegisterSiteCommand registerSiteCommand() {
     return registerSiteCommand(null, null);
   }
@@ -127,8 +123,6 @@ public final class AssetsCommandFixtures {
   public static ValidateAddressCommand validateAddressCommandWithPlaceId() {
     return validateAddressCommand(VALID_ADDRESS, VALID_PLACE_ID);
   }
-
-  // ---------- Queries ----------
 
   public static GetEquipmentByIdQuery equipmentByIdQuery(CallerRole callerRole) {
     return new GetEquipmentByIdQuery(EQUIPMENT_ID, usernameFor(callerRole), callerRole);
