@@ -32,6 +32,12 @@ public abstract class Profile extends AbstractDomainAggregateRoot<Profile> {
   private StreetAddress address;
 
   /**
+   * Optimistic concurrency token assigned by persistence, {@code null} until the profile is first
+   * saved. Opaque to the domain: it only travels so that an edit based on a stale copy can be refused.
+   */
+  private Long version;
+
+  /**
    * Initializes the attributes shared by every profile.
    *
    * @param userProfileId the persistence identity, or {@code null} for a profile not yet persisted
@@ -68,6 +74,17 @@ public abstract class Profile extends AbstractDomainAggregateRoot<Profile> {
     this.fullName = Objects.requireNonNull(fullName, "fullName must not be null");
     this.phone = Objects.requireNonNull(phone, "phone must not be null");
     this.address = Objects.requireNonNull(address, "address must not be null");
+  }
+
+  /**
+   * Restores the concurrency version this profile was stored with.
+   *
+   * <p>Called by the persistence assemblers only, when the profile is reconstituted.</p>
+   *
+   * @param version the stored version, or {@code null} for a profile not yet persisted
+   */
+  public void restoreVersion(Long version) {
+    this.version = version;
   }
 
   /**

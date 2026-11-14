@@ -27,6 +27,7 @@ import java.util.List;
  * @param siteId        the site the report covers, nullable
  * @param equipmentId   the unit the report covers, nullable
  * @param technicianId  the technician the report covers, nullable
+ * @param serviceRequestId the service request a {@code SERVICE_INTERVENTION} report documents, nullable
  * @param from          inclusive start of the period
  * @param to            inclusive end of the period
  * @param requestedAt   when the report was requested
@@ -52,7 +53,7 @@ public record ReportResource(
 
     @Schema(description = "Report type's enum name", example = "TEMPERATURE_EXCURSION",
         allowableValues = {"MAINTENANCE_COMPLIANCE", "EQUIPMENT_UPTIME", "TECHNICIAN_PERFORMANCE",
-            "TEMPERATURE_EXCURSION"})
+            "TEMPERATURE_EXCURSION", "SERVICE_INTERVENTION"})
     String type,
 
     @Schema(description = "Output format's enum name", example = "PDF", allowableValues = {"PDF", "XLSX", "CSV"})
@@ -82,7 +83,12 @@ public record ReportResource(
     @Schema(description = "Technician the report covers", nullable = true)
     Long technicianId,
 
-    @Schema(description = "Inclusive start of the period", example = "2026-10-01T00:00:00Z")
+    @Schema(description = "Service request a SERVICE_INTERVENTION report documents; omitted for other types",
+        example = "42", nullable = true)
+    Long serviceRequestId,
+
+    @Schema(description = "Inclusive start of the period; for SERVICE_INTERVENTION, the request's own period",
+        example = "2026-10-01T00:00:00Z")
     Instant from,
 
     @Schema(description = "Inclusive end of the period", example = "2026-10-31T23:59:59Z")

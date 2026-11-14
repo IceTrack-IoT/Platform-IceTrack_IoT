@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.OwnerCommandService;
@@ -36,6 +37,7 @@ import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.RoleAuthorities;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.UserId;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ErrorResponseAssembler;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.IfMatchHeaderAssembler;
 import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.ResponseEntityAssembler;
 
 import java.util.List;
@@ -49,7 +51,10 @@ import java.util.Optional;
  *
  * <p>There is deliberately no creation endpoint either: an owner profile is only ever created
  * together with its platform account, through the IAM owner registration flows and the profiles
- * ACL facade. An owner profile can only be updated by the account it belongs to.</p>
+ * ACL facade. An owner profile can only be updated by the account it belongs to, and the update
+ * accepts the profile's {@code version} in {@code If-Match}.</p>
+ *
+ * <p>{@code GET /me} answers the caller's own profile without threading its account identifier.</p>
  */
 @RestController
 @RequestMapping(value = "/api/v1/profiles/owners", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -103,6 +108,36 @@ public class OwnerProfilesController {
         .map(OwnerProfileResourceFromEntityAssembler::toResourceFromEntity)
         .toList();
     return ResponseEntity.ok(ownerResources);
+  }
+
+  /**
+   * Get the caller's own owner profile
+   *
+   * @param authentication The authenticated principal
+   * @return The caller's {@link OwnerProfileResource}, or 404 when the account holds no owner profile
+   */
+  @GetMapping("/me")
+  @PreAuthorize("hasAuthority('" + RoleAuthorities.ROLE_OWNER + "')")
+  @Operation(
+      summary = "Get my owner profile",
+      description = "Retrieves the owner profile of the authenticated account, resolved from the access token; no "
+          + "identifier is needed. The address comes both composed and in the parts an update takes.",
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @ApiResponses(value = {
+      @ApiResponse(
+          responseCode = "200",
+          description = "Owner found",
+          content = @Content(schema = @Schema(implementation = OwnerProfileResource.class))
+      ),
+      @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
+      @ApiResponse(responseCode = "403", description = "ACCESS_DENIED - the caller is not an owner"),
+      @ApiResponse(responseCode = "404", description = "OWNER_NOT_FOUND - the account holds no owner profile")
+  })
+  public ResponseEntity<?> getMyOwnerProfile(Authentication authentication) {
+    return profileAccessEvaluator.resolveOwnerProfile(authentication)
+        .<ResponseEntity<?>>map(owner -> ResponseEntity.ok(OwnerProfileResourceFromEntityAssembler.toResourceFromEntity(owner)))
+        .orElseGet(() -> ErrorResponseAssembler.toErrorResponseFromApplicationError(
+            ApplicationError.notFound(OWNER_RESOURCE, "me")));
   }
 
   /**
@@ -210,15 +245,20 @@ public class OwnerProfilesController {
       ),
       @ApiResponse(responseCode = "400", description = "Invalid input data, such as a RUC that is not 11 digits"),
       @ApiResponse(responseCode = "401", description = "Unauthorized - JWT token required or invalid"),
-      @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not this owner")
+      @ApiResponse(responseCode = "403", description = "Forbidden - the caller is not this owner"),
+      @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION_CONFLICT - If-Match names a version "
+          + "other than the current one, or another write overlapped this one")
   })
   public ResponseEntity<?> updateOwner(
       @PathVariable
       @Parameter(description = "Owner profile unique identifier", example = "1", required = true)
       Long ownerId,
-      @Valid @RequestBody UpdateOwnerResource resource
+      @Valid @RequestBody UpdateOwnerResource resource,
+      @RequestHeader(value = IfMatchHeaderAssembler.IF_MATCH_HEADER, required = false)
+      @Parameter(description = "Version of the profile being edited, as read from its version property", example = "\"2\"")
+      String ifMatch
   ) {
-    var updateOwnerCommand = UpdateOwnerCommandFromResourceAssembler.toCommandFromResource(ownerId, resource);
+    var updateOwnerCommand = UpdateOwnerCommandFromResourceAssembler.toCommandFromResource(ownerId, resource, ifMatch);
     var result = ownerCommandService.handle(updateOwnerCommand);
     return ResponseEntityAssembler.toResponseEntityFromResult(
         result,

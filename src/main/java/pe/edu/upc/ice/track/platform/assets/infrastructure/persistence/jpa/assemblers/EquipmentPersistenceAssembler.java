@@ -42,7 +42,8 @@ public final class EquipmentPersistenceAssembler {
         entity.getConfigVersion(),
         entity.getStatusBeforeMaintenance(),
         entity.getLastReceivedAt(),
-        entity.isUnderMaintenance());
+        entity.isUnderMaintenance(),
+        entity.getVersion());
   }
 
   /**
@@ -57,6 +58,7 @@ public final class EquipmentPersistenceAssembler {
     }
     var entity = new EquipmentPersistenceEntity();
     entity.setId(equipment.getEquipmentId());
+    entity.setVersion(equipment.getVersion());
     entity.setSiteId(equipment.getSiteId());
     entity.setEquipmentUid(equipment.getUid());
     entity.setName(equipment.getName());

@@ -12,6 +12,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.ColumnDefault;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.Address;
+import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingFailureReason;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.GeocodingStatus;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.SiteContactPhone;
 import pe.edu.upc.ice.track.platform.assets.infrastructure.persistence.jpa.converters.AddressPersistenceConverter;
@@ -37,8 +38,11 @@ import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entit
  * equipment counter and the version all carry a database default, because the schema is evolved
  * by {@code ddl-auto=update} and a {@code NOT NULL} column without a default cannot be added to a
  * table that already holds rows. Sites created before address verification may keep a status other
- * than {@code RESOLVED} and no coordinates; they are reported without a location and are not
- * geocoded again.</p>
+ * than {@code RESOLVED} and no coordinates; they are reported without a location until the owner
+ * asks for them to be located again.</p>
+ *
+ * <p>The version is also the one clients send back in {@code If-Match}, so a stale edit is refused
+ * before it is applied.</p>
  */
 @Getter
 @Setter
@@ -80,6 +84,14 @@ public class SitePersistenceEntity extends AuditableAbstractPersistenceEntity {
   @ColumnDefault("'PENDING'")
   @Column(name = "geocoding_status", nullable = false, length = 20)
   private GeocodingStatus geocodingStatus;
+
+  /**
+   * Why the last lookup did not locate the site; {@code null} unless the status is {@code FAILED} or
+   * {@code NOT_FOUND}. Nullable, so it can be added to a table that already holds rows.
+   */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "geocoding_failure_reason", length = 30)
+  private GeocodingFailureReason geocodingFailureReason;
 
   /** Latitude of the resolved location; {@code null} unless the status is {@code RESOLVED}. */
   @Column(name = "latitude")

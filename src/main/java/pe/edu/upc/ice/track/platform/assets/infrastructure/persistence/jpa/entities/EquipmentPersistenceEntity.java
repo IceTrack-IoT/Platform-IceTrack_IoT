@@ -6,10 +6,12 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.Check;
 import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.OptimisticLock;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentType;
 import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEquipment;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
@@ -75,6 +77,8 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
   @Column(name = "equipment_type", nullable = false, length = 35)
   private EquipmentType equipmentType;
 
+  /** Telemetry state written by Monitoring; excluded from the optimistic lock, see {@link #version}. */
+  @OptimisticLock(excluded = true)
   @Column(name = "online", nullable = false)
   private boolean online;
 
@@ -104,6 +108,7 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
    * When the last reading was received. Written by the Monitoring and Alerting context, read and
    * exposed here; nullable because a unit may not have reported yet.
    */
+  @OptimisticLock(excluded = true)
   @Column(name = "last_reading_at")
   private Instant lastReadingAt;
 
@@ -111,6 +116,7 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
    * Last temperature known for this unit, in Celsius. Written by the Monitoring and Alerting
    * context, read and exposed here; nullable because a unit may not have reported yet.
    */
+  @OptimisticLock(excluded = true)
   @Column(name = "last_known_temperature")
   private Double lastKnownTemperature;
 
@@ -140,6 +146,7 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
    * Monitoring and Alerting context; nullable because a unit may not have reported yet, or reported
    * only before this column existed.
    */
+  @OptimisticLock(excluded = true)
   @Column(name = "last_received_at")
   private Instant lastReceivedAt;
 
@@ -147,9 +154,25 @@ public class EquipmentPersistenceEntity extends AuditableAbstractPersistenceEnti
    * Whether a maintenance window currently covers the unit. The column default lets the schema update
    * add it to a table that already holds rows.
    */
+  @OptimisticLock(excluded = true)
   @ColumnDefault("false")
   @Column(name = "under_maintenance", nullable = false)
   private boolean underMaintenance;
+
+  /**
+   * Optimistic lock, and the {@code version} clients send back in {@code If-Match}.
+   *
+   * <p>It grows on every change of what the owner edits: name, type, reminder interval, threshold
+   * and status. The telemetry columns Monitoring writes on every reading batch ({@code online},
+   * {@code last_reading_at}, {@code last_known_temperature}, {@code last_received_at}) and the
+   * maintenance window flag are excluded with {@link OptimisticLock}, so a unit that reports every
+   * minute does not make every edit form stale within a minute. {@code config_version} is not
+   * involved: it is moved by a bulk statement, which bypasses this lock.</p>
+   */
+  @Version
+  @ColumnDefault("0")
+  @Column(name = "version", nullable = false)
+  private Long version;
 
   public EquipmentPersistenceEntity() {
   }

@@ -2,6 +2,7 @@ package pe.edu.upc.ice.track.platform.notifications.infrastructure.monitoring.ev
 
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import pe.edu.upc.ice.track.platform.monitoring.interfaces.acl.MonitoringContextFacade;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.events.AlertRaisedIntegrationEvent;
 import pe.edu.upc.ice.track.platform.notifications.application.commandservices.NotificationCommandService;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.commands.NotifyAlertRaisedCommand;
@@ -9,6 +10,8 @@ import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.Ale
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationSeverity;
 import pe.edu.upc.ice.track.platform.notifications.domain.model.valueobjects.NotificationType;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
+
+import java.util.List;
 
 /**
  * Inbound infrastructure adapter that subscribes to {@link AlertRaisedIntegrationEvent}, the
@@ -23,14 +26,20 @@ import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentI
  * application layer only ever sees the resulting {@link NotifyAlertRaisedCommand}. Notifications
  * never subscribes to {@code monitoring.domain.model.events.AlertRaisedEvent}, only to its
  * integration-event counterpart.</p>
+ *
+ * <p>For an offline alert it also reads, through {@link MonitoringContextFacade}, the offline window of
+ * the unit's policy, so the notification can say how long the unit was silent.</p>
  */
 @Component
 public class AlertRaisedEventListener {
 
   private final NotificationCommandService notificationCommandService;
+  private final MonitoringContextFacade monitoringContextFacade;
 
-  public AlertRaisedEventListener(NotificationCommandService notificationCommandService) {
+  public AlertRaisedEventListener(
+      NotificationCommandService notificationCommandService, MonitoringContextFacade monitoringContextFacade) {
     this.notificationCommandService = notificationCommandService;
+    this.monitoringContextFacade = monitoringContextFacade;
   }
 
   /**
@@ -42,12 +51,25 @@ public class AlertRaisedEventListener {
    */
   @EventListener
   public void on(AlertRaisedIntegrationEvent event) {
+    var type = toNotificationType(event.type());
     notificationCommandService.handle(new NotifyAlertRaisedCommand(
         new AlertId(event.alertId()),
         new EquipmentId(event.equipmentId()),
-        toNotificationType(event.type()),
+        type,
         toNotificationSeverity(event.severity()),
-        event.peakTemperature()));
+        event.peakTemperature(),
+        type == NotificationType.DEVICE_OFFLINE ? silentMinutesOf(event.equipmentId()) : null));
+  }
+
+  /**
+   * Reads the offline window of the unit's policy, the silence that raised an offline alert.
+   *
+   * @param equipmentId the unit
+   * @return the window in whole minutes, or {@code null} when it cannot be read
+   */
+  private Long silentMinutesOf(Long equipmentId) {
+    var seconds = monitoringContextFacade.fetchOfflineSilenceSeconds(List.of(equipmentId)).get(equipmentId);
+    return seconds == null ? null : seconds / 60;
   }
 
   private static NotificationType toNotificationType(String alertType) {

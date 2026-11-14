@@ -275,6 +275,24 @@ public class AssetContextFacade {
   }
 
   /**
+   * Counts the units of an owner, across all its sites.
+   *
+   * <p>Profiles calls this for the session bootstrap, so a client can tell an owner with no unit yet
+   * from one whose dashboard is merely not set up. Answered by a count statement, without loading the
+   * units.</p>
+   *
+   * @param ownerId identifier of the owner
+   * @return the number of units, {@code 0} when the owner is {@code null} or has none
+   */
+  @Transactional(readOnly = true)
+  public long countEquipmentByOwner(Long ownerId) {
+    if (ownerId == null) {
+      return 0L;
+    }
+    return equipmentRepository.findPageByOwnerId(ownerId, null, null, null, null, 0, 1).totalElements();
+  }
+
+  /**
    * Returns the name of every lifecycle status a unit can hold, in declaration order.
    *
    * <p>Lets a caller that totals units per status report the statuses no unit currently holds,

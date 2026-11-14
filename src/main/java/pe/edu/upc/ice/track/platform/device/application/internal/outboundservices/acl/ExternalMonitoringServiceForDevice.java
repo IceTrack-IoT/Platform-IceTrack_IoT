@@ -3,9 +3,14 @@ package pe.edu.upc.ice.track.platform.device.application.internal.outboundservic
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.monitoring.interfaces.acl.MonitoringContextFacade;
 
+import java.time.Duration;
+import java.util.Collection;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 /**
  * Outbound service through which Device Management reads the alert policy an edge gateway
- * enforces.
+ * enforces, and the offline window a board's connectivity is evaluated with.
  *
  * <p>The only class in this context that knows about Monitoring and Alerting; it talks to it
  * exclusively through {@link MonitoringContextFacade}.</p>
@@ -27,6 +32,20 @@ public class ExternalMonitoringServiceForDevice {
     var settings = monitoringContextFacade.fetchApplicableAlertPolicy(equipmentId);
     return new AlertPolicyValues(
         settings.sustainedExcursionMinutes(), settings.hysteresisMarginCelsius(), settings.missedSyncWindowsForOffline());
+  }
+
+  /**
+   * Reads how long each unit may stay silent before it counts as offline, for a whole listing at once.
+   *
+   * @param equipmentIds identifiers of the units; {@code null} entries are ignored
+   * @return the offline window of each unit asked about
+   */
+  public Map<Long, Duration> fetchOfflineWindows(Collection<Long> equipmentIds) {
+    if (equipmentIds == null || equipmentIds.isEmpty()) {
+      return Map.of();
+    }
+    return monitoringContextFacade.fetchOfflineSilenceSeconds(equipmentIds).entrySet().stream()
+        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> Duration.ofSeconds(entry.getValue())));
   }
 
   /**

@@ -33,8 +33,10 @@ import pe.edu.upc.ice.track.platform.device.domain.model.commands.RotateApiKeyCo
 import pe.edu.upc.ice.track.platform.device.domain.model.commands.UnpairDeviceCommand;
 import pe.edu.upc.ice.track.platform.device.domain.model.queries.GetDeviceByIdQuery;
 import pe.edu.upc.ice.track.platform.device.domain.model.queries.GetDevicesQuery;
+import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DeviceConnectivityState;
 import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DeviceStatus;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.ChangeDeviceStatusResource;
+import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceConnectivityStateResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceCredentialResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceResource;
 import pe.edu.upc.ice.track.platform.device.interfaces.rest.resources.DeviceStatusResource;
@@ -148,14 +150,15 @@ public class DeviceController {
           + "narrowed to one unit, to the units of one site, to a set of statuses and by a search on the "
           + "device uid or board model; every filter combines with the others. An unpaired device belongs "
           + "to no owner, so status=UNPAIRED matches nothing. Each device carries the name and the site of "
-          + "its unit. Supplying both page and size returns a page wrapper with the total count instead of "
-          + "a plain array; a size above 100 is capped to 100.",
+          + "its unit, and its connectivity evaluated at read time; connectivity=SILENT,NEVER_REPORTED lists "
+          + "only the boards in those states. Supplying both page and size returns a page wrapper with the "
+          + "total count instead of a plain array; a size above 100 is capped to 100.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Devices found",
           content = @Content(array = @ArraySchema(schema = @Schema(implementation = DeviceResource.class)))),
       @ApiResponse(responseCode = "400",
-          description = "VALIDATION_ERROR - unknown status, search above 64 characters, negative page or size below 1",
+          description = "VALIDATION_ERROR - unknown status or connectivity, search above 64 characters, negative page or size below 1",
           content = @Content(schema = @Schema(implementation = ErrorResource.class))),
       @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
       @ApiResponse(responseCode = "403", description = "Caller is not an owner"),
@@ -181,9 +184,14 @@ public class DeviceController {
       @RequestParam(required = false)
       @Parameter(description = "Page size, capped at 100; supply with page", example = "20")
       Integer size,
+      @RequestParam(required = false)
+      @Parameter(description = "Restrict to these connectivity states, evaluated at read time, comma-separated",
+          example = "SILENT,NEVER_REPORTED")
+      List<DeviceConnectivityStateResource> connectivity,
       Authentication authentication) {
     var query = new GetDevicesQuery(
-        authentication.getName(), equipmentId, siteId, toDomainStatuses(status), search, page, size);
+        authentication.getName(), equipmentId, siteId, toDomainStatuses(status), search, page, size,
+        toDomainConnectivityStates(connectivity));
     return ResponseEntityAssembler.<DeviceDetailsPage, Object>toResponseEntityFromResult(
         deviceQueryService.handle(query),
         devices -> query.isPaged()
@@ -286,6 +294,20 @@ public class DeviceController {
     return statuses.stream()
         .filter(Objects::nonNull)
         .map(DeviceStatusResource::toDomain)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  /**
+   * Translates the connectivity filter into its domain counterpart, ignoring empty entries like the
+   * status filter does.
+   */
+  private static Set<DeviceConnectivityState> toDomainConnectivityStates(List<DeviceConnectivityStateResource> states) {
+    if (states == null) {
+      return Set.of();
+    }
+    return states.stream()
+        .filter(Objects::nonNull)
+        .map(DeviceConnectivityStateResource::toDomain)
         .collect(Collectors.toUnmodifiableSet());
   }
 }

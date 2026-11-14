@@ -34,7 +34,8 @@ public class RequestReportCommandFromResourceAssembler {
         filters.equipmentId(),
         filters.technicianId(),
         filters.from(),
-        filters.to());
+        filters.to(),
+        filters.serviceRequestId());
   }
 
   private static <E extends Enum<E>> E parse(Class<E> enumType, String value) {

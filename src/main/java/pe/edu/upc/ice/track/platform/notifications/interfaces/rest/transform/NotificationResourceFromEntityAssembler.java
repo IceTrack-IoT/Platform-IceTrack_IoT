@@ -20,6 +20,8 @@ public final class NotificationResourceFromEntityAssembler {
         notification.getSourceAlertId() == null ? null : notification.getSourceAlertId().alertId(),
         notification.getServiceRequestId(),
         notification.getMessage(),
+        notification.getTemplate().key(),
+        notification.getTemplate().params(),
         notification.getType().name(),
         notification.getSeverity().name(),
         notification.isRead(),

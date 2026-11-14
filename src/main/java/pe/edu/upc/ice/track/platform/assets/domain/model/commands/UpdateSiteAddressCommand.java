@@ -8,11 +8,21 @@ package pe.edu.upc.ice.track.platform.assets.domain.model.commands;
  * @param validationToken the token issued by the address validation endpoint; may be {@code null}
  * @param pinLatitude     latitude of the owner's pin, or {@code null}
  * @param pinLongitude    longitude of the owner's pin, or {@code null}
+ * @param expectedVersion the version the caller edited, from {@code If-Match}; {@code null} skips the check
  */
 public record UpdateSiteAddressCommand(
     Long siteId,
     String username,
     String validationToken,
     Double pinLatitude,
-    Double pinLongitude) {
+    Double pinLongitude,
+    Long expectedVersion) {
+
+  /**
+   * Creates the command without a version precondition.
+   */
+  public UpdateSiteAddressCommand(
+      Long siteId, String username, String validationToken, Double pinLatitude, Double pinLongitude) {
+    this(siteId, username, validationToken, pinLatitude, pinLongitude, null);
+  }
 }

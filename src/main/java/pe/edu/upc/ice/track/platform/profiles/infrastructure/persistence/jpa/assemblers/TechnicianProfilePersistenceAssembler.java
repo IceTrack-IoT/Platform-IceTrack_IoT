@@ -15,7 +15,7 @@ public final class TechnicianProfilePersistenceAssembler {
 
   public static TechnicianProfile toDomainFromPersistence(TechnicianProfilePersistenceEntity entity) {
     if (entity == null) return null;
-    return new TechnicianProfile(
+    var technician = new TechnicianProfile(
         entity.getId(),
         new UserId(entity.getUserId()),
         ProfilePersistenceAssembler.toPersonName(entity),
@@ -24,6 +24,8 @@ public final class TechnicianProfilePersistenceAssembler {
         ProfilePersistenceAssembler.toStreetAddress(entity),
         new Speciality(entity.getSpeciality()),
         entity.getCertificationNumber());
+    technician.restoreVersion(entity.getVersion());
+    return technician;
   }
 
   public static TechnicianProfilePersistenceEntity toPersistenceFromDomain(TechnicianProfile technician) {

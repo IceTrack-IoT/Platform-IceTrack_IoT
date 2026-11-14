@@ -15,7 +15,7 @@ public final class OwnerProfilePersistenceAssembler {
 
   public static OwnerProfile toDomainFromPersistence(OwnerProfilePersistenceEntity entity) {
     if (entity == null) return null;
-    return new OwnerProfile(
+    var owner = new OwnerProfile(
         entity.getId(),
         new UserId(entity.getUserId()),
         ProfilePersistenceAssembler.toPersonName(entity),
@@ -23,6 +23,8 @@ public final class OwnerProfilePersistenceAssembler {
         ProfilePersistenceAssembler.toPhone(entity),
         ProfilePersistenceAssembler.toStreetAddress(entity),
         new Ruc(entity.getRuc()));
+    owner.restoreVersion(entity.getVersion());
+    return owner;
   }
 
   public static OwnerProfilePersistenceEntity toPersistenceFromDomain(OwnerProfile owner) {

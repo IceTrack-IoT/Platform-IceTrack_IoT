@@ -26,6 +26,7 @@ public final class DashboardConfigPersistenceAssembler {
     var temperatureRange = entity.getDefaultTemperatureRange();
     return new DashboardConfig(
         entity.getId(),
+        entity.getVersion(),
         new UserId(entity.getUserId()),
         new SiteId(entity.getDefaultSiteId()),
         new TemperatureRange(

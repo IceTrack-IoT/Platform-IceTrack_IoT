@@ -7,10 +7,11 @@ import java.util.Objects;
  * Command to replace the card layout - the position and visibility of every card - of the
  * dashboard of a platform account.
  *
- * @param userId identifier of the account owning the dashboard; required
- * @param cards  the placement of every card of the dashboard; required, with no null entry
+ * @param userId          identifier of the account owning the dashboard; required
+ * @param cards           the placement of every card of the dashboard; required, with no null entry
+ * @param expectedVersion the version the caller edited, from {@code If-Match}; {@code null} skips the check
  */
-public record UpdateDashboardLayoutCommand(Long userId, List<CardLayoutCommandItem> cards) {
+public record UpdateDashboardLayoutCommand(Long userId, List<CardLayoutCommandItem> cards, Long expectedVersion) {
 
   /**
    * Validates that every component was supplied, and takes an immutable copy of the cards.
@@ -19,5 +20,12 @@ public record UpdateDashboardLayoutCommand(Long userId, List<CardLayoutCommandIt
     Objects.requireNonNull(userId, "userId must not be null");
     Objects.requireNonNull(cards, "cards must not be null");
     cards = List.copyOf(cards);
+  }
+
+  /**
+   * Creates the command without a version precondition.
+   */
+  public UpdateDashboardLayoutCommand(Long userId, List<CardLayoutCommandItem> cards) {
+    this(userId, cards, null);
   }
 }

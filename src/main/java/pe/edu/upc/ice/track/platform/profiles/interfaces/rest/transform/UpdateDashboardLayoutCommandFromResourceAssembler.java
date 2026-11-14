@@ -4,6 +4,7 @@ import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.CardLayoutCo
 import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.UpdateDashboardLayoutCommand;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.CardLayoutItemResource;
 import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.resources.UpdateDashboardLayoutResource;
+import pe.edu.upc.ice.track.platform.shared.interfaces.rest.transform.IfMatchHeaderAssembler;
 
 /**
  * Assembler that converts an {@link UpdateDashboardLayoutResource} into an
@@ -16,14 +17,17 @@ public class UpdateDashboardLayoutCommandFromResourceAssembler {
    *
    * @param userId   identifier of the account owning the dashboard, taken from the request path
    * @param resource the {@link UpdateDashboardLayoutResource} resource to convert
+   * @param ifMatch  the raw {@code If-Match} header, or {@code null}
    * @return the {@link UpdateDashboardLayoutCommand} command
    */
-  public static UpdateDashboardLayoutCommand toCommandFromResource(Long userId, UpdateDashboardLayoutResource resource) {
+  public static UpdateDashboardLayoutCommand toCommandFromResource(
+      Long userId, UpdateDashboardLayoutResource resource, String ifMatch) {
     return new UpdateDashboardLayoutCommand(
         userId,
         resource.cards().stream()
             .map(UpdateDashboardLayoutCommandFromResourceAssembler::toCommandItemFromResource)
-            .toList());
+            .toList(),
+        IfMatchHeaderAssembler.toExpectedVersion(ifMatch));
   }
 
   private static CardLayoutCommandItem toCommandItemFromResource(CardLayoutItemResource resource) {

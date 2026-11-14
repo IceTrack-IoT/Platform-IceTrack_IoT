@@ -59,4 +59,26 @@ public class ExternalIamService {
     }
     return iamContextFacade.existsUserById(userId);
   }
+
+  /**
+   * Describes the platform account holding a username, in this context's own terms.
+   *
+   * @param username the username of the account
+   * @return the account, or empty when no account holds the username
+   */
+  public Optional<Account> fetchAccountByUsername(String username) {
+    return iamContextFacade.fetchAccountByUsername(username)
+        .map(account -> new Account(account.userId(), account.username(), account.role(), account.provider()));
+  }
+
+  /**
+   * A platform account as Profiles describes it.
+   *
+   * @param userId   identifier of the account
+   * @param username the username it signs in with
+   * @param role     its role name
+   * @param provider its identity provider name
+   */
+  public record Account(Long userId, String username, String role, String provider) {
+  }
 }

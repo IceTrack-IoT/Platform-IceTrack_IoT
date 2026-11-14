@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 import pe.edu.upc.ice.track.platform.profiles.infrastructure.persistence.jpa.embeddables.TemperatureRangePersistenceEmbeddable;
 import pe.edu.upc.ice.track.platform.shared.infrastructure.persistence.jpa.entities.AuditableAbstractPersistenceEntity;
 
@@ -56,6 +57,17 @@ public class DashboardConfigPersistenceEntity extends AuditableAbstractPersisten
   @OneToMany(mappedBy = "dashboardConfig", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
   @OrderBy("cardOrder ASC")
   private List<DashboardCardPersistenceEntity> cards = new ArrayList<>();
+
+  /**
+   * Optimistic lock, and the {@code version} clients send back in {@code If-Match}. The cards are the
+   * inverse side of their association, so a card change alone would not move it; the repository
+   * adapter therefore forces an increment on every save of an existing configuration. The column
+   * default lets the schema update add it to a table that already holds rows.
+   */
+  @Version
+  @ColumnDefault("0")
+  @Column(name = "version", nullable = false)
+  private Long version;
 
   public DashboardConfigPersistenceEntity() {
   }

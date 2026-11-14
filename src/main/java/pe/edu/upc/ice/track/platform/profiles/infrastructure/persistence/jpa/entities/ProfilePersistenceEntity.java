@@ -3,6 +3,7 @@ package pe.edu.upc.ice.track.platform.profiles.infrastructure.persistence.jpa.en
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 import pe.edu.upc.ice.track.platform.profiles.domain.model.valueobjects.EmailAddress;
 import pe.edu.upc.ice.track.platform.profiles.infrastructure.persistence.jpa.converters.EmailAddressPersistenceConverter;
 import pe.edu.upc.ice.track.platform.profiles.infrastructure.persistence.jpa.embeddables.PersonNamePersistenceEmbeddable;
@@ -63,6 +64,16 @@ public abstract class ProfilePersistenceEntity extends AuditableAbstractPersiste
       @AttributeOverride(name = "postalCode", column = @Column(name = "street_address_postal_code", nullable = false)),
       @AttributeOverride(name = "country", column = @Column(name = "street_address_country", nullable = false))})
   private StreetAddressPersistenceEmbeddable streetAddress;
+
+  /**
+   * Optimistic lock of every profile, and the {@code version} an owner sends back in {@code If-Match}.
+   * Declared on the root of the hierarchy, as JPA requires. The column default lets the schema update
+   * add it to a table that already holds rows.
+   */
+  @Version
+  @ColumnDefault("0")
+  @Column(name = "version", nullable = false)
+  private Long version;
 
   protected ProfilePersistenceEntity() {
   }

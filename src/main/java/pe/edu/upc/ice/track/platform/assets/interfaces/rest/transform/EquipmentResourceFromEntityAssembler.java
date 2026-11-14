@@ -45,7 +45,8 @@ public class EquipmentResourceFromEntityAssembler {
         entity.getLastReadingAt(),
         entity.getLastKnownTemperature(),
         entity.getConfigVersion(),
-        toResourceFromConnectivity(connectivity));
+        toResourceFromConnectivity(connectivity),
+        entity.getVersion() == null ? 0L : entity.getVersion());
   }
 
   /**

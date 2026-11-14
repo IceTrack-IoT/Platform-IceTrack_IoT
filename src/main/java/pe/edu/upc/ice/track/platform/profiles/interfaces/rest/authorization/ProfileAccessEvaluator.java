@@ -153,6 +153,16 @@ public class ProfileAccessEvaluator {
         .flatMap(userId -> ownerQueryService.handle(new GetOwnerByUserIdQuery(new UserId(userId))));
   }
 
+  /**
+   * Resolves the platform account the caller signed in with.
+   *
+   * @param authentication the current authentication
+   * @return the account identifier, or empty when the caller is not authenticated or has no account
+   */
+  public Optional<Long> resolveAccountId(Authentication authentication) {
+    return resolveUserId(authentication);
+  }
+
   private Optional<Long> resolveUserId(Authentication authentication) {
     if (authentication == null || !authentication.isAuthenticated()) {
       return Optional.empty();

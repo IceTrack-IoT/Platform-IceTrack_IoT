@@ -6,6 +6,8 @@ import pe.edu.upc.ice.track.platform.iam.application.queryservices.UserQueryServ
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByIdQuery;
 import pe.edu.upc.ice.track.platform.iam.domain.model.queries.GetUserByUsernameQuery;
 
+import java.util.Optional;
+
 /**
  * ACL facade that exposes IAM bounded context capabilities to other contexts.
  *
@@ -61,6 +63,21 @@ public class IamContextFacade {
     if (userId == null) return false;
     var getUserByIdQuery = new GetUserByIdQuery(userId);
     return userQueryService.handle(getUserByIdQuery).isPresent();
+  }
+
+  /**
+   * Fetches the account holding a username: its identifier, role and identity provider.
+   *
+   * <p>Profiles calls this to describe the signed-in account in the session bootstrap. No credential,
+   * token or password digest leaves this context.</p>
+   *
+   * @param username username to search
+   * @return the account, or empty when no account holds the username
+   */
+  public Optional<AccountSummary> fetchAccountByUsername(String username) {
+    if (username == null || username.isBlank()) return Optional.empty();
+    return userQueryService.handle(new GetUserByUsernameQuery(username))
+        .map(user -> new AccountSummary(user.getId(), user.getUsername(), user.getRoleName(), user.getProviderName()));
   }
 
 }

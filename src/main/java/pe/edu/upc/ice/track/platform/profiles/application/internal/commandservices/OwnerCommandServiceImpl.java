@@ -1,6 +1,7 @@
 package pe.edu.upc.ice.track.platform.profiles.application.internal.commandservices;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.profiles.application.commandservices.OwnerCommandService;
@@ -10,6 +11,7 @@ import pe.edu.upc.ice.track.platform.profiles.domain.model.commands.UpdateOwnerC
 import pe.edu.upc.ice.track.platform.profiles.domain.model.factories.OwnerProfileFactory;
 import pe.edu.upc.ice.track.platform.profiles.domain.repositories.OwnerProfileRepository;
 import pe.edu.upc.ice.track.platform.profiles.domain.repositories.ProfileRepository;
+import pe.edu.upc.ice.track.platform.shared.application.concurrency.VersionPrecondition;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
@@ -18,6 +20,9 @@ import pe.edu.upc.ice.track.platform.shared.application.result.Result;
  *
  * <p>An account is either an owner or a technician, never both, so the uniqueness checks run
  * against the {@link ProfileRepository}, which covers every role.</p>
+ *
+ * <p>An update carrying the version the owner edited ({@code If-Match}) is refused with
+ * {@code CONCURRENT_MODIFICATION_CONFLICT} when the profile has moved past it.</p>
  */
 @Service
 @Slf4j
@@ -75,6 +80,10 @@ public class OwnerCommandServiceImpl implements OwnerCommandService {
     if (existingOwner.isEmpty()) {
       return Result.failure(ApplicationError.notFound(OWNER_RESOURCE, command.ownerId().toString()));
     }
+    var stale = VersionPrecondition.check(command.expectedVersion(), existingOwner.get().getVersion());
+    if (stale.isPresent()) {
+      return Result.failure(stale.get());
+    }
     try {
       var owner = existingOwner.get();
       owner.updateInfo(command.fullName(), command.phone(), command.address());
@@ -84,6 +93,9 @@ public class OwnerCommandServiceImpl implements OwnerCommandService {
       return Result.success(savedOwner);
     } catch (IllegalArgumentException e) {
       return Result.failure(ApplicationError.validationError(OWNER_RESOURCE, e.getMessage()));
+    } catch (OptimisticLockingFailureException e) {
+      // The write overlapped another one; GlobalExceptionHandler answers 409.
+      throw e;
     } catch (Exception e) {
       return Result.failure(ApplicationError.unexpected("Owner update", e.getMessage()));
     }

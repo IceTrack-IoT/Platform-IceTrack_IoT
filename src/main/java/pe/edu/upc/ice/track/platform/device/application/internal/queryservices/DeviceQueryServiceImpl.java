@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.DeviceExternalOwnerService;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.ExternalAssetManagementServiceForDevice;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.ExternalAssetManagementServiceForDevice.PairedEquipment;
+import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.acl.ExternalMonitoringServiceForDevice;
 import pe.edu.upc.ice.track.platform.device.application.internal.outboundservices.credentials.DeviceCredentialService;
 import pe.edu.upc.ice.track.platform.device.application.queryservices.DeviceQueryService;
 import pe.edu.upc.ice.track.platform.device.application.results.DeviceAuthenticationResult;
@@ -12,11 +13,17 @@ import pe.edu.upc.ice.track.platform.device.application.results.DeviceDetailsPag
 import pe.edu.upc.ice.track.platform.device.domain.model.aggregates.Device;
 import pe.edu.upc.ice.track.platform.device.domain.model.queries.GetDeviceByIdQuery;
 import pe.edu.upc.ice.track.platform.device.domain.model.queries.GetDevicesQuery;
+import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DeviceConnectivity;
 import pe.edu.upc.ice.track.platform.device.domain.model.valueobjects.DevicePage;
 import pe.edu.upc.ice.track.platform.device.domain.repositories.DeviceRepository;
 import pe.edu.upc.ice.track.platform.shared.application.result.ApplicationError;
 import pe.edu.upc.ice.track.platform.shared.application.result.Result;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -30,6 +37,10 @@ import java.util.stream.Collectors;
  * are read once through the outbound ACL service, then the boards linked to those units are read in
  * a single statement. The same units give each board the name and the site it is shown with, so no
  * request is made per board.</p>
+ *
+ * <p>Every board answered carries its connectivity, evaluated at one server instant with the offline
+ * window of its unit's alert policy. The windows of a whole listing are read from Monitoring and
+ * Alerting in one call.</p>
  */
 @Service
 public class DeviceQueryServiceImpl implements DeviceQueryService {
@@ -41,16 +52,19 @@ public class DeviceQueryServiceImpl implements DeviceQueryService {
   private final ExternalAssetManagementServiceForDevice externalAssetManagementService;
   private final DeviceExternalOwnerService deviceExternalOwnerService;
   private final DeviceCredentialService deviceCredentialService;
+  private final ExternalMonitoringServiceForDevice externalMonitoringService;
 
   public DeviceQueryServiceImpl(
       DeviceRepository deviceRepository,
       ExternalAssetManagementServiceForDevice externalAssetManagementService,
       DeviceExternalOwnerService deviceExternalOwnerService,
-      DeviceCredentialService deviceCredentialService) {
+      DeviceCredentialService deviceCredentialService,
+      ExternalMonitoringServiceForDevice externalMonitoringService) {
     this.deviceRepository = deviceRepository;
     this.externalAssetManagementService = externalAssetManagementService;
     this.deviceExternalOwnerService = deviceExternalOwnerService;
     this.deviceCredentialService = deviceCredentialService;
+    this.externalMonitoringService = externalMonitoringService;
   }
 
   @Override
@@ -82,20 +96,79 @@ public class DeviceQueryServiceImpl implements DeviceQueryService {
     var ownedEquipment = externalAssetManagementService.fetchEquipmentOwnedBy(ownerId, query.siteId()).stream()
         .collect(Collectors.toMap(PairedEquipment::equipmentId, Function.identity()));
     var scope = scopeOf(query, ownedEquipment.keySet());
+    var now = Instant.now();
+    if (query.filtersByConnectivity()) {
+      return Result.success(filteredByConnectivity(query, scope, ownedEquipment, now));
+    }
     var page = query.isPaged()
         ? deviceRepository.findPageLinkedToEquipment(scope, query.statuses(), query.search(), query.page(), query.size())
         : DevicePage.unpaged(deviceRepository.findAllLinkedToEquipment(scope, query.statuses(), query.search()));
-    var content = page.content().stream()
-        .map(device -> toDetails(device, ownedEquipment.get(device.getPairedEquipmentId())))
-        .toList();
+    var content = describeAll(page.content(), ownedEquipment, now);
     return Result.success(new DeviceDetailsPage(content, page.page(), page.size(), page.totalElements()));
   }
 
   // inherited javadoc
   @Override
   public DeviceDetails describe(Device device) {
-    return toDetails(
-        device, externalAssetManagementService.fetchPairedEquipment(device.getPairedEquipmentId()).orElse(null));
+    var equipment = externalAssetManagementService.fetchPairedEquipment(device.getPairedEquipmentId()).orElse(null);
+    var windows = device.getPairedEquipmentId() == null
+        ? Map.<Long, Duration>of()
+        : externalMonitoringService.fetchOfflineWindows(List.of(device.getPairedEquipmentId()));
+    return toDetails(device, equipment, evaluate(device, windows, Instant.now()));
+  }
+
+  /**
+   * Lists the boards matching every filter, the connectivity one included, and pages them.
+   *
+   * <p>Connectivity is evaluated at read time, so it cannot be matched by the database: every board
+   * matching the other filters is read and evaluated at one instant, then narrowed and paged in
+   * memory. The inventory of one owner is small enough for that.</p>
+   *
+   * @param query          the query; its connectivity filter is not empty
+   * @param scope          the units whose boards may be listed
+   * @param ownedEquipment the units of the caller, by identifier
+   * @param now            the instant of the evaluation
+   * @return the page asked for, or every match when the query is not paged
+   */
+  private DeviceDetailsPage filteredByConnectivity(
+      GetDevicesQuery query, Set<Long> scope, Map<Long, PairedEquipment> ownedEquipment, Instant now) {
+    var matching = describeAll(deviceRepository.findAllLinkedToEquipment(scope, query.statuses(), query.search()),
+        ownedEquipment, now).stream()
+        .filter(details -> query.connectivity().contains(details.connectivity().state()))
+        .toList();
+    if (!query.isPaged()) {
+      return new DeviceDetailsPage(matching, 0, Math.max(matching.size(), 1), matching.size());
+    }
+    var from = (int) Math.min((long) query.page() * query.size(), matching.size());
+    var to = Math.min(from + query.size(), matching.size());
+    return new DeviceDetailsPage(matching.subList(from, to), query.page(), query.size(), matching.size());
+  }
+
+  /**
+   * Describes a list of boards, reading the offline window of all their units in one call.
+   *
+   * @param devices        the boards, in the order to answer them
+   * @param ownedEquipment the units of the caller, by identifier
+   * @param now            the instant of the evaluation
+   * @return the described boards, in the same order
+   */
+  private List<DeviceDetails> describeAll(List<Device> devices, Map<Long, PairedEquipment> ownedEquipment, Instant now) {
+    if (devices.isEmpty()) {
+      return List.of();
+    }
+    var equipmentIds = devices.stream()
+        .map(Device::getPairedEquipmentId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    var windows = externalMonitoringService.fetchOfflineWindows(equipmentIds);
+    return devices.stream()
+        .map(device -> toDetails(device, ownedEquipment.get(device.getPairedEquipmentId()), evaluate(device, windows, now)))
+        .toList();
+  }
+
+  private static DeviceConnectivity evaluate(Device device, Map<Long, Duration> windows, Instant now) {
+    var window = device.getPairedEquipmentId() == null ? null : windows.get(device.getPairedEquipmentId());
+    return DeviceConnectivity.evaluate(device, window, now);
   }
 
   /**
@@ -131,10 +204,10 @@ public class DeviceQueryServiceImpl implements DeviceQueryService {
     return ownedEquipmentIds.contains(query.equipmentId()) ? Set.of(query.equipmentId()) : Set.of();
   }
 
-  private static DeviceDetails toDetails(Device device, PairedEquipment equipment) {
+  private static DeviceDetails toDetails(Device device, PairedEquipment equipment, DeviceConnectivity connectivity) {
     return equipment == null
-        ? DeviceDetails.withoutEquipment(device)
-        : new DeviceDetails(device, equipment.name(), equipment.siteId());
+        ? DeviceDetails.withoutEquipment(device, connectivity)
+        : new DeviceDetails(device, equipment.name(), equipment.siteId(), connectivity);
   }
 
   private boolean isOwnedBy(Device device, Long ownerId) {

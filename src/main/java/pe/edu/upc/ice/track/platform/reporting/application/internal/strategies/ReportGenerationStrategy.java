@@ -1,5 +1,6 @@
 package pe.edu.upc.ice.track.platform.reporting.application.internal.strategies;
 
+import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportSection;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.KpiValue;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportFilters;
 
@@ -11,10 +12,13 @@ import java.util.List;
  * <p>Each {@link pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.ReportType}
  * is realized by exactly one {@code @Service}-annotated implementation of this interface,
  * registered under a Spring bean qualifier equal to the report type's enum name (e.g.
- * {@code "EQUIPMENT_UPTIME"}). {@code ReportCommandServiceImpl} resolves the strategy to run by
+ * {@code "EQUIPMENT_UPTIME"}). {@code ReportGenerationWorker} resolves the strategy to run by
  * looking up {@code report.getType().name()} in the injected
  * {@code Map<String, ReportGenerationStrategy>}, so adding a new report type only requires a new
- * enum constant and a new {@code @Service} bean -- the command service itself never changes.</p>
+ * enum constant and a new {@code @Service} bean -- the worker itself never changes.</p>
+ *
+ * <p>A strategy may also contribute detail sections shown after the KPIs, as the service document
+ * does; most strategies contribute none.</p>
  */
 public interface ReportGenerationStrategy {
 
@@ -25,4 +29,14 @@ public interface ReportGenerationStrategy {
    * @return the KPIs that make up the report's result, in display order
    */
   List<KpiValue> generate(ReportFilters filters);
+
+  /**
+   * Builds the detail sections shown after the KPIs.
+   *
+   * @param filters the scope of the report; required
+   * @return the sections, in display order; empty by default
+   */
+  default List<ReportSection> sections(ReportFilters filters) {
+    return List.of();
+  }
 }

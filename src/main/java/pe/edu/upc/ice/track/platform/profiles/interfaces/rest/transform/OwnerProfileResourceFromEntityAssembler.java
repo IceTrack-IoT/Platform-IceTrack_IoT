@@ -8,18 +8,14 @@ import pe.edu.upc.ice.track.platform.profiles.interfaces.rest.authorization.Prof
  * Assembler to convert an {@link OwnerProfile} aggregate to an {@link OwnerProfileResource}.
  */
 public class OwnerProfileResourceFromEntityAssembler {
-  /**
-   * Converts an OwnerProfile aggregate to an OwnerProfileResource.
-   *
-   * @param entity The {@link OwnerProfile} aggregate to convert.
-   * @return The {@link OwnerProfileResource} resource.
-   */
+
   /**
    * Converts an owner profile into the resource a caller may see, never widening what
    * {@code view} allows: fields hidden by the view are sent as {@code null}.
    *
    * @param entity the owner profile
-   * @param view   how much of it the caller may see; {@code CONTACT} hides the address and the RUC
+   * @param view   how much of it the caller may see; {@code CONTACT} hides the address, the RUC and the
+   *               version
    * @return the resource
    */
   public static OwnerProfileResource toResourceFromEntity(OwnerProfile entity, ProfileView view) {
@@ -33,17 +29,37 @@ public class OwnerProfileResourceFromEntityAssembler {
         view == ProfileView.CONTACT ? entity.getEmail().getAddress() : null,
         view == ProfileView.CONTACT ? entity.getPhone().getFullNumber() : null,
         null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
         null);
   }
 
+  /**
+   * Converts an owner profile into the resource its owner sees, with the address both composed and in
+   * its parts.
+   *
+   * @param entity the owner profile
+   * @return the resource
+   */
   public static OwnerProfileResource toResourceFromEntity(OwnerProfile entity) {
+    var address = entity.getAddress();
     return new OwnerProfileResource(
         entity.getUserProfileId(),
         entity.getUserId().userId(),
         entity.getFullName().getFullName(),
         entity.getEmail().getAddress(),
         entity.getPhone().getFullNumber(),
-        entity.getAddress().getStreetAddress(),
-        entity.getRuc().value());
+        address.getStreetAddress(),
+        address.street(),
+        address.number(),
+        address.city(),
+        address.postalCode(),
+        address.country(),
+        entity.getRuc().value(),
+        entity.getVersion() == null ? 0L : entity.getVersion());
   }
 }

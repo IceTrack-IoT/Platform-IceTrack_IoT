@@ -8,13 +8,23 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.StatusEqui
  * <p>Owner-only: the command service resolves the caller to an owner and rejects a unit that does
  * not belong to it with a 404. Technicians have no direct write on a unit's status.</p>
  *
- * @param equipmentId identifier of the unit whose status changes; required
- * @param username    username of the authenticated caller, resolved by the command service to the
- *                    owner the unit must belong to; required
- * @param newStatus   the status to move to; required and part of the transition matrix
+ * @param equipmentId     identifier of the unit whose status changes; required
+ * @param username        username of the authenticated caller, resolved by the command service to the
+ *                        owner the unit must belong to; required
+ * @param newStatus       the status to move to; required and part of the transition matrix
+ * @param expectedVersion the version the caller edited, from {@code If-Match}; {@code null} skips the
+ *                        check
  */
 public record ChangeStatusCommand(
     Long equipmentId,
     String username,
-    StatusEquipment newStatus) {
+    StatusEquipment newStatus,
+    Long expectedVersion) {
+
+  /**
+   * Creates the command without a version precondition.
+   */
+  public ChangeStatusCommand(Long equipmentId, String username, StatusEquipment newStatus) {
+    this(equipmentId, username, newStatus, null);
+  }
 }

@@ -22,7 +22,7 @@ import java.time.Instant;
 @Schema(
     name = "EquipmentResponse",
     description = "Equipment information response",
-    example = "{\"id\": 10, \"site_id\": 1, \"site_name\": \"Sede Central\", \"uid\": \"ESP32-0001\", \"name\": \"Refrigerador 1\", \"equipment_type\": \"REFRIGERATOR\", \"status\": \"ACTIVE\", \"online\": true, \"min_celsius\": 2.0, \"max_celsius\": 8.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30Z\", \"last_known_temperature\": 4.5, \"config_version\": 3}")
+    example = "{\"id\": 10, \"site_id\": 1, \"site_name\": \"Sede Central\", \"uid\": \"ESP32-0001\", \"name\": \"Refrigerador 1\", \"equipment_type\": \"REFRIGERATOR\", \"status\": \"ACTIVE\", \"online\": true, \"min_celsius\": 2.0, \"max_celsius\": 8.0, \"reminder_interval_days\": 90, \"last_reading_at\": \"2026-02-01T10:15:30Z\", \"last_known_temperature\": 4.5, \"config_version\": 3, \"version\": 2}")
 public record EquipmentResource(
     @Schema(description = "Equipment unique identifier", example = "10")
     Long id,
@@ -82,6 +82,11 @@ public record EquipmentResource(
 
     @Schema(description = "Connectivity evaluated by the server at read time; read-only",
         accessMode = Schema.AccessMode.READ_ONLY)
-    EquipmentConnectivityResource connectivity
+    EquipmentConnectivityResource connectivity,
+
+    @Schema(description = "Concurrency version; grows on every change of name, type, reminder interval, threshold "
+        + "or status, not on telemetry. Send it back in If-Match to update the unit", example = "2",
+        accessMode = Schema.AccessMode.READ_ONLY)
+    Long version
 ) {
 }

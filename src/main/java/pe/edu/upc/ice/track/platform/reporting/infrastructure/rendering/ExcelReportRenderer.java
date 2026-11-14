@@ -8,6 +8,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportContent;
 import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportRenderer;
+import pe.edu.upc.ice.track.platform.reporting.application.internal.renderers.ReportSection;
 import pe.edu.upc.ice.track.platform.reporting.domain.model.valueobjects.KpiValue;
 
 import java.io.ByteArrayOutputStream;
@@ -19,7 +20,8 @@ import java.io.IOException;
  * <p>Produces an {@code .xlsx} workbook with one sheet: a metadata block followed by a KPI table
  * whose value column holds real numbers (not text), so the user can sum, chart or filter them
  * directly in Excel. Text cells are written as strings, so a user-supplied title is never
- * interpreted as a formula.</p>
+ * interpreted as a formula. Detail sections, when the report has any, follow the KPI table, each as
+ * a bold heading and its label and value rows.</p>
  */
 @Service("XLSX")
 public class ExcelReportRenderer implements ReportRenderer {
@@ -55,6 +57,17 @@ public class ExcelReportRenderer implements ReportRenderer {
         row.createCell(0).setCellValue(kpi.label());
         row.createCell(1).setCellValue(kpi.value());
         row.createCell(2).setCellValue(kpi.unit());
+      }
+
+      for (ReportSection section : content.sections()) {
+        rowIndex++;
+        var heading = sheet.createRow(rowIndex++).createCell(0);
+        heading.setCellValue(section.title());
+        heading.setCellStyle(boldStyle);
+        for (ReportSection.Row sectionRow : section.rows()) {
+          rowIndex = metaRow(sheet, rowIndex, sectionRow.label(),
+              sectionRow.value() == null ? "" : sectionRow.value(), boldStyle);
+        }
       }
 
       for (int i = 0; i < 3; i++) {

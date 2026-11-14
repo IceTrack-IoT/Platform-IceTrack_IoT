@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.upc.ice.track.platform.shared.domain.model.valueobjects.EquipmentId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.OwnerId;
+import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceRequestId;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceStatus;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.ServiceType;
 import pe.edu.upc.ice.track.platform.service.request.domain.model.valueobjects.TechnicianProfileId;
@@ -242,6 +243,63 @@ public class ServiceRequestContextFacade {
             status.isActive(),
             ownerId == null ? 0L : serviceRequestRepository.countByOwnerIdAndStatus(ownerId, siteId, status)))
         .toList();
+  }
+
+  /**
+   * Returns a request with its status history, its intervention and its review, whatever its owner
+   * and status.
+   *
+   * <p>Reporting uses it to produce the service document of a completed request; it checks itself
+   * that the request belongs to the caller and is {@code COMPLETED}.</p>
+   *
+   * @param serviceRequestId identifier of the request
+   * @return the request, or empty for a missing or non-positive identifier or a request that does not
+   *         exist
+   */
+  @Transactional(readOnly = true)
+  public Optional<ServiceInterventionRecord> fetchServiceInterventionRecord(Long serviceRequestId) {
+    if (!isValidIdentifier(serviceRequestId)) {
+      return Optional.empty();
+    }
+    var id = new ServiceRequestId(serviceRequestId);
+    return serviceRequestRepository.findById(id).map(request -> {
+      var intervention = request.getIntervention();
+      var review = reviewRepository.findByServiceRequestId(id).orElse(null);
+      return new ServiceInterventionRecord(
+          serviceRequestId,
+          request.getOwnerId().ownerId(),
+          request.getEquipmentId().equipmentId(),
+          request.getSiteId().siteId(),
+          request.getTechnicianId() == null ? null : request.getTechnicianId().technicianProfileId(),
+          request.getType().name(),
+          request.getPriority().name(),
+          request.getStatus().name(),
+          request.getDescription(),
+          request.getCreatedAt(),
+          request.getStartedAt(),
+          request.getCompletedAt(),
+          request.getHistory().stream()
+              .map(transition -> new ServiceInterventionRecord.StatusChange(
+                  transition.getFromStatus() == null ? null : transition.getFromStatus().name(),
+                  transition.getToStatus().name(),
+                  transition.getOccurredAt(),
+                  transition.getReason()))
+              .toList(),
+          intervention == null ? null : new ServiceInterventionRecord.InterventionDetails(
+              intervention.getDiagnosis(),
+              intervention.getActionsTaken(),
+              intervention.getSpareParts(),
+              intervention.getPhotoEvidence(),
+              intervention.getStartedAt(),
+              intervention.getCompletedAt()),
+          review == null ? null : new ServiceInterventionRecord.ReviewDetails(
+              review.getRating().communication(),
+              review.getRating().efficacy(),
+              review.getRating().performance(),
+              review.getRating().average(),
+              review.getComment(),
+              review.getCreatedAt()));
+    });
   }
 
   private static boolean isValidIdentifier(Long identifier) {

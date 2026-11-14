@@ -14,11 +14,22 @@ import pe.edu.upc.ice.track.platform.assets.domain.model.valueobjects.EquipmentT
  * @param name                 the new unit name; required
  * @param equipmentType        the new kind of refrigeration unit; required
  * @param reminderIntervalDays the new preventive maintenance interval in days; required and positive
+ * @param expectedVersion      the version the caller edited, from {@code If-Match}; {@code null} skips
+ *                             the check
  */
 public record UpdateEquipmentCommand(
     Long equipmentId,
     String username,
     String name,
     EquipmentType equipmentType,
-    Integer reminderIntervalDays) {
+    Integer reminderIntervalDays,
+    Long expectedVersion) {
+
+  /**
+   * Creates the command without a version precondition.
+   */
+  public UpdateEquipmentCommand(
+      Long equipmentId, String username, String name, EquipmentType equipmentType, Integer reminderIntervalDays) {
+    this(equipmentId, username, name, equipmentType, reminderIntervalDays, null);
+  }
 }

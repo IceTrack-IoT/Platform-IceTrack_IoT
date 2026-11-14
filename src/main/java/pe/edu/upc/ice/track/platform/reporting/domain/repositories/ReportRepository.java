@@ -46,4 +46,10 @@ public interface ReportRepository {
    * @return  the reports of that page and the total count
    */
   ReportPage findPageByUserId(Long userId, ReportListFilter filter, int page, int size);
+
+  /**
+   *  Deletes a report. Deleting an identifier that names no report changes nothing.
+   * @param reportId the identifier of the report to delete
+   */
+  void deleteById(Long reportId);
 }

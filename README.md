@@ -140,7 +140,13 @@ Path variables keep their names (`{equipmentId}`, `{siteId}`, ...): they only ap
 
 **Equipment directory and site names.** `GET /api/v1/assets/equipments/directory` (owner JWT) returns the identity of every unit of the caller, sorted by name and unpaged: `id`, `uid`, `name`, `equipment_type`, `status`, `site_id` and `site_name`. Optional `site_id` and `status` (comma-separated). It carries no telemetry, so it only changes when a unit or a site is created, renamed or changes status. Every `EquipmentResource` also carries the read-only `site_name`.
 
-**Conditional reads.** The equipment directory and `GET /api/v1/alert-policies` return an `ETag`, a digest of the answer. Sending it back in `If-None-Match` answers `304` with an empty body while the answer is unchanged. CORS exposes `ETag`, `Retry-After` and `X-Telemetry-Bucket`, so a browser application can read them.
+**Conditional reads.** The equipment directory and `GET /api/v1/alert-policies` return an `ETag`, a digest of the answer. Sending it back in `If-None-Match` answers `304` with an empty body while the answer is unchanged. CORS exposes `ETag`, `Retry-After`, `X-Telemetry-Bucket` and `Idempotent-Replayed`, so a browser application can read them.
+
+**Retrying a creation (`Idempotency-Key`).** `POST /api/v1/service-requests`, `/reviews`, `/devices`, `/assets/equipments`, `/assets/sites` and `/reports` accept an optional `Idempotency-Key` header: a UUID the client generates once per submission and resends only when it retries that submission. Keys are remembered per caller and endpoint for 24 hours, in the `idempotency_records` table. A retry with the same body is answered with the stored status and body plus `Idempotent-Replayed: true`, without running again. The same key with another body, or while the first request is still running, answers `409 IDEMPOTENCY_KEY_CONFLICT` (`details: "in progress"` and `Retry-After: 1` in the second case). A key that is not a UUID answers `400 VALIDATION_ERROR`. Only a successful (2xx) answer is stored; a failed first request frees the key. A replay of `POST /devices` answers the device without `api_key`, which is never stored: rotate the key to see a new one.
+
+**Concurrent edits (`version` and `If-Match`).** `SiteResource`, `EquipmentResource`, `OwnerProfileResource` and `DashboardConfigResource` carry `version`, which grows on every change. `PUT /assets/sites/{id}` and `/address`, `PUT /assets/equipments/{id}`, `/threshold` and `/status`, `PUT /profiles/owners/{id}`, and the dashboard `PUT .../layout`, `PUT .../defaults` and `PATCH .../cards/{cardId}/visibility` accept `If-Match: "<version>"` (quoted or bare). A version other than the current one answers `409 CONCURRENT_MODIFICATION_CONFLICT`, `details` naming the current version, and changes nothing; a malformed header answers `400`. Without `If-Match` the behavior is unchanged: only writes that overlap in time are refused. A unit's `version` does not move with telemetry (readings, `online`, maintenance coverage), only with what the owner edits.
+
+**Session bootstrap.** `GET /api/v1/me/context` (any authenticated user) answers, with `Cache-Control: no-store`, the signed-in `user` (`id`, `username`, `email`, `role`, `provider`), its `owner_profile` (`null` for a technician), its `dashboard_config` (`null` while not set up), `counts` (`sites`, `equipment`; `0` for a technician) and `server_time`. It never carries a token. `GET /api/v1/profiles/owners/me` (owner) and `GET /api/v1/profiles/dashboard-configs/me` (any authenticated user) read the caller's profile and configuration without an account identifier; they answer `404 OWNER_NOT_FOUND` / `404 DASHBOARD_CONFIG_NOT_FOUND` when there is none. `OwnerProfileResource` carries the address both composed (`address`) and in the parts an update takes (`street`, `number`, `city`, `postal_code`, `country`).
 
 **Equipment connectivity.** Every `EquipmentResource` carries `connectivity`, evaluated by the server on every read with the offline detection's rule: `state` (`REPORTING`, `SILENT`, `NEVER_REPORTED`, or `NOT_MONITORED` for a `DEACTIVATED` unit), `last_received_at` (server arrival time of the latest batch, stored in `equipments.last_received_at`), `silent_after_seconds` (60 × the policy's `missed_sync_windows_for_offline`), `silent_since` (only when `SILENT`), `under_maintenance` and `evaluated_at`. A client keeps it current with `skew = evaluated_at - now`. `online` is deprecated and kept for compatibility. The equipment directory does not carry `connectivity`, so its `ETag` stays stable.
 
@@ -150,9 +156,9 @@ Path variables keep their names (`{equipmentId}`, `{siteId}`, ...): they only ap
 |---|---|
 | `400 VALIDATION_ERROR` | every operation taking parameters or a body; a required query parameter that is missing also answers `400` |
 | `401 UNAUTHORIZED` | every operation that requires a JWT; a missing or invalid bearer token is now answered with the standard body instead of the container's default error page |
-| `429 TOO_MANY_REQUESTS` | `sign-in/local`, `google/verify`, `google/link`, `validate-address` and `stream-ticket`, with a `Retry-After` header |
+| `429 TOO_MANY_REQUESTS` | `sign-in/local`, `google/verify`, `google/link`, `validate-address`, `geocoding/retry` and `stream-ticket`, with a `Retry-After` header |
 | `500 UNEXPECTED_ERROR` | every operation; `details` carries only a reference to the server log |
-| `503 GEOCODING_UNAVAILABLE` | `validate-address`, with a `Retry-After` header |
+| `503 GEOCODING_UNAVAILABLE` | `validate-address` and `geocoding/retry`, with a `Retry-After` header |
 
 Public routes (sign-in, sign-up, the Google token exchange, refresh, logout and the telemetry stream) are documented as requiring no security scheme.
 
@@ -228,7 +234,21 @@ What creates a notification, and for whom:
 | Maintenance window opened or closed | Owner of the unit (origin, times, order and technician when known, closure reason) | `MAINTENANCE_WINDOW` / `INFO` |
 | Maintenance window opened with no service request | Owner of the unit, at once | `UNLINKED_MAINTENANCE_WINDOW` / `WARNING` |
 
-Texts come from the `notification.*` keys of `messages.properties`. Profiles record no language preference yet, so every notification is composed in the default (English) bundle.
+`message` is composed once, in English, from the `notification.*` keys of `messages.properties`. Every notification also carries `message_key` and `message_params`, the same text in machine form, so a client renders it in the user's language and falls back to `message` for a key it does not know:
+
+| `message_key` | `message_params` |
+|---|---|
+| `alert.temperature_excursion.raised` | `equipment_id`, `equipment_name`, `temperature`, `limit` (`MAX` or `MIN`), `threshold` |
+| `alert.device_offline.raised` | `equipment_id`, `equipment_name`, `silent_minutes` |
+| `alert.sensor_failure.raised` | `equipment_id`, `equipment_name` |
+| `service_request.assigned` | `service_request_id`, `equipment_name`, `technician_name` |
+| `service_request.unassigned` | `service_request_id`, `equipment_name` |
+| `service_request.rejected` | `service_request_id`, `equipment_name`, `reason` |
+| `service_request.canceled` | `service_request_id`, `equipment_name`, `reason` |
+| `maintenance_window.opened` | `equipment_name`, `origin` (`APP` or `BUTTON`) |
+| `maintenance_window.closed` | `equipment_name`, `closure_reason` |
+
+A value that is not known when the notification is raised (a renamed unit's name, a peak inside the band) is left out of `message_params` rather than sent as `null`. Values are strings or numbers, never markup; `reason` is user content and is shown as typed. Notifications stored before templates existed carry `message_key: "notification.untemplated"` and empty `message_params` (columns `notifications.message_key` and `message_params`).
 
 ## Edge devices
 
@@ -249,15 +269,15 @@ The edge endpoints are `POST /api/v1/telemetry`, `POST /api/v1/telemetry/events`
 | Rotate key | `POST /{deviceId}/rotate-api-key` | `200` with a new key; the old one stops working. Also how a `REVOKED` device resumes |
 | Revoke | `PUT /{deviceId}/status` `{"new_status": "REVOKED"}` | Key invalidated immediately; device stays linked to its equipment |
 | Unpair | `POST /{deviceId}/unpair` | Equipment link and key cleared; both the board and the equipment can be paired again |
-| List | `GET /api/v1/devices` | Every device linked (paired or revoked) to the caller's units, ordered by `device_uid`. Optional `equipment_id`, `site_id`, `status` (comma-separated) and `search` (uid or board model); `page` and `size` together return `{content, page, size, total_elements, total_pages}`. A site or unit that is not the caller's answers `404` |
+| List | `GET /api/v1/devices` | Every device linked (paired or revoked) to the caller's units, ordered by `device_uid`. Optional `equipment_id`, `site_id`, `status` and `connectivity` (comma-separated) and `search` (uid or board model); `page` and `size` together return `{content, page, size, total_elements, total_pages}`. A site or unit that is not the caller's answers `404`; an unknown `status` or `connectivity` answers `400` |
 
-Every device response carries `paired_equipment_name` and `paired_site_id`, both `null` when unpaired.
+Every device response carries `paired_equipment_name` and `paired_site_id`, both `null` when unpaired, and `connectivity`, evaluated by the server on every read: `state` (`REPORTING`, `SILENT`, `NEVER_REPORTED` when paired with no batch yet, `KEY_REVOKED` for a `REVOKED` device, `UNPAIRED`), `silent_after_seconds` (the offline window of the paired unit's policy; `null` when unpaired), `silent_since` (`last_seen_at` plus the window, only when `SILENT`) and `evaluated_at`. Silence is measured from `last_seen_at`, the server arrival time. The `connectivity` filter is applied after that evaluation, so a paged answer with it counts only the matching devices.
 
 Statuses are `UNPAIRED`, `PAIRED` and `REVOKED`. Keys are stored only as SHA-256 digests (unique index on `devices.api_key_digest`).
 
 **Telemetry ingestion** (`POST /api/v1/telemetry`) answers `201` for a new batch and `200` with the stored reading when the same `reading_uid` is resubmitted. Every new batch, in the same transaction, sets the unit `online` (unless `DEACTIVATED`) and moves its `last_reading_at` / `last_known_temperature` to the batch's `recorded_at` / `avg_temperature` (never backwards for a batch delivered late), sets the device's `last_seen_at` to the arrival time, and resolves the unit's active `DEVICE_OFFLINE` alert.
 
-**Device offline detection.** A unit is offline once no reading arrived for `60 s × missed_sync_windows_for_offline` of its alert policy (3 minutes by default). `EquipmentConnectivityCommandService` marks such units offline and raises one `OPEN`, `WARNING` `DEVICE_OFFLINE` alert each (none during a maintenance window, never a second one while one is active), which notifies the owner. Nothing schedules the detection yet: the periodic trigger is pending, so until it is added no `DEVICE_OFFLINE` alert is raised at runtime and `EQUIPMENT_UPTIME` reports read 100 %.
+**Device offline detection.** A unit is offline once no reading arrived for `60 s × missed_sync_windows_for_offline` of its alert policy (3 minutes by default). `EquipmentConnectivityCommandService` marks such units offline and raises one `OPEN`, `WARNING` `DEVICE_OFFLINE` alert each (none during a maintenance window, never a second one while one is active), which notifies the owner. `OfflineDetectionScheduler` runs the detection every `OFFLINE_DETECTION_DELAY_MS` (60 s); `OFFLINE_DETECTION_ENABLED=false` switches it off.
 
 Each batch carries temperatures twice:
 
@@ -373,9 +393,11 @@ The coverage check uses bounding boxes around the two jurisdictions. It is an ap
 
 **Registering and moving a site.** `POST /api/v1/assets/sites` takes `name`, `contact_name`, `phone`, `validation_token` and an optional `pin` (`{"latitude": ..., "longitude": ...}`). `PUT /api/v1/assets/sites/{siteId}/address` takes `validation_token` and an optional `pin`. Both save the site as `RESOLVED` at the verified point, or at the pin when one is given; Google Maps is not queried. A pin farther than 150 meters from the verified point answers `400 PIN_OUT_OF_RANGE`. A missing, forged, expired or foreign token answers `400 ADDRESS_VALIDATION_REQUIRED`. `PUT /api/v1/assets/sites/{siteId}` now changes only `name`, `contact_name` and `phone`; the address changes only through the address endpoint.
 
-A site's `location` and `navigation_url` are omitted from the JSON when it has no coordinates. Sites created before verification keep their stored `geocoding_status` (`PENDING`, `FAILED` or `NOT_FOUND`) and carry no location until they are moved to a verified address.
+A site's `location` and `navigation_url` are omitted from the JSON when it has no coordinates. Sites created before verification keep their stored `geocoding_status` (`PENDING`, `FAILED` or `NOT_FOUND`) and carry no location until they are located again or moved to a verified address. Every site carries `geocoding_failure_reason`, `null` unless the status is `FAILED` or `NOT_FOUND`: `ADDRESS_NOT_FOUND`, `PROVIDER_UNAVAILABLE`, `OUT_OF_COVERAGE`, or `UNKNOWN` for a site that failed before reasons were recorded (column `sites.geocoding_failure_reason`).
 
-**Report requests.** `POST /api/v1/reports` (owner JWT) takes `name`, `type`, `format` (`PDF`, `XLSX` or `CSV`) and `filters` (`site_id`, `equipment_id`, `technician_id`, `from`, `to`). The requester is the authenticated caller; there is no `user_id`. The answer is `202 Accepted` with the report in `PENDING`. Poll `GET /api/v1/reports/{id}`: a `COMPLETED` report carries a `download_url` signed for 15 minutes and `kpis`, a `FAILED` one carries `failure_reason`. A report of another owner answers `404 REPORT_NOT_FOUND`. The download route `GET /api/v1/reports/{id}/download` has been removed.
+**Locating a site again.** `POST /api/v1/assets/sites/{siteId}/geocoding/retry` (owner JWT, no body) looks the site's current address up with Google Maps, charged to the same 20-per-minute quota as address validation. It answers `200` with the site once the lookup finished (`RESOLVED`, or `NOT_FOUND` with its reason), or `202` with `geocoding_status: PENDING` when the maps service could not answer right away; the lookup then continues in the background (after 5, 20 and 60 seconds) and ends `RESOLVED`, `NOT_FOUND` or `FAILED` with `PROVIDER_UNAVAILABLE`. A refused request (invalid key, exhausted daily quota) leaves the site `FAILED` and answers `503 GEOCODING_UNAVAILABLE` with `Retry-After: 30`. A site already `RESOLVED` answers `409 INVALID_STATUS_TRANSITION`; a site of another owner `404 SITE_NOT_FOUND`; an exhausted quota `429` with `Retry-After: 60`.
+
+**Report requests.** `POST /api/v1/reports` (owner JWT) takes `name`, `type`, `format` (`PDF`, `XLSX` or `CSV`) and `filters` (`site_id`, `equipment_id`, `technician_id`, `service_request_id`, `from`, `to`). The requester is the authenticated caller; there is no `user_id`. The answer is `202 Accepted` with the report in `PENDING`. Poll `GET /api/v1/reports/{id}`: a `COMPLETED` report carries a `download_url` signed for 15 minutes and `kpis`, a `FAILED` one carries `failure_reason`. A report of another owner answers `404 REPORT_NOT_FOUND`. The download route `GET /api/v1/reports/{id}/download` has been removed.
 
 **Download links.** `GET /api/v1/reports/{id}/download-link` (owner JWT) answers `200` with `Cache-Control: no-store` and `{download_url, expires_at, file_name, content_type, size_bytes}`. `expires_at` is read from the signature itself, so it is the instant the link stops working. The link asks the browser to save the file as `file_name` (the report name in lower case with hyphens, plus the extension, e.g. `excursions-october-2026.pdf`) instead of opening it; the local storage adapter returns a `file:` URI and ignores the name. A report that is not `COMPLETED` answers `409 INVALID_STATUS_TRANSITION`, `details` naming its status.
 
@@ -386,6 +408,10 @@ A site's `location` and `navigation_url` are omitted from the JSON when it has n
 For a `TEMPERATURE_EXCURSION` report, each unit gets its Mean Kinetic Temperature (Arrhenius form, activation energy 83.144 kJ/mol), the standard deviation of its temperatures, the degree-minutes outside its threshold band, and the share of time in range. Readings taken during maintenance are excluded, so are dismissed alerts and any alert opened inside a maintenance window, and durations lose the part that overlaps a window; the same window exclusion applies to the uptime report. A unit's time between two readings is credited at most 60 minutes. If no unit in scope recorded any telemetry in the period, the report is `FAILED` with `Insufficient telemetry data for the period`.
 
 Files are stored at `reports/{ownerId}/{reportId}.{ext}` in the private bucket. A storage failure is retried three times with backoff before the report is marked `FAILED`.
+
+**Deleting a report.** `DELETE /api/v1/reports/{id}` (owner JWT) deletes a `COMPLETED` or `FAILED` report of the caller and answers `204`; its stored file is removed once the deletion commits, so a link issued before stops working. A report still `PENDING` or `GENERATING` answers `409 INVALID_STATUS_TRANSITION`; a report of another owner, or one already deleted, `404 REPORT_NOT_FOUND`.
+
+**Service documents.** A `SERVICE_INTERVENTION` report documents one completed service request: `filters.service_request_id` is required for it and refused (`400`) for every other type, and `from` / `to` may be left out to cover the request's own period (from the start of the work to its completion); every other type still requires them. The request must be the caller's (`404 SERVICE_REQUEST_NOT_FOUND` otherwise) and `COMPLETED` (`409 INVALID_STATUS_TRANSITION` otherwise). The file holds the request, its status history, the intervention (diagnosis, actions taken, spare parts, photo links) and the review, if any; its KPIs are `intervention_duration_min`, `spare_parts_count`, `photo_count` and, when reviewed, `review_average`, `review_communication`, `review_efficacy` and `review_performance`. A `SERVICE_INTERVENTION` report carries `service_request_id`; other types omit it (column `reports.service_request_id`).
 
 Clients must be updated for the renamed fields: the report request uses `name` and `filters`, and the report response uses `name` and `failure_reason`.
 

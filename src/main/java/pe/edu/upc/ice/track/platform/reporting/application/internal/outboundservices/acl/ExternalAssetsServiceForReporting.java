@@ -60,4 +60,14 @@ public class ExternalAssetsServiceForReporting {
   public Optional<double[]> fetchTemperatureThresholdRange(Long equipmentId) {
     return assetContextFacade.getEquipmentThresholdRange(equipmentId);
   }
+
+  /**
+   * @param equipmentId identifier of the unit
+   * @return the name of the unit and of its site as {@code [equipmentName, siteName]}, either of which may
+   *         be {@code null}; empty when the unit does not exist
+   */
+  public Optional<String[]> fetchEquipmentAndSiteNames(Long equipmentId) {
+    return assetContextFacade.fetchEquipmentSummary(equipmentId)
+        .map(summary -> new String[] {summary.name(), summary.siteName()});
+  }
 }
